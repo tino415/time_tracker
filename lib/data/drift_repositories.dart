@@ -119,6 +119,11 @@ class DriftChangeRepository implements ChangeRepository {
   }
 
   @override
+  Stream<List<ActivityChangeActivity>> watchChangeActivityLinks() {
+    return _db.select(_db.activityChangeActivities).watch();
+  }
+
+  @override
   Future<void> addActivityToChange(String changeId, String activityId) async {
     await _db.into(_db.activityChangeActivities).insert(
           ActivityChangeActivitiesCompanion.insert(
@@ -127,6 +132,22 @@ class DriftChangeRepository implements ChangeRepository {
           ),
           mode: InsertMode.insertOrIgnore,
         );
+  }
+
+  @override
+  Future<void> removeActivityFromChange(String changeId, String activityId) async {
+    await _db.transaction(() async {
+      final count = await (_db.select(_db.activityChangeActivities)
+            ..where((t) => t.activityChangeId.equals(changeId)))
+          .get()
+          .then((rows) => rows.length);
+      // Never strip a block down to an empty set — something is always tracking.
+      if (count <= 1) return;
+      await (_db.delete(_db.activityChangeActivities)
+            ..where((t) =>
+                t.activityChangeId.equals(changeId) & t.activityId.equals(activityId)))
+          .go();
+    });
   }
 
   @override

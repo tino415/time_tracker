@@ -44,9 +44,17 @@ abstract class ChangeRepository {
   /// replacing the whole active set with `{activityId}`.
   Future<ActivityChange> switchTo(String activityId, {DateTime? at});
 
+  /// Live join rows across all changes (change id -> activity id). Combined with
+  /// [watchChanges] and the activity catalogue to derive the timeline reactively.
+  Stream<List<ActivityChangeActivity>> watchChangeActivityLinks();
+
   /// Retrospective "forgot to switch": add an activity to an existing change's
   /// set (no new boundary).
   Future<void> addActivityToChange(String changeId, String activityId);
+
+  /// Undo a tag: remove an activity from a change's set. The last activity
+  /// cannot be removed (a block always tracks something) — call is a no-op then.
+  Future<void> removeActivityFromChange(String changeId, String activityId);
 
   Future<void> setComment(String changeId, String? comment);
 

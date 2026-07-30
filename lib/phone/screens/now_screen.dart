@@ -8,6 +8,7 @@ import '../../domain/block.dart';
 import '../../format.dart';
 import '../../theme/tokens.dart';
 import '../widgets/activity_editor.dart';
+import '../widgets/block_comment.dart';
 import '../widgets/neo.dart';
 
 /// The live "Now" screen: the current-activity hero, a bookmarked quick-switch
@@ -140,7 +141,7 @@ class _CommentRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final comment = block.comment;
     return GestureDetector(
-      onTap: () => _editComment(context, ref, block),
+      onTap: () => editBlockComment(context, ref, block),
       behavior: HitTestBehavior.opaque,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,37 +158,6 @@ class _CommentRow extends ConsumerWidget {
         ],
       ),
     );
-  }
-}
-
-Future<void> _editComment(BuildContext context, WidgetRef ref, Block block) async {
-  final controller = TextEditingController(text: block.comment ?? '');
-  final t = neo(context);
-  final result = await showDialog<String>(
-    context: context,
-    builder: (_) => AlertDialog(
-      backgroundColor: t.surface,
-      shape: RoundedRectangleBorder(side: BorderSide(color: t.line, width: 3), borderRadius: BorderRadius.zero),
-      title: Text('NOTE', style: mono(context, weight: FontWeight.w800)),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLines: 3,
-        style: mono(context, weight: FontWeight.w700),
-        decoration: const InputDecoration(border: OutlineInputBorder()),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text('CANCEL', style: mono(context))),
-        TextButton(
-          onPressed: () => Navigator.pop(context, controller.text),
-          child: Text('SAVE', style: mono(context, weight: FontWeight.w800, color: t.brand)),
-        ),
-      ],
-    ),
-  );
-  if (result != null) {
-    final text = result.trim();
-    await ref.read(changeRepositoryProvider).setComment(block.change.syncId, text.isEmpty ? null : text);
   }
 }
 

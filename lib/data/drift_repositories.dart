@@ -58,6 +58,31 @@ class DriftActivityRepository implements ActivityRepository {
       _bump(id, ActivitiesCompanion(bookmarked: Value(bookmarked)));
 
   @override
+  Future<void> setParent(String id, String? parentId) async {
+    if (parentId == id) return;
+    // Moving a node into its own subtree would orphan the whole branch from the
+    // roots (and loop the ancestor walk) — refuse it.
+    if (parentId != null && await _isDescendantOf(parentId, id)) return;
+    await _bump(id, ActivitiesCompanion(parentId: Value(parentId)));
+  }
+
+  /// Walks [candidateId]'s parent chain looking for [ancestorId]. Guarded against
+  /// a pre-existing corrupt cycle by a seen-set.
+  Future<bool> _isDescendantOf(String candidateId, String ancestorId) async {
+    final seen = <String>{};
+    String? cursor = candidateId;
+    while (cursor != null && seen.add(cursor)) {
+      if (cursor == ancestorId) return true;
+      final at = cursor;
+      final row = await (_db.select(_db.activities)
+            ..where((t) => t.syncId.equals(at)))
+          .getSingleOrNull();
+      cursor = row?.parentId;
+    }
+    return false;
+  }
+
+  @override
   Future<void> touchUsed(String id, DateTime at) =>
       _bump(id, ActivitiesCompanion(lastUsedAt: Value(at)));
 
@@ -84,7 +109,12 @@ class DriftChangeRepository implements ChangeRepository {
   Stream<List<ActivityChange>> watchChanges() {
     return (_db.select(_db.activityChanges)
           ..where((t) => t.deletedAt.isNull())
-          ..orderBy([(t) => OrderingTerm.desc(t.changedAt)]))
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.changedAt),
+            // Same-instant boundaries are vanishingly rare at millisecond
+            // resolution, but a tiebreak keeps the order stable across queries.
+            (t) => OrderingTerm.desc(t.syncId),
+          ]))
         .watch();
   }
 
@@ -92,7 +122,10 @@ class DriftChangeRepository implements ChangeRepository {
   Future<ActivityChange?> currentChange() {
     return (_db.select(_db.activityChanges)
           ..where((t) => t.deletedAt.isNull())
-          ..orderBy([(t) => OrderingTerm.desc(t.changedAt)])
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.changedAt),
+            (t) => OrderingTerm.desc(t.syncId),
+          ])
           ..limit(1))
         .getSingleOrNull();
   }

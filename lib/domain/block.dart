@@ -50,7 +50,12 @@ List<Block> deriveBlocks({
 }) {
   if (changes.isEmpty) return const [];
 
-  final asc = [...changes]..sort((a, b) => a.changedAt.compareTo(b.changedAt));
+  // Ties (same-instant boundaries) fall back to the id so the derived order is
+  // stable and matches the repository's own ordering.
+  final asc = [...changes]..sort((a, b) {
+    final byTime = a.changedAt.compareTo(b.changedAt);
+    return byTime != 0 ? byTime : a.syncId.compareTo(b.syncId);
+  });
 
   final blocks = <Block>[];
   for (var i = 0; i < asc.length; i++) {

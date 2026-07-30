@@ -289,4 +289,19 @@ void main() {
       expect(p.name, 'just a note');
     });
   });
+
+  group('csvFileName', () {
+    test('date-stamped, unscoped', () {
+      expect(csvFileName(DateTime(2026, 7, 3, 18, 30)), 'track-2026-07-03.csv');
+    });
+
+    test('subtree name is slugged into the file name', () {
+      expect(csvFileName(DateTime(2026, 7, 30), scopeName: 'Work / Client'),
+          'track-work-client-2026-07-30.csv');
+    });
+
+    test('a name with no usable characters still yields a valid file name', () {
+      expect(csvFileName(DateTime(2026, 7, 30), scopeName: '★★'), 'track-subtree-2026-07-30.csv');
+    });
+  });
 }

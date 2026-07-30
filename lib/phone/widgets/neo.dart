@@ -151,6 +151,7 @@ class NeoButton extends StatelessWidget {
     this.primary = false,
     this.icon,
     this.shadowOffset = 5,
+    this.compact = false,
   });
 
   final String label;
@@ -158,6 +159,12 @@ class NeoButton extends StatelessWidget {
   final bool primary;
   final String? icon;
   final double shadowOffset;
+
+  /// Shrink-wrap the label instead of letting it flex. Required when the button
+  /// is a *non-flex child of a Row* — there the incoming width is unbounded, and
+  /// a flexing label would assert. Full-width uses (a stretched Column, an
+  /// Expanded slot) want the default.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -170,18 +177,26 @@ class NeoButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
         children: [
           if (icon != null) ...[
             Text(icon!, style: mono(context, weight: FontWeight.w800, color: fg)),
             const SizedBox(width: 8),
           ],
-          Flexible(
-            child: Text(
+          if (compact)
+            Text(
               label.toUpperCase(),
               textAlign: TextAlign.center,
               style: mono(context, weight: FontWeight.w800, spacing: .6, color: fg),
+            )
+          else
+            Flexible(
+              child: Text(
+                label.toUpperCase(),
+                textAlign: TextAlign.center,
+                style: mono(context, weight: FontWeight.w800, spacing: .6, color: fg),
+              ),
             ),
-          ),
         ],
       ),
     );

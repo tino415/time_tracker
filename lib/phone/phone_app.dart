@@ -63,6 +63,10 @@ class _Home extends ConsumerWidget {
       bottomNavigationBar: SafeArea(
         top: false,
         child: Container(
+          // An explicit height is required: each tab is a centre-aligned
+          // Container, which expands to whatever height it is offered — without
+          // this the bar would claim the whole screen and collapse the body.
+          height: 52,
           decoration: BoxDecoration(
             color: t.surface,
             border: Border(top: BorderSide(color: t.line, width: 3)),

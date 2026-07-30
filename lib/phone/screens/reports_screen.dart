@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../data/providers.dart';
 import '../../domain/activity_tree.dart';
@@ -102,7 +105,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             ),
         const SizedBox(height: 18),
         NeoButton(
-          label: '↧ export csv',
+          label: '↧ export csv · all history',
           icon: null,
           primary: true,
           onTap: () => _exportCsv(context, ref, blocks, tree, now),
@@ -129,11 +132,11 @@ class _WeekSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        NeoButton(label: '‹', onTap: onPrev, shadowOffset: 3),
+        NeoButton(label: '‹', onTap: onPrev, shadowOffset: 3, compact: true),
         Expanded(
           child: Center(child: Text(label, style: mono(context, weight: FontWeight.w800))),
         ),
-        NeoButton(label: '›', onTap: onNext, shadowOffset: 3),
+        NeoButton(label: '›', onTap: onNext, shadowOffset: 3, compact: true),
       ],
     );
   }
@@ -216,15 +219,41 @@ Future<void> _exportCsv(
   }
   if (scope == null) return; // dismissed
 
+  final subtreeRootId = scope == '__all__' ? null : scope;
   final csv = buildCsv(
     blocks: blocks,
     tree: tree,
     now: now,
-    subtreeRootId: scope == '__all__' ? null : scope,
+    subtreeRootId: subtreeRootId,
   );
-  await Clipboard.setData(ClipboardData(text: csv));
-  if (!context.mounted) return;
-  await _showCsvPreview(context, csv);
+  final name = csvFileName(
+    now,
+    scopeName: subtreeRootId == null ? null : tree[subtreeRootId]?.name,
+  );
+
+  // A real file via the platform share sheet (Android/iOS/desktop); on web
+  // share_plus falls back to a browser download when the Web Share API can't
+  // take files. If no share target exists at all, fall back to the clipboard so
+  // the export is never a dead end.
+  try {
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [
+          XFile.fromData(
+            Uint8List.fromList(utf8.encode(csv)),
+            mimeType: 'text/csv',
+            name: name,
+          ),
+        ],
+        fileNameOverrides: [name],
+        subject: name,
+      ),
+    );
+  } catch (_) {
+    await Clipboard.setData(ClipboardData(text: csv));
+    if (!context.mounted) return;
+    await _showCsvPreview(context, csv);
+  }
 }
 
 Future<void> _showCsvPreview(BuildContext context, String csv) {

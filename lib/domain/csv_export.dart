@@ -46,6 +46,25 @@ String buildCsv({
   return '${rows.join('\r\n')}\r\n';
 }
 
+/// File name for an export made [at], e.g. `track-2026-07-30.csv`, or
+/// `track-work-2026-07-30.csv` when scoped to a subtree named "Work".
+String csvFileName(DateTime at, {String? scopeName}) {
+  final date = '${at.year.toString().padLeft(4, '0')}-'
+      '${at.month.toString().padLeft(2, '0')}-'
+      '${at.day.toString().padLeft(2, '0')}';
+  final scope = scopeName == null ? '' : '-${_slug(scopeName)}';
+  return 'track$scope-$date.csv';
+}
+
+/// Lower-kebab, alphanumerics only — safe on every platform's file system.
+String _slug(String value) {
+  final cleaned = value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '');
+  return cleaned.isEmpty ? 'subtree' : cleaned;
+}
+
 /// RFC-4180 field escaping: quote when the value contains a comma, quote,
 /// CR or LF, doubling embedded quotes.
 String _f(String value) {

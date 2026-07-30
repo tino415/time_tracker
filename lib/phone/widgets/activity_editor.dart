@@ -120,6 +120,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
       if (name != e.name) await repo.renameActivity(e.syncId, name);
       if (colorHex != e.color.toUpperCase()) await repo.setColor(e.syncId, colorHex);
       if (_bookmarked != e.bookmarked) await repo.setBookmarked(e.syncId, _bookmarked);
+      if (_parentId != e.parentId) await repo.setParent(e.syncId, _parentId);
       result = (await repo.loadActivities()).firstWhere(
         (a) => a.syncId == e.syncId,
         orElse: () => e,
@@ -150,87 +151,97 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         margin: const EdgeInsets.all(10),
+        // The form is taller than a short screen once the keyboard is up, so it
+        // scrolls rather than overflowing (the confirm button must stay reachable).
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
         decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
         padding: const EdgeInsets.all(14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                NeoChip(_isEdit ? 'Edit activity' : 'New activity'),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Text('✕', style: mono(context, size: 18, weight: FontWeight.w800)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _Field(controller: _name, hint: 'name (paste CU-1234 Title…)', autofocus: !_isEdit),
-            if (_externalId != null) ...[
-              const SizedBox(height: 8),
-              Row(children: [
-                Text('ID · ', style: mono(context, size: 12, color: t.muted)),
-                Text(_externalId!, style: mono(context, size: 12, weight: FontWeight.w700, color: t.brand)),
-              ]),
-            ],
-            const SizedBox(height: 14),
-            Text('COLOUR', style: mono(context, size: 11, weight: FontWeight.w800, spacing: 1, color: t.muted)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final c in ActivityPalette.all)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  NeoChip(_isEdit ? 'Edit activity' : 'New activity'),
+                  const Spacer(),
                   GestureDetector(
-                    onTap: () => setState(() {
-                      _color = c;
-                      _colorTouched = true;
-                    }),
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: c,
-                        border: Border.all(
-                          color: _effectiveColor.toARGB32() == c.toARGB32() ? t.brand : t.line,
-                          width: _effectiveColor.toARGB32() == c.toARGB32() ? 4 : 2,
+                    onTap: () => Navigator.pop(context),
+                    child: Text('✕', style: mono(context, size: 18, weight: FontWeight.w800)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _Field(controller: _name, hint: 'name (paste CU-1234 Title…)', autofocus: !_isEdit),
+              if (_externalId != null) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  Text('ID · ', style: mono(context, size: 12, color: t.muted)),
+                  Text(_externalId!, style: mono(context, size: 12, weight: FontWeight.w700, color: t.brand)),
+                ]),
+              ],
+              const SizedBox(height: 14),
+              Text('COLOUR', style: mono(context, size: 11, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in ActivityPalette.all)
+                    GestureDetector(
+                      onTap: () => setState(() {
+                        _color = c;
+                        _colorTouched = true;
+                      }),
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: c,
+                          border: Border.all(
+                            color: _effectiveColor.toARGB32() == c.toARGB32() ? t.brand : t.line,
+                            width: _effectiveColor.toARGB32() == c.toARGB32() ? 4 : 2,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: NeoButton(
-                    label: parentName == null ? 'parent: none' : 'parent: $parentName',
-                    onTap: _pickParent,
-                    shadowOffset: 3,
-                  ),
-                ),
-                if (_parentId != null) ...[
-                  const SizedBox(width: 8),
-                  NeoButton(label: 'clear', onTap: () => setState(() => _parentId = null), shadowOffset: 3),
                 ],
-              ],
-            ),
-            const SizedBox(height: 10),
-            _BookmarkToggle(value: _bookmarked, onChanged: (v) => setState(() => _bookmarked = v)),
-            const SizedBox(height: 16),
-            NeoButton(
-              label: _isEdit
-                  ? 'save'
-                  : widget.switchToOnCreate
-                      ? 'create & switch'
-                      : 'create',
-              primary: true,
-              onTap: _saving ? null : _save,
-            ),
-          ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: NeoButton(
+                      label: parentName == null ? 'parent: none' : 'parent: $parentName',
+                      onTap: _pickParent,
+                      shadowOffset: 3,
+                    ),
+                  ),
+                  if (_parentId != null) ...[
+                    const SizedBox(width: 8),
+                    NeoButton(
+                      label: 'clear',
+                      onTap: () => setState(() => _parentId = null),
+                      shadowOffset: 3,
+                      compact: true,
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              _BookmarkToggle(value: _bookmarked, onChanged: (v) => setState(() => _bookmarked = v)),
+              const SizedBox(height: 16),
+              NeoButton(
+                label: _isEdit
+                    ? 'save'
+                    : widget.switchToOnCreate
+                        ? 'create & switch'
+                        : 'create',
+                primary: true,
+                onTap: _saving ? null : _save,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -280,7 +291,15 @@ class _BookmarkToggle extends StatelessWidget {
           Text(value ? '★' : '☆',
               style: mono(context, size: 18, weight: FontWeight.w800, color: value ? t.brand : t.muted)),
           const SizedBox(width: 10),
-          Text('bookmark (quick-switch + watch)', style: mono(context, weight: FontWeight.w700)),
+          // Flexible: the label is wider than a narrow phone's sheet.
+          Expanded(
+            child: Text(
+              'bookmark (quick-switch + watch)',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: mono(context, weight: FontWeight.w700),
+            ),
+          ),
         ],
       ),
     );

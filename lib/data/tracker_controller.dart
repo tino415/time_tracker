@@ -15,10 +15,24 @@ class TrackerController {
 
   /// The normal live action: open a new block tracking [activityId] and mark it
   /// as just-used (recency drives the paste/search autocomplete).
+  ///
+  /// Tapping whatever is *already* tracking is a no-op rather than a new
+  /// boundary — switching replaces the active set, and here the set wouldn't
+  /// change, so splitting the running block in two would only lose information.
+  /// An explicit [at] is always honoured (a deliberate boundary at that time).
   Future<void> switchTo(String activityId, {DateTime? at}) async {
+    if (at == null && await _isAlreadyTracking(activityId)) return;
     final now = at ?? DateTime.now();
     await _changes.switchTo(activityId, at: now);
     await _activities.touchUsed(activityId, now);
+  }
+
+  /// True when the open block tracks exactly [activityId] and nothing else.
+  Future<bool> _isAlreadyTracking(String activityId) async {
+    final current = await _changes.currentChange();
+    if (current == null) return false;
+    final ids = await _changes.activityIdsForChange(current.syncId);
+    return ids.length == 1 && ids.first == activityId;
   }
 
   /// Create a work task (a leaf under [parentId]) from a pasted "CU-1234 Title",

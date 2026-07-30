@@ -56,6 +56,20 @@ void main() {
     expect(await changes.activityIdsForChange(change.syncId), [a.syncId]);
   });
 
+  test('boundaries keep millisecond precision and stay ordered within a second', () async {
+    final a = await activities.createActivity(name: 'A', color: '#333333');
+    final b = await activities.createActivity(name: 'B', color: '#444444');
+    final t0 = DateTime(2026, 1, 5, 9, 0, 0, 250);
+    final t1 = DateTime(2026, 1, 5, 9, 0, 0, 800); // same second, later ms
+
+    await changes.switchTo(a.syncId, at: t0);
+    final second = await changes.switchTo(b.syncId, at: t1);
+
+    final live = await changes.watchChanges().first;
+    expect(live.first.changedAt, t1, reason: 'sub-second precision must survive the round-trip');
+    expect((await changes.currentChange())!.syncId, second.syncId);
+  });
+
   test('deleteChange soft-deletes (tombstone) and drops it from the live stream', () async {
     final a = await activities.createActivity(name: 'A', color: '#333333');
     final c1 = await changes.switchTo(a.syncId, at: DateTime(2026, 1, 5, 9));
@@ -84,6 +98,32 @@ void main() {
     final after = (await activities.loadActivities()).single;
     expect(after.bookmarked, isTrue);
     expect(after.lastUsedAt, used);
+  });
+
+  test('setParent moves a node, and back to the top level', () async {
+    final parent = await activities.createActivity(name: 'Work', color: '#333333');
+    final leaf = await activities.createActivity(name: 'Task', color: '#444444');
+
+    await activities.setParent(leaf.syncId, parent.syncId);
+    var after = (await activities.loadActivities()).firstWhere((a) => a.syncId == leaf.syncId);
+    expect(after.parentId, parent.syncId);
+    expect(after.version, 2); // bumped for LWW sync
+
+    await activities.setParent(leaf.syncId, null);
+    after = (await activities.loadActivities()).firstWhere((a) => a.syncId == leaf.syncId);
+    expect(after.parentId, isNull);
+  });
+
+  test('setParent refuses a cycle (onto itself or into its own subtree)', () async {
+    final root = await activities.createActivity(name: 'Work', color: '#333333');
+    final mid = await activities.createActivity(name: 'Client', color: '#444444', parentId: root.syncId);
+    final leaf = await activities.createActivity(name: 'Task', color: '#555555', parentId: mid.syncId);
+
+    await activities.setParent(root.syncId, root.syncId);
+    await activities.setParent(root.syncId, leaf.syncId); // into its own subtree
+    final after = (await activities.loadActivities()).firstWhere((a) => a.syncId == root.syncId);
+    expect(after.parentId, isNull);
+    expect(after.version, 1); // no write happened at all
   });
 
   test('watchChangeActivityLinks reflects tags reactively', () async {

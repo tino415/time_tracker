@@ -25,6 +25,11 @@ abstract class ActivityRepository {
   Future<void> setColor(String id, String color);
   Future<void> setBookmarked(String id, bool bookmarked);
 
+  /// Re-parent an activity ([parentId] null moves it to the top level). A move
+  /// that would create a cycle (onto itself or into its own subtree) is refused
+  /// — the call is then a no-op.
+  Future<void> setParent(String id, String? parentId);
+
   /// Bump recency (last-used-first autocomplete).
   Future<void> touchUsed(String id, DateTime at);
 

@@ -47,12 +47,32 @@ class Activities extends Table {
   Set<Column> get primaryKey => {syncId};
 }
 
+/// Stores a [DateTime] as epoch **milliseconds**.
+///
+/// Drift's own `dateTime()` column stores unix *seconds*, which is too coarse
+/// for a timeline boundary: two switches inside the same second would compare
+/// equal, leaving "which block is current" and the timeline order ambiguous.
+/// Epoch millis sort exactly as integers (unlike ISO text with a UTC offset,
+/// whose lexicographic order breaks across a DST change) and are also what a
+/// sync DTO would carry.
+class EpochMillisConverter extends TypeConverter<DateTime, int> {
+  const EpochMillisConverter();
+
+  @override
+  DateTime fromSql(int fromDb) => DateTime.fromMillisecondsSinceEpoch(fromDb);
+
+  @override
+  int toSql(DateTime value) => value.millisecondsSinceEpoch;
+}
+
 /// A switch event — one boundary on the timeline. The block that starts here
 /// runs until the next change; its active set is the joined [Activities]. A
 /// single [comment] annotates the whole block.
 class ActivityChanges extends Table {
   TextColumn get syncId => text()();
-  DateTimeColumn get changedAt => dateTime()();
+
+  /// The boundary instant, epoch millis (see [EpochMillisConverter]).
+  IntColumn get changedAt => integer().map(const EpochMillisConverter())();
   TextColumn get comment => text().nullable()();
   IntColumn get version => integer().withDefault(const Constant(1))();
   DateTimeColumn get deletedAt => dateTime().nullable()();
@@ -83,11 +103,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        // v1 stored changed_at as unix *seconds* (drift's dateTime() default);
+        // v2 stores epoch millis. Column type is unchanged (INTEGER), so this is
+        // a pure data conversion.
+        await customStatement(
+          'UPDATE activity_changes SET changed_at = changed_at * 1000',
+        );
+      }
+    },
     beforeOpen: (details) async {
       // Drift / sqlite3 do not enable FKs by default; without this the
       // ON DELETE cascades silently no-op.

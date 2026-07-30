@@ -12,12 +12,16 @@ import 'neo.dart';
 ///
 /// [exclude] hides ids (and, when [excludeSubtrees] is set, their descendants) —
 /// e.g. picking a parent must not offer the node itself or its own subtree.
+///
+/// [only], when given, restricts the list to those ids — e.g. untagging a block
+/// may only offer the activities that block actually carries.
 Future<String?> showActivityPicker(
   BuildContext context,
   WidgetRef ref, {
   String title = 'Pick activity',
   Set<String> exclude = const {},
   bool excludeSubtrees = false,
+  Set<String>? only,
 }) {
   return showModalBottomSheet<String>(
     context: context,
@@ -27,6 +31,7 @@ Future<String?> showActivityPicker(
       title: title,
       exclude: exclude,
       excludeSubtrees: excludeSubtrees,
+      only: only,
     ),
   );
 }
@@ -36,11 +41,13 @@ class _PickerSheet extends ConsumerStatefulWidget {
     required this.title,
     required this.exclude,
     required this.excludeSubtrees,
+    this.only,
   });
 
   final String title;
   final Set<String> exclude;
   final bool excludeSubtrees;
+  final Set<String>? only;
 
   @override
   ConsumerState<_PickerSheet> createState() => _PickerSheetState();
@@ -63,8 +70,10 @@ class _PickerSheetState extends ConsumerState<_PickerSheet> {
 
     final q = _query.trim().toLowerCase();
     // When searching, flatten to a filtered flat list; otherwise show the tree.
+    final only = widget.only;
     final ids = tree.flattened().where((id) {
       if (hidden.contains(id)) return false;
+      if (only != null && !only.contains(id)) return false;
       if (q.isEmpty) return true;
       final a = tree[id]!;
       return a.name.toLowerCase().contains(q) ||
@@ -109,7 +118,9 @@ class _PickerSheetState extends ConsumerState<_PickerSheet> {
                       itemBuilder: (_, i) => _PickerRow(
                         tree: tree,
                         id: ids[i],
-                        indent: q.isEmpty,
+                        // A restricted list isn't a tree slice — show full paths
+                        // flat instead of indenting orphaned children.
+                        indent: q.isEmpty && only == null,
                         onTap: () => Navigator.pop(context, ids[i]),
                       ),
                     ),

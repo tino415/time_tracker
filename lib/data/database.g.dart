@@ -606,17 +606,15 @@ class $ActivityChangesTable extends ActivityChanges
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _changedAtMeta = const VerificationMeta(
-    'changedAt',
-  );
   @override
-  late final GeneratedColumn<DateTime> changedAt = GeneratedColumn<DateTime>(
-    'changed_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: true,
-  );
+  late final GeneratedColumnWithTypeConverter<DateTime, int> changedAt =
+      GeneratedColumn<int>(
+        'changed_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: true,
+      ).withConverter<DateTime>($ActivityChangesTable.$converterchangedAt);
   static const VerificationMeta _commentMeta = const VerificationMeta(
     'comment',
   );
@@ -679,14 +677,6 @@ class $ActivityChangesTable extends ActivityChanges
     } else if (isInserting) {
       context.missing(_syncIdMeta);
     }
-    if (data.containsKey('changed_at')) {
-      context.handle(
-        _changedAtMeta,
-        changedAt.isAcceptableOrUnknown(data['changed_at']!, _changedAtMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_changedAtMeta);
-    }
     if (data.containsKey('comment')) {
       context.handle(
         _commentMeta,
@@ -718,10 +708,12 @@ class $ActivityChangesTable extends ActivityChanges
         DriftSqlType.string,
         data['${effectivePrefix}sync_id'],
       )!,
-      changedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}changed_at'],
-      )!,
+      changedAt: $ActivityChangesTable.$converterchangedAt.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}changed_at'],
+        )!,
+      ),
       comment: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}comment'],
@@ -741,10 +733,15 @@ class $ActivityChangesTable extends ActivityChanges
   $ActivityChangesTable createAlias(String alias) {
     return $ActivityChangesTable(attachedDatabase, alias);
   }
+
+  static TypeConverter<DateTime, int> $converterchangedAt =
+      const EpochMillisConverter();
 }
 
 class ActivityChange extends DataClass implements Insertable<ActivityChange> {
   final String syncId;
+
+  /// The boundary instant, epoch millis (see [EpochMillisConverter]).
   final DateTime changedAt;
   final String? comment;
   final int version;
@@ -760,7 +757,11 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['sync_id'] = Variable<String>(syncId);
-    map['changed_at'] = Variable<DateTime>(changedAt);
+    {
+      map['changed_at'] = Variable<int>(
+        $ActivityChangesTable.$converterchangedAt.toSql(changedAt),
+      );
+    }
     if (!nullToAbsent || comment != null) {
       map['comment'] = Variable<String>(comment);
     }
@@ -885,7 +886,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
        changedAt = Value(changedAt);
   static Insertable<ActivityChange> custom({
     Expression<String>? syncId,
-    Expression<DateTime>? changedAt,
+    Expression<int>? changedAt,
     Expression<String>? comment,
     Expression<int>? version,
     Expression<DateTime>? deletedAt,
@@ -926,7 +927,9 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
       map['sync_id'] = Variable<String>(syncId.value);
     }
     if (changedAt.present) {
-      map['changed_at'] = Variable<DateTime>(changedAt.value);
+      map['changed_at'] = Variable<int>(
+        $ActivityChangesTable.$converterchangedAt.toSql(changedAt.value),
+      );
     }
     if (comment.present) {
       map['comment'] = Variable<String>(comment.value);
@@ -1833,10 +1836,11 @@ class $$ActivityChangesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get changedAt => $composableBuilder(
-    column: $table.changedAt,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnWithTypeConverterFilters<DateTime, DateTime, int> get changedAt =>
+      $composableBuilder(
+        column: $table.changedAt,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
 
   ColumnFilters<String> get comment => $composableBuilder(
     column: $table.comment,
@@ -1895,7 +1899,7 @@ class $$ActivityChangesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get changedAt => $composableBuilder(
+  ColumnOrderings<int> get changedAt => $composableBuilder(
     column: $table.changedAt,
     builder: (column) => ColumnOrderings(column),
   );
@@ -1928,7 +1932,7 @@ class $$ActivityChangesTableAnnotationComposer
   GeneratedColumn<String> get syncId =>
       $composableBuilder(column: $table.syncId, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get changedAt =>
+  GeneratedColumnWithTypeConverter<DateTime, int> get changedAt =>
       $composableBuilder(column: $table.changedAt, builder: (column) => column);
 
   GeneratedColumn<String> get comment =>

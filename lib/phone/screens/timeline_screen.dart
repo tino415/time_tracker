@@ -5,6 +5,7 @@ import '../../data/providers.dart';
 import '../../domain/block.dart';
 import '../../format.dart';
 import '../widgets/activity_picker.dart';
+import '../widgets/block_comment.dart';
 import '../widgets/neo.dart';
 
 /// The timeline: derived blocks newest-first, grouped by local day. Tap a block
@@ -196,6 +197,8 @@ Future<void> _showBlockActions(BuildContext context, WidgetRef ref, Block block)
                   context,
                   ref,
                   title: 'Remove which activity',
+                  // Only this block's own set can be untagged.
+                  only: block.activities.map((a) => a.syncId).toSet(),
                 );
                 if (id != null) {
                   await ref.read(changeRepositoryProvider).removeActivityFromChange(block.change.syncId, id);
@@ -203,6 +206,14 @@ Future<void> _showBlockActions(BuildContext context, WidgetRef ref, Block block)
               },
             ),
           ],
+          const SizedBox(height: 10),
+          NeoButton(
+            label: (block.comment == null || block.comment!.isEmpty) ? '✎ add a note' : '✎ edit note',
+            onTap: () {
+              Navigator.pop(sheetContext);
+              editBlockComment(context, ref, block);
+            },
+          ),
           const SizedBox(height: 10),
           NeoButton(
             label: 'delete boundary (merge)',

@@ -48,6 +48,10 @@ app.*.map.json
 .nix
 result
 
+# Browser tooling for `just web-smoke` (see package.json); `just node-deps`
+# installs it.
+/node_modules
+
 # Per-developer environment files that live in the repo root but are not part of
 # the project. Under the agent sandbox these are bind-mounted to /dev/null, so
 # they read as character devices rather than their real contents — staging them

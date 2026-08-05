@@ -5,6 +5,13 @@ import '../domain/block.dart';
 import 'database.dart';
 import 'drift_repositories.dart';
 import 'repositories.dart';
+import 'storage_probe.dart';
+import 'storage_status.dart';
+
+/// Where the local database lives, and whether the browser has promised to keep
+/// it. Resolved once at startup; the app works regardless of the answer, so this
+/// is reported rather than awaited before the first frame.
+final storageStatusProvider = FutureProvider<StorageStatus>((ref) => probeStorage());
 
 final databaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase();

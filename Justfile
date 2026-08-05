@@ -59,7 +59,26 @@ watch:
 web:
     flutter build web
 
-# Web dev server on dev.local:4116.
+# Serve the built PWA with COOP/COEP, which `flutter run -d web-server` cannot
+# set — without them the page is not cross-origin isolated and drift drops to a
+# slower OPFS implementation. Build first with `just web`.
+web-serve port="4242":
+    dart tool/serve_web.dart build/web {{port}}
+
+# Install the browser tooling used by `web-smoke` (playwright-core). The browser
+# binaries themselves come from the environment, not from npm.
+node-deps:
+    npm install --no-audit --no-fund
+
+# Build, serve, and smoke-test the PWA in a real browser: cross-origin
+# isolation, OPFS, persistence, data surviving a reload, and a reload with the
+# network cut. Chromium runs headed under Xvfb — headless swiftshader paints
+# blank CanvasKit frames.
+web-smoke port="4242": web
+    xvfb-run -a node tool/web_smoke.mjs {{port}}
+
+# Web dev server on dev.local:4116. NOTE: 4116 collides with gym_tracker, and
+# this device cannot send COOP/COEP — prefer `just web-serve`.
 up:
     flutter run -d web-server --web-hostname dev.local --web-port 4116
 

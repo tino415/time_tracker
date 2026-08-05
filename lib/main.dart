@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -18,8 +19,24 @@ Future<bool> _detectIsWatch() async {
   }
 }
 
+/// Held for the process lifetime: disposing the handle turns semantics back off,
+/// so it is deliberately never released.
+// ignore: unused_element
+SemanticsHandle? _semanticsHandle;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (kIsWeb) {
+    // Flutter web renders into a canvas and only builds its DOM accessibility
+    // tree once something asks for one — normally a screen reader, or the user
+    // finding the hidden "enable accessibility" button. Asking up front means
+    // assistive technology works immediately, and it gives the page real
+    // <flt-semantics> elements, which is the only way to drive the web build
+    // from a browser test without guessing at canvas coordinates.
+    _semanticsHandle = SemanticsBinding.instance.ensureSemantics();
+  }
+
   final isWatch = await _detectIsWatch();
   runApp(
     ProviderScope(

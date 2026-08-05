@@ -81,6 +81,11 @@ in lib.mkVenv {
     CHROME_EXECUTABLE = "${pkgs.chromium}/bin/chromium";
     QEMU_LD_PREFIX    = "${x86Sysroot}";
     LD_LIBRARY_PATH   = "${x86Sysroot}/lib";
+    # `just web-smoke` drives the built PWA with playwright-core (from
+    # package.json); the browser binaries come from nixpkgs instead of
+    # `npx playwright install`. Keep package.json's playwright version in
+    # step with this one.
+    PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
   };
   paths = [
     pkgs.flutter
@@ -91,6 +96,10 @@ in lib.mkVenv {
     pkgs.chromium
     pkgs.chromedriver
     pkgs.just
+    # Web PWA smoke test: node runs tool/web_smoke.mjs, and chromium has to be
+    # headed under Xvfb — headless swiftshader paints blank CanvasKit frames.
+    pkgs.nodejs
+    pkgs.xvfb-run
     patchedAndroidSdk
   ];
 }

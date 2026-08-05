@@ -110,6 +110,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           primary: true,
           onTap: () => _exportCsv(context, ref, blocks, tree, now),
         ),
+        const SizedBox(height: 14),
+        const _StorageLine(),
       ],
     );
   }
@@ -119,6 +121,41 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final thisWeek = localWeekRange(now).start;
     if (weekStart == thisWeek) return 'This week';
     return '${weekStart.day}/${weekStart.month} – ${end.day}/${end.month}';
+  }
+}
+
+/// Where the data actually lives. "Offline-first" is a promise the user should
+/// be able to check, and on the web it is not guaranteed — a browser can evict
+/// an origin's storage unless it has granted persistence.
+class _StorageLine extends ConsumerWidget {
+  const _StorageLine();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = neo(context);
+    final status = ref.watch(storageStatusProvider).valueOrNull;
+    if (status == null) return const SizedBox.shrink();
+
+    return Row(
+      children: [
+        Text('LOCAL DB · ',
+            style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+        Expanded(
+          child: Text(
+            status.summary,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: mono(
+              context,
+              size: 10,
+              weight: FontWeight.w700,
+              // Evictable storage is the one state worth looking at.
+              color: status.persistent ? t.muted : t.brand,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

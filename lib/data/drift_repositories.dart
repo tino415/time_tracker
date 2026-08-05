@@ -119,6 +119,17 @@ class DriftChangeRepository implements ChangeRepository {
   }
 
   @override
+  Future<List<ActivityChange>> loadChanges() {
+    return (_db.select(_db.activityChanges)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([
+            (t) => OrderingTerm.desc(t.changedAt),
+            (t) => OrderingTerm.desc(t.syncId),
+          ]))
+        .get();
+  }
+
+  @override
   Future<ActivityChange?> currentChange() {
     return (_db.select(_db.activityChanges)
           ..where((t) => t.deletedAt.isNull())

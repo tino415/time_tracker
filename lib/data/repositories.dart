@@ -42,6 +42,11 @@ abstract class ChangeRepository {
   /// Live non-tombstoned changes, newest first.
   Stream<List<ActivityChange>> watchChanges();
 
+  /// One-shot read of the same rows, newest first. Edits that need a boundary's
+  /// *neighbours* (moving one, merging into the previous block) read this rather
+  /// than racing the stream.
+  Future<List<ActivityChange>> loadChanges();
+
   /// The current (latest) change — its set is what's tracking now.
   Future<ActivityChange?> currentChange();
 

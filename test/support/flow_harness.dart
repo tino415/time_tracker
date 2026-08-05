@@ -29,7 +29,14 @@ Finder inScreen(Type screen, Finder matching) =>
 /// Boot the app against a fresh in-memory database. Pass [viewport] to force a
 /// phone-shaped surface (the widget-test default is a 800x600 landscape one);
 /// on a real device leave it null and use the device's own screen.
-Future<AppDatabase> bootApp(WidgetTester tester, {Size? viewport}) async {
+///
+/// [seed] runs against the database *before* the first frame, for tests that
+/// need existing history rather than history built through the UI.
+Future<AppDatabase> bootApp(
+  WidgetTester tester, {
+  Size? viewport,
+  Future<void> Function(AppDatabase db)? seed,
+}) async {
   if (viewport != null) {
     tester.view.physicalSize = viewport;
     tester.view.devicePixelRatio = 1.0;
@@ -39,6 +46,7 @@ Future<AppDatabase> bootApp(WidgetTester tester, {Size? viewport}) async {
 
   final db = AppDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
+  if (seed != null) await seed(db);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [databaseProvider.overrideWithValue(db)],

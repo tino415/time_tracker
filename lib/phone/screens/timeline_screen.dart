@@ -4,15 +4,72 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers.dart';
 import '../../domain/block.dart';
 import '../../format.dart';
-import '../widgets/activity_picker.dart';
-import '../widgets/block_comment.dart';
+import '../widgets/block_actions.dart';
 import '../widgets/neo.dart';
+import 'calendar_screen.dart';
 
-/// The timeline: derived blocks newest-first, grouped by local day. Tap a block
-/// to tag it with another activity (the forgot-to-switch case), edit its note,
-/// or delete the boundary (merging the adjacent blocks).
+/// Which timeline representation is showing. The list is the reading view; the
+/// calendar is the editing view (drag boundaries, split, merge).
+final timelineViewProvider = StateProvider<bool>((_) => false); // true = calendar
+
+/// The timeline: derived blocks newest-first, grouped by local day, with a
+/// toggle to the calendar edit view. Tap a block to tag it with another activity
+/// (the forgot-to-switch case), edit its note, or merge it into the previous
+/// block.
 class TimelineScreen extends ConsumerWidget {
   const TimelineScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final calendar = ref.watch(timelineViewProvider);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: _ViewToggle(
+            calendar: calendar,
+            onChanged: (v) => ref.read(timelineViewProvider.notifier).state = v,
+          ),
+        ),
+        Expanded(child: calendar ? const CalendarScreen() : const _TimelineList()),
+      ],
+    );
+  }
+}
+
+class _ViewToggle extends StatelessWidget {
+  const _ViewToggle({required this.calendar, required this.onChanged});
+  final bool calendar;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: NeoButton(
+            label: '≣ list',
+            primary: !calendar,
+            shadowOffset: 3,
+            onTap: () => onChanged(false),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: NeoButton(
+            label: '▦ calendar',
+            primary: calendar,
+            shadowOffset: 3,
+            onTap: () => onChanged(true),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TimelineList extends ConsumerWidget {
+  const _TimelineList();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -41,7 +98,9 @@ class TimelineScreen extends ConsumerWidget {
           }
           rows.add(Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: _BlockCard(block: b, now: now),
+            // Blocks are newest-first, so the last one is the earliest — it has
+            // no preceding boundary to merge into.
+            child: _BlockCard(block: b, now: now, canMerge: b != blocks.last),
           ));
         }
         return ListView(
@@ -63,7 +122,8 @@ class TimelineScreen extends ConsumerWidget {
 }
 
 class _BlockCard extends ConsumerWidget {
-  const _BlockCard({required this.block, required this.now});
+  const _BlockCard({required this.block, required this.now, this.canMerge = true});
+  final bool canMerge;
   final Block block;
   final DateTime now;
 
@@ -77,7 +137,7 @@ class _BlockCard extends ConsumerWidget {
         : '${formatTimeOfDay(block.start)} – ${formatTimeOfDay(block.end!)}';
 
     return NeoPressable(
-      onTap: () => _showBlockActions(context, ref, block),
+      onTap: () => showBlockActions(context, ref, block, canMerge: canMerge),
       shadowOffset: 5,
       padding: EdgeInsets.zero,
       child: IntrinsicHeight(
@@ -157,73 +217,3 @@ class _ColourRail extends StatelessWidget {
   }
 }
 
-Future<void> _showBlockActions(BuildContext context, WidgetRef ref, Block block) async {
-  final t = neo(context);
-  await showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (sheetContext) => Container(
-      margin: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          NeoChip('Block · ${block.activities.map((a) => a.name).join(", ")}'),
-          const SizedBox(height: 14),
-          NeoButton(
-            label: '+ tag another activity',
-            onTap: () async {
-              Navigator.pop(sheetContext);
-              final id = await showActivityPicker(
-                context,
-                ref,
-                title: 'Tag with activity',
-                exclude: block.activities.map((a) => a.syncId).toSet(),
-              );
-              if (id != null) {
-                await ref.read(changeRepositoryProvider).addActivityToChange(block.change.syncId, id);
-              }
-            },
-          ),
-          if (block.activities.length > 1) ...[
-            const SizedBox(height: 10),
-            NeoButton(
-              label: '- untag an activity',
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                final id = await showActivityPicker(
-                  context,
-                  ref,
-                  title: 'Remove which activity',
-                  // Only this block's own set can be untagged.
-                  only: block.activities.map((a) => a.syncId).toSet(),
-                );
-                if (id != null) {
-                  await ref.read(changeRepositoryProvider).removeActivityFromChange(block.change.syncId, id);
-                }
-              },
-            ),
-          ],
-          const SizedBox(height: 10),
-          NeoButton(
-            label: (block.comment == null || block.comment!.isEmpty) ? '✎ add a note' : '✎ edit note',
-            onTap: () {
-              Navigator.pop(sheetContext);
-              editBlockComment(context, ref, block);
-            },
-          ),
-          const SizedBox(height: 10),
-          NeoButton(
-            label: 'delete boundary (merge)',
-            onTap: () async {
-              Navigator.pop(sheetContext);
-              await ref.read(changeRepositoryProvider).deleteChange(block.change.syncId);
-            },
-          ),
-        ],
-      ),
-    ),
-  );
-}

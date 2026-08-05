@@ -1,12 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../domain/block.dart';
+import '../domain/calendar.dart';
 import 'database.dart';
 import 'providers.dart';
 import 'repositories.dart';
 
-/// Compound actions that span both repositories. The screens call this instead
-/// of wiring two repos together themselves — chiefly so a "switch" also bumps
-/// the target activity's recency for the autocomplete.
+/// The actions the screens invoke: the ones that span both repositories (a
+/// "switch" also bumps the target activity's recency for the autocomplete), and
+/// the timeline edits that need a boundary's neighbours before they are safe to
+/// write. Screens call this instead of wiring the repositories together
+/// themselves.
 class TrackerController {
   TrackerController(this._activities, this._changes);
 
@@ -54,6 +58,72 @@ class TrackerController {
     );
     await switchTo(activity.syncId);
     return activity;
+  }
+
+  // ---- calendar edits ------------------------------------------------------
+
+  /// Move an existing boundary — the calendar's drag-to-resize. One boundary is
+  /// shared by two blocks, so this retimes the end of the earlier block and the
+  /// start of the later one in a single write.
+  ///
+  /// [to] is clamped to stay strictly between the neighbouring boundaries (and
+  /// out of the future), so a drag can never reorder the timeline. If the
+  /// neighbours leave no legal room, or the boundary would not actually move,
+  /// this is a no-op.
+  Future<void> moveBoundary(
+    String changeId,
+    DateTime to, {
+    DateTime? now,
+    Duration minBlock = const Duration(minutes: 1),
+  }) async {
+    final ascending = (await _changes.loadChanges()).reversed.toList();
+    final i = ascending.indexWhere((c) => c.syncId == changeId);
+    if (i < 0) return;
+
+    final target = clampBoundary(
+      desired: to,
+      previous: i > 0 ? ascending[i - 1].changedAt : null,
+      next: i + 1 < ascending.length ? ascending[i + 1].changedAt : null,
+      notAfter: now ?? DateTime.now(),
+      minBlock: minBlock,
+    );
+    if (target == null || target == ascending[i].changedAt) return;
+
+    await _changes.setChangedAt(changeId, target);
+  }
+
+  /// Split [block] at [at], tracking [activityId] from that instant on. A split
+  /// *is* a switch with an explicit timestamp — the new boundary is the split —
+  /// so this also bumps recency like any other switch.
+  ///
+  /// Refuses a point that would leave a half shorter than [minBlock] (including
+  /// a block too short to split at all), so the split always yields two real
+  /// blocks.
+  Future<void> splitBlock({
+    required Block block,
+    required DateTime at,
+    required String activityId,
+    DateTime? now,
+    Duration minBlock = const Duration(minutes: 1),
+  }) async {
+    final end = block.end ?? (now ?? DateTime.now());
+    final lower = block.start.add(minBlock);
+    final upper = end.subtract(minBlock);
+    if (upper.isBefore(lower)) return;
+    if (at.isBefore(lower) || at.isAfter(upper)) return;
+
+    await switchTo(activityId, at: at);
+  }
+
+  /// Merge a block into the one before it by deleting the boundary that opens
+  /// it. The earliest block has no boundary before it — nothing to delete, and
+  /// removing it would silently drop the start of recorded history — so that is
+  /// a no-op.
+  Future<void> mergeIntoPrevious(String changeId) async {
+    final ascending = (await _changes.loadChanges()).reversed.toList();
+    if (ascending.isEmpty || ascending.first.syncId == changeId) return;
+    if (!ascending.any((c) => c.syncId == changeId)) return;
+    await _changes.deleteChange(changeId);
   }
 }
 

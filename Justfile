@@ -22,6 +22,18 @@ analyze:
 test:
     flutter test --no-pub
 
+# A subset of the same suite, for a tight edit/run loop. Takes any `flutter test`
+# arguments — one or more files, or a name filter:
+#   just test-only test/calendar_test.dart
+#   just test-only --plain-name moveBoundary
+#   just test-only test/calendar_test.dart test/domain_test.dart
+test-only +args:
+    flutter test --no-pub {{args}}
+
+# Only what failed, with the full failure output and no progress spam.
+test-failures +args="test":
+    flutter test --no-pub --reporter=failures-only {{args}}
+
 # On-device end-to-end tests (integration_test/). Needs a running emulator —
 # start one with the `droid` CLI. `flutter devices` lists the ids; override with
 # `just e2e device=<id>` if the emulator came up on a different port.

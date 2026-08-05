@@ -10,6 +10,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:time_tracker/phone/screens/activities_screen.dart';
+import 'package:time_tracker/phone/screens/calendar_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
@@ -19,7 +20,7 @@ import '../test/support/flow_harness.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('create an activity, track it, tag the block, see it reported', (tester) async {
+  testWidgets('create an activity, track it, tag the block, report and chart it', (tester) async {
     await bootApp(tester);
 
     // ---- Now: empty state -> create & switch -------------------------------
@@ -61,6 +62,16 @@ void main() {
     // Both tagged activities are top-level, so both get an even-split bar.
     expect(inScreen(ReportsScreen, find.text('Deep work')), findsOneWidget);
     expect(inScreen(ReportsScreen, find.text('Email')), findsOneWidget);
+
+    // ---- Calendar: the same block on the day axis --------------------------
+    await openTab(tester, 'TIMELINE');
+    await tester.tap(find.text('▦ CALENDAR'));
+    await settle(tester);
+    expect(find.byType(CalendarScreen), findsOneWidget);
+    expect(inScreen(CalendarScreen, find.text('Today')), findsOneWidget);
+    // The block is only seconds old here, so its card is a sliver — it still has
+    // to render.
+    expect(inScreen(CalendarScreen, find.text('Deep work  +  Email')), findsOneWidget);
 
     await disposeApp(tester);
   });

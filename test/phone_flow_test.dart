@@ -2,71 +2,24 @@
 // first run -> create an activity -> it tracks -> the timeline shows the block
 // -> tagging a second activity onto it marks it as the forgot-to-switch case.
 //
-// Harness note: the tab bar is an IndexedStack, whose off-screen children stay
-// built, so screen finders are scoped with [inScreen] to avoid matching a hidden
-// tab's identical label (both Now and Activities offer "+ NEW ACTIVITY").
+// The same flow runs on a real device in integration_test/flow_test.dart; the
+// shared helpers live in test/support/flow_harness.dart.
 
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:time_tracker/data/database.dart';
-import 'package:time_tracker/data/providers.dart';
-import 'package:time_tracker/phone/phone_app.dart';
 import 'package:time_tracker/phone/screens/activities_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
 
-/// A bounded stand-in for `pumpAndSettle`, which would never return here: the
-/// Now hero animates forever (live dot + second ticker). Route and sheet
-/// transitions need *successive* frames — one big `pump(1s)` only starts them —
-/// and they ignore pointers until finished, so taps before this are inert.
-Future<void> settle(WidgetTester tester, {int frames = 24}) async {
-  for (var i = 0; i < frames; i++) {
-    await tester.pump(const Duration(milliseconds: 50));
-  }
-}
+import 'support/flow_harness.dart';
 
-Finder inScreen(Type screen, Finder matching) =>
-    find.descendant(of: find.byType(screen), matching: matching);
-
-Future<AppDatabase> pumpApp(WidgetTester tester) async {
-  // A phone-shaped viewport — the default 800x600 test surface is landscape and
-  // would push the bottom sheets' actions off-screen.
-  tester.view.physicalSize = const Size(400, 880);
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-
-  final db = AppDatabase.forTesting(NativeDatabase.memory());
-  addTearDown(db.close);
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [databaseProvider.overrideWithValue(db)],
-      child: const PhoneApp(),
-    ),
-  );
-  await settle(tester); // route transition + first stream emissions
-  return db;
-}
-
-/// Fills the activity-editor sheet (the last text field in the tree is the one
-/// in the freshly pushed sheet) and confirms it.
-Future<void> fillEditor(WidgetTester tester, String name, {required String confirm}) async {
-  await tester.enterText(find.byType(TextField).last, name);
-  await tester.pump();
-  await tester.tap(find.text(confirm));
-  await settle(tester);
-}
-
-Future<void> openTab(WidgetTester tester, String label) async {
-  await tester.tap(find.text(label));
-  await settle(tester);
-}
+// The default 800x600 test surface is landscape and would push the bottom
+// sheets' actions off-screen.
+const _phone = Size(400, 880);
 
 void main() {
   testWidgets('first run offers activity creation and starts tracking it', (tester) async {
-    await pumpApp(tester);
+    await bootApp(tester, viewport: _phone);
 
     expect(inScreen(NowScreen, find.text('nothing tracked yet')), findsOneWidget);
 
@@ -77,10 +30,12 @@ void main() {
     // The hero now shows the running activity.
     expect(inScreen(NowScreen, find.text('TRACKING')), findsOneWidget);
     expect(inScreen(NowScreen, find.text('Deep work')), findsWidgets);
+
+    await disposeApp(tester);
   });
 
   testWidgets('the running block appears on the timeline and can be tagged', (tester) async {
-    await pumpApp(tester);
+    await bootApp(tester, viewport: _phone);
 
     await tester.tap(inScreen(NowScreen, find.text('+ NEW ACTIVITY')));
     await settle(tester);
@@ -93,7 +48,8 @@ void main() {
     await fillEditor(tester, 'Email', confirm: 'CREATE');
 
     await openTab(tester, 'TIMELINE');
-    expect(inScreen(TimelineScreen, find.text('Today')), findsOneWidget);
+    // NeoChip uppercases its label, so the day header renders as "TODAY".
+    expect(inScreen(TimelineScreen, find.text('TODAY')), findsOneWidget);
     expect(inScreen(TimelineScreen, find.text('● open')), findsOneWidget);
 
     // Tag the open block with the second activity (the forgot-to-switch case).
@@ -106,10 +62,12 @@ void main() {
 
     expect(inScreen(TimelineScreen, find.text('Deep work  +  Email')), findsOneWidget);
     expect(inScreen(TimelineScreen, find.textContaining('forgot to switch')), findsOneWidget);
+
+    await disposeApp(tester);
   });
 
   testWidgets('re-tapping the running activity does not split the block', (tester) async {
-    final db = await pumpApp(tester);
+    final db = await bootApp(tester, viewport: _phone);
 
     await tester.tap(inScreen(NowScreen, find.text('+ NEW ACTIVITY')));
     await settle(tester);
@@ -126,5 +84,7 @@ void main() {
     await settle(tester);
 
     expect((await db.select(db.activityChanges).get()).length, 1);
+
+    await disposeApp(tester);
   });
 }

@@ -47,3 +47,23 @@ app.*.map.json
 # nix env (built from default.nix, tangled from repositories.org)
 .nix
 result
+
+# Per-developer environment files that live in the repo root but are not part of
+# the project. Under the agent sandbox these are bind-mounted to /dev/null, so
+# they read as character devices rather than their real contents — staging them
+# would commit an empty file over whatever is actually there.
+/.bash_profile
+/.bashrc
+/.profile
+/.zprofile
+/.zshrc
+/.gitconfig
+/.gitmodules
+/.ripgreprc
+/.mcp.json
+/.vscode
+
+# Agent workspace: local permission overrides and machine-local state. If a
+# shared project config is ever wanted, add it deliberately with
+# `git add -f .claude/settings.json`.
+/.claude/

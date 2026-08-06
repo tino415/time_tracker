@@ -37,11 +37,17 @@ SQLite database in the browser via drift's wasm build, stored in **OPFS**.
 
 Two host requirements come with that:
 
-**Cross-origin isolation.** `Cross-Origin-Opener-Policy: same-origin` plus
-`Cross-Origin-Embedder-Policy: require-corp` enable `SharedArrayBuffer`, which
-drift's fastest OPFS implementation needs. Without them the app still works —
-drift falls back — but it takes a slower path. `flutter run -d web-server` cannot
-send response headers at all, which is why `just web-serve` exists.
+**Cross-origin isolation (optional).** `Cross-Origin-Opener-Policy: same-origin`
+plus `Cross-Origin-Embedder-Policy: require-corp` enable `SharedArrayBuffer`,
+which drift's fastest OPFS implementation uses. **The app does not need them** —
+without isolation drift picks an implementation that does not want
+`SharedArrayBuffer`, and everything works. Plain `flutter run -d web-server` is
+fine for development.
+
+`just web-serve` exists for `just web-smoke`, not for development: the smoke test
+needs a *built* bundle (service worker, offline reload, hashed assets), which
+`flutter run` does not produce or serve, and serving it with the headers lets the
+test cover the isolated path too.
 
 **Storage persistence.** Browsers may evict an origin's storage under disk
 pressure, which for this app means losing recorded time. The app calls

@@ -25,8 +25,16 @@ class FakeWearBridge implements WearBridge {
   @override
   Stream<WearReachability> get reachability => _reachability.stream;
 
+  /// Whether a peer is reachable. Set false to model an out-of-range send, which
+  /// the sender must notice rather than assume delivered.
+  bool deliverable = true;
+
   @override
-  Future<void> send(WearMessage message) async => sent.add(message);
+  Future<bool> send(WearMessage message) async {
+    if (!deliverable) return false;
+    sent.add(message);
+    return true;
+  }
 
   @override
   Future<void> drainPending() async {
@@ -37,14 +45,24 @@ class FakeWearBridge implements WearBridge {
     pending = [];
   }
 
-  /// Simulate the peer sending something.
+  /// Simulate the peer sending something, without waiting for the handlers.
+  ///
+  /// Widget tests must use this and then pump the tester: [pump] below waits on
+  /// a real timer, and inside `testWidgets` timers are fake — they only fire
+  /// when the tester pumps, so awaiting one from the test body deadlocks.
+  void emit(WearMessage message) => _messages.add(message);
+
+  void emitReachability(WearReachability state) => _reachability.add(state);
+
+  /// Simulate the peer sending something and let the handlers finish. Plain
+  /// `test()` only — see [emit].
   Future<void> receive(WearMessage message) async {
-    _messages.add(message);
+    emit(message);
     await pump();
   }
 
   Future<void> becomes(WearReachability state) async {
-    _reachability.add(state);
+    emitReachability(state);
     await pump();
   }
 

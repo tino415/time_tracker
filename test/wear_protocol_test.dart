@@ -13,32 +13,65 @@ WearMessage? roundTrip(WearMessage message) =>
 
 void main() {
   group('BookmarkSnapshot', () {
-    test('round-trips activities and the current selection', () {
+    test('round-trips activities and the current block', () {
       final original = BookmarkSnapshot(
         activities: const [
           WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
           WearActivity(syncId: 'b', name: 'Email', color: '#EE7C4F'),
         ],
-        currentActivityId: 'a',
+        current: CurrentBlock(
+          changeId: 'c1',
+          startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000123),
+          activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+        ),
       );
 
       final decoded = roundTrip(original) as BookmarkSnapshot;
 
       expect(decoded.activities, original.activities);
-      expect(decoded.currentActivityId, 'a');
+      // The watch reproduces the phone's boundary, so the id and the instant
+      // both have to survive exactly — otherwise it invents a second one and
+      // its elapsed clock is wrong.
+      expect(decoded.current!.changeId, 'c1');
+      expect(decoded.current!.startedAt.millisecondsSinceEpoch, 1770000000123);
+      expect(decoded.current!.activity.name, 'Deep work');
     });
 
-    test('an absent current selection stays absent', () {
+    test('the tracked activity travels whole, not as an id', () {
+      // The phone may be tracking something that is not bookmarked, so it is
+      // absent from `activities` — the watch still needs enough to draw it and
+      // to give its block a row to point at.
+      final decoded = roundTrip(BookmarkSnapshot(
+        activities: const [],
+        current: CurrentBlock(
+          changeId: 'c1',
+          startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+          activity: const WearActivity(syncId: 'z', name: 'Ad hoc', color: '#123456'),
+        ),
+      )) as BookmarkSnapshot;
+
+      expect(decoded.activities, isEmpty);
+      expect(decoded.current!.activity.syncId, 'z');
+      expect(decoded.current!.activity.color, '#123456');
+    });
+
+    test('an absent current block stays absent', () {
       final decoded = roundTrip(const BookmarkSnapshot(activities: [])) as BookmarkSnapshot;
 
       expect(decoded.activities, isEmpty);
-      expect(decoded.currentActivityId, isNull);
+      expect(decoded.current, isNull);
     });
 
-    test('an empty current id is treated as none', () {
-      final decoded = BookmarkSnapshot.fromPayload({'currentActivityId': ''});
+    test('a malformed current block is dropped, the snapshot survives', () {
+      final decoded = BookmarkSnapshot.fromPayload({
+        'activities': [
+          {'syncId': 'a', 'name': 'A', 'color': '#fff'},
+        ],
+        'current': {'changeId': 'c1'}, // no startedAt, no activity
+      });
 
-      expect(decoded.currentActivityId, isNull);
+      expect(decoded.activities, hasLength(1));
+      expect(decoded.current, isNull);
     });
 
     test('malformed activity entries are skipped, the rest survive', () {

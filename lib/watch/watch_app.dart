@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/providers.dart';
 import '../data/wear_sync.dart';
 import '../domain/block.dart';
+import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
 import '../format.dart';
 import '../phone/widgets/neo.dart';
@@ -59,29 +60,46 @@ class _WatchHome extends ConsumerWidget {
             _NowHeader(current: current),
             const SizedBox(height: 6),
             Expanded(
-              child: bookmarked.isEmpty
-                  ? const _Empty()
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      itemCount: bookmarked.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 6),
-                      itemBuilder: (context, i) {
-                        final a = bookmarked[i];
-                        final selected = a.syncId == currentId;
-                        return _ActivityTile(
-                          name: a.name,
-                          color: parseHexColor(a.color),
-                          selected: selected,
-                          // Tapping what is already running would only split the
-                          // block; the phone guards this too, but not offering it
-                          // is clearer than a tap that does nothing.
-                          onTap: selected
-                              ? null
-                              : () => ref.read(wearSyncProvider).requestSwitch(a.syncId),
-                        );
-                      },
-                    ),
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                // One extra row at the top: "start now". On a watch this is the
+                // most valuable action of all — a glance and a tap, with the
+                // naming deferred to the phone.
+                itemCount: bookmarked.length + 1,
+                separatorBuilder: (_, _) => const SizedBox(height: 6),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    final unnamedRunning =
+                        current != null && isUnsortedSet(current.activities);
+                    return _ActivityTile(
+                      name: unnamedRunning ? 'unnamed · name on phone' : 'start now',
+                      color: parseHexColor(kUnsortedColor),
+                      selected: unnamedRunning,
+                      onTap: unnamedRunning
+                          ? null
+                          : () => ref.read(wearSyncProvider).startUnsorted(),
+                    );
+                  }
+
+                  final a = bookmarked[index - 1];
+                  final selected = a.syncId == currentId;
+                  return _ActivityTile(
+                    name: a.name,
+                    color: parseHexColor(a.color),
+                    selected: selected,
+                    // Tapping what is already running would only split the
+                    // block; the phone guards this too, but not offering it is
+                    // clearer than a tap that does nothing.
+                    onTap: selected
+                        ? null
+                        : () => ref.read(wearSyncProvider).requestSwitch(a.syncId),
+                  );
+                },
+              ),
             ),
+            // The start-now tile means the screen is never empty, so this is a
+            // hint rather than an empty state.
+            if (bookmarked.isEmpty) const _NoBookmarksHint(),
           ],
         ),
       ),
@@ -143,11 +161,10 @@ class _NowHeader extends StatelessWidget {
   }
 }
 
-/// Nothing to show: either the phone has not sent a snapshot yet, or it has no
-/// bookmarks. Both are fixed on the phone, so say which rather than offering a
-/// creation flow this screen has no room for.
-class _Empty extends ConsumerWidget {
-  const _Empty();
+/// No bookmarks yet. Not an empty state — "start now" is still there and is the
+/// action that matters — just a pointer at where bookmarks come from.
+class _NoBookmarksHint extends ConsumerWidget {
+  const _NoBookmarksHint();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -155,14 +172,12 @@ class _Empty extends ConsumerWidget {
     final reachable =
         ref.watch(wearReachabilityProvider).valueOrNull == WearReachability.reachable;
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Text(
-          reachable ? 'waiting for the phone…' : 'bookmark activities\non the phone',
-          textAlign: TextAlign.center,
-          style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        reachable ? 'waiting for the phone…' : 'bookmark on the phone',
+        textAlign: TextAlign.center,
+        style: mono(context, size: 9, weight: FontWeight.w700, color: t.muted),
       ),
     );
   }

@@ -1,7 +1,17 @@
-// Serves a built web bundle with the headers the PWA needs. `flutter run -d
-// web-server` cannot set response headers, and without COOP/COEP the page is
-// not cross-origin isolated, so drift falls back from the shared-memory OPFS
-// implementation. This is also what the offline smoke test runs against.
+// Serves a *built* web bundle, for `just web-smoke`.
+//
+// This is not required to develop against, and drift on the web does not need
+// it: without COOP/COEP the page simply is not cross-origin isolated, so drift
+// uses an OPFS implementation that does not want SharedArrayBuffer. That works
+// fine — it is the arrangement gym_tracker runs on.
+//
+// It exists because the smoke test checks things only a *release-shaped* bundle
+// has: the generated service worker, offline reload, and the hashed assets in
+// build/web. `flutter run -d web-server` serves its own dev build and cannot
+// serve build/web at all, and this toolchain's `flutter run` has no
+// `--web-header` flag to add the isolation headers either. So: a small static
+// server, which also lets the smoke test assert the isolated path rather than
+// only the fallback.
 //
 //   dart tool/serve_web.dart [directory] [port]
 //

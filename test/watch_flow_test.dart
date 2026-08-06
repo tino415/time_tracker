@@ -12,6 +12,7 @@ import 'package:time_tracker/data/drift_repositories.dart';
 import 'package:time_tracker/data/providers.dart';
 import 'package:time_tracker/data/wear_bridge.dart';
 import 'package:time_tracker/data/wear_sync.dart';
+import 'package:time_tracker/domain/unsorted.dart';
 import 'package:time_tracker/domain/wear_protocol.dart';
 import 'package:time_tracker/watch/watch_app.dart';
 
@@ -77,6 +78,41 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('shows what the phone is tracking', (tester) async {
+    // The regression this guards: the watch read "nothing tracked" while the
+    // phone was running, because the snapshot's current block was discarded.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    final sync = WearSyncService(
+      bridge: bridge,
+      activities: DriftActivityRepository(db),
+      changes: DriftChangeRepository(db),
+      isWatch: true,
+    );
+    addTearDown(sync.dispose);
+    await sync.start();
+
+    // emit + settle, not receive: receive awaits a real timer, and inside
+    // testWidgets timers only fire when the tester pumps.
+    bridge.emit(BookmarkSnapshot(
+      activities: const [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+      current: CurrentBlock(
+        changeId: 'phone-change',
+        startedAt: DateTime.now().subtract(const Duration(minutes: 12)),
+        activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+      ),
+    ));
+    await settle(tester);
+
+    expect(find.text('nothing tracked'), findsNothing);
+    // Named in the header as well as listed as a tile.
+    expect(find.text('Deep work'), findsWidgets);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('tapping a tile starts tracking it and relays the switch', (tester) async {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
@@ -116,12 +152,26 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('an empty catalogue points the user at the phone', (tester) async {
+  testWidgets('start now works with no bookmarks at all', (tester) async {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
-    await pumpWatch(tester, bridge);
+    final db = await pumpWatch(tester, bridge);
 
-    expect(find.textContaining('bookmark activities'), findsOneWidget);
+    // The screen is never empty: "start now" is the action that matters on a
+    // watch, and it needs no catalogue.
+    expect(tile('start now'), findsOneWidget);
+    expect(find.textContaining('bookmark on the phone'), findsOneWidget);
+
+    await tester.tap(tile('start now'));
+    await settle(tester);
+
+    // The catch-all is created locally — the phone only ever sends *bookmarked*
+    // activities, and this one is not a bookmark.
+    final local = await DriftActivityRepository(db).loadActivities();
+    expect(local.single.syncId, kUnsortedActivityId);
+    final rows = await DriftChangeRepository(db).loadChanges();
+    expect(rows, hasLength(1));
+    expect(bridge.sent.whereType<SwitchRequest>().single.activityId, kUnsortedActivityId);
 
     await disposeApp(tester);
   });

@@ -74,22 +74,61 @@ sealed class WearMessage {
   }
 }
 
+/// What the phone is tracking right now, in enough detail for the watch to
+/// reproduce the block locally.
+///
+/// The activity travels whole rather than as an id: the phone may be tracking
+/// something that is *not* bookmarked, so the watch would otherwise have no row
+/// to point its block at. [changeId] and [startedAt] are the phone's own, so the
+/// watch writes the same boundary rather than a second one — and can run a live
+/// elapsed clock instead of guessing when it started.
+class CurrentBlock {
+  const CurrentBlock({
+    required this.changeId,
+    required this.startedAt,
+    required this.activity,
+  });
+
+  final String changeId;
+  final DateTime startedAt;
+  final WearActivity activity;
+
+  Map<String, Object?> toPayload() => {
+        'changeId': changeId,
+        'startedAt': startedAt.millisecondsSinceEpoch,
+        'activity': activity.toPayload(),
+      };
+
+  static CurrentBlock? fromPayload(Object? raw) {
+    if (raw is! Map) return null;
+    final changeId = raw['changeId'];
+    final startedAt = raw['startedAt'];
+    final activity = WearActivity.fromPayload(raw['activity']);
+    if (changeId is! String || changeId.isEmpty) return null;
+    if (startedAt is! int || activity == null) return null;
+    return CurrentBlock(
+      changeId: changeId,
+      startedAt: DateTime.fromMillisecondsSinceEpoch(startedAt),
+      activity: activity,
+    );
+  }
+}
+
 /// Phone → watch: the whole bookmarked set, plus what is tracking right now.
 ///
 /// A full snapshot rather than a diff: the set is small, and it means a watch
 /// that missed messages while off the wrist recovers completely from the next
 /// one instead of accumulating drift.
 class BookmarkSnapshot extends WearMessage {
-  const BookmarkSnapshot({required this.activities, this.currentActivityId});
+  const BookmarkSnapshot({required this.activities, this.current});
 
   static const kind = 'bookmarks';
 
   final List<WearActivity> activities;
 
-  /// The single activity on the open block, or null when the phone is tracking
-  /// nothing or tracking a multi-activity ("forgot to switch") block, which the
-  /// watch has no way to represent.
-  final String? currentActivityId;
+  /// The open block, or null when the phone tracks nothing — or tracks a
+  /// multi-activity ("forgot to switch") block, which the watch cannot show.
+  final CurrentBlock? current;
 
   @override
   String get type => kind;
@@ -97,18 +136,17 @@ class BookmarkSnapshot extends WearMessage {
   @override
   Map<String, Object?> toPayload() => {
         'activities': [for (final a in activities) a.toPayload()],
-        'currentActivityId': currentActivityId,
+        'current': current?.toPayload(),
       };
 
   static BookmarkSnapshot fromPayload(Map<Object?, Object?> payload) {
     final raw = payload['activities'];
     final list = raw is List ? raw : const [];
-    final current = payload['currentActivityId'];
     return BookmarkSnapshot(
       // Unparseable entries are skipped rather than failing the whole snapshot:
       // a peer on a newer build may send fields this one does not know.
       activities: [for (final entry in list) ?WearActivity.fromPayload(entry)],
-      currentActivityId: current is String && current.isNotEmpty ? current : null,
+      current: CurrentBlock.fromPayload(payload['current']),
     );
   }
 }

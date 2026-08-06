@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
+import '../../domain/unsorted.dart';
 import 'activity_picker.dart';
+import 'assign_activity.dart';
 import 'block_comment.dart';
 import 'neo.dart';
 
@@ -35,6 +37,18 @@ Future<void> showBlockActions(
         children: [
           NeoChip('Block · ${block.activities.map((a) => a.name).join(", ")}'),
           const SizedBox(height: 14),
+          // An unnamed block's only interesting action is naming it, so it leads.
+          if (isUnsortedSet(block.activities)) ...[
+            NeoButton(
+              label: '▸ what was this?',
+              primary: true,
+              onTap: () {
+                Navigator.pop(sheetContext);
+                assignBlockActivity(context, ref, block);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
           NeoButton(
             label: '+ tag another activity',
             onTap: () async {

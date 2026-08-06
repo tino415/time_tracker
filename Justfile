@@ -58,9 +58,11 @@ watch:
 web:
     flutter build web
 
-# Serve the built PWA with COOP/COEP, which `flutter run -d web-server` cannot
-# set — without them the page is not cross-origin isolated and drift drops to a
-# slower OPFS implementation. Build first with `just web`.
+# Serve the *built* PWA (build/web) with COOP/COEP. Not needed for ordinary
+# development — drift works without cross-origin isolation, it just uses an OPFS
+# implementation that does not want SharedArrayBuffer. This exists so the smoke
+# test can exercise a release-shaped bundle: service worker, offline reload,
+# hashed assets. Build first with `just web`.
 web-serve port="4242":
     dart tool/serve_web.dart build/web {{port}}
 
@@ -88,6 +90,18 @@ phone-apk:
 # Debug APK for the watch + Wear emulator (fat 32+64), for the watch phase.
 watch-apk:
     flutter build apk --debug --target-platform android-arm,android-arm64
+
+# Build and install on a device. `flutter devices` lists the ids; a phone paired
+# over wifi shows up as an ip:port that changes between pairings, so pass it:
+#   just deploy device=192.168.1.158:36915
+# One APK serves both form factors — the watch build is the fat one, so a watch
+# target needs `just watch-apk` + `just deploy` rather than this recipe's APK.
+deploy device: phone-apk
+    flutter install -d {{device}} --debug
+
+# Same for a Wear OS target (needs the 32+64 APK).
+deploy-watch device: watch-apk
+    flutter install -d {{device}} --debug
 
 # flutter clean
 clean:

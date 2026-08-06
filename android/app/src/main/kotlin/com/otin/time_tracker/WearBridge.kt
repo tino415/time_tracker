@@ -118,10 +118,29 @@ class WearBridge(
                     .getCapability(CAPABILITY, CapabilityClient.FILTER_REACHABLE)
                     .await()
                     .nodes
-                for (node in nodes) {
-                    messageClient.sendMessage(node.id, PATH, bytes).await()
+                // Reporting success for an empty node set is how a message gets
+                // silently dropped: the sender marks the state as delivered and
+                // never sends it again. Nothing reachable is a failure.
+                if (nodes.isEmpty()) {
+                    Log.d(TAG, "send($type): no reachable peer")
+                    result.error("no_peer", "no reachable peer", null)
+                    return@launch
                 }
-                result.success(null)
+                var delivered = 0
+                for (node in nodes) {
+                    try {
+                        messageClient.sendMessage(node.id, PATH, bytes).await()
+                        delivered++
+                    } catch (t: Throwable) {
+                        // One unreachable node among several is not fatal.
+                        Log.d(TAG, "send($type) to ${node.id} failed: ${t.message}")
+                    }
+                }
+                if (delivered > 0) {
+                    result.success(null)
+                } else {
+                    result.error("send_failed", "no node accepted the message", null)
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, "send($type) failed: ${t.message}")
                 result.error("send_failed", t.message ?: "send failed", null)

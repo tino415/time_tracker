@@ -67,7 +67,10 @@ void main() {
     expect(bridge.sent.whereType<SnapshotRequest>(), isNotEmpty,
         reason: 'the watch asks the phone for the bookmark set on start');
 
-    await bridge.receive(const BookmarkSnapshot(activities: [
+    // emit + settle rather than receive: this binding happens to use a real
+    // clock, but the widget-test one does not, and the difference is not worth
+    // depending on.
+    bridge.emit(const BookmarkSnapshot(activities: [
       WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
       WearActivity(syncId: 'b', name: 'Email', color: '#EE7C4F'),
     ]));

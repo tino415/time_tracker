@@ -39,6 +39,29 @@ class TrackerController {
     return ids.length == 1 && ids.first == activityId;
   }
 
+  /// Start tracking *something*, right now, without deciding what.
+  ///
+  /// The whole point is that this costs one tap and no typing: the boundary
+  /// opens at the moment of the tap against the catch-all activity, and the
+  /// block is answered later with [assignBlock]. Deciding first would charge the
+  /// deciding to whatever you were doing before.
+  ///
+  /// Tapping it while an unnamed block is already running is a no-op, because
+  /// [switchTo] refuses to re-open what is already tracking.
+  Future<void> startUnsorted() async {
+    final unsorted = await _activities.ensureUnsorted();
+    await switchTo(unsorted.syncId);
+  }
+
+  /// Answer an unnamed block: re-point it at [activityId], keeping its start.
+  ///
+  /// Not a switch — no new boundary — so the elapsed time, including the seconds
+  /// spent choosing, belongs to the activity finally picked.
+  Future<void> assignBlock(String changeId, String activityId) async {
+    await _changes.setChangeActivity(changeId, activityId);
+    await _activities.touchUsed(activityId, DateTime.now());
+  }
+
   /// Create a work task (a leaf under [parentId]) from a pasted "CU-1234 Title",
   /// inheriting the parent's colour unless [color] is given, then switch to it.
   /// Returns the new activity.

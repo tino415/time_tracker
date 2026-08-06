@@ -5,9 +5,11 @@ import '../../data/database.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
+import '../../domain/unsorted.dart';
 import '../../format.dart';
 import '../../theme/tokens.dart';
 import '../widgets/activity_editor.dart';
+import '../widgets/assign_activity.dart';
 import '../widgets/block_comment.dart';
 import '../widgets/neo.dart';
 
@@ -42,8 +44,41 @@ class NowScreen extends ConsumerWidget {
             ],
           ),
         ),
+        const _StartNowBar(),
         const _QuickSwitchField(),
       ],
+    );
+  }
+}
+
+/// One tap, no typing: open a boundary *now* and decide what it was afterwards.
+///
+/// Sits directly above the search field and below the fold of everything else,
+/// because the whole value is that it is reachable without reading the screen.
+class _StartNowBar extends ConsumerWidget {
+  const _StartNowBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = neo(context);
+    final current = ref.watch(currentBlockProvider);
+    // Already running something unnamed — offering to start another would just
+    // split it, and the useful action then is naming this one.
+    if (current != null && isUnsortedSet(current.activities)) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: Border(top: BorderSide(color: t.line, width: 3)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: NeoButton(
+        label: '▶ start now · name it later',
+        shadowOffset: 4,
+        onTap: () => ref.read(trackerControllerProvider).startUnsorted(),
+      ),
     );
   }
 }
@@ -77,6 +112,7 @@ class _HeroCard extends ConsumerWidget {
     final onFill = ActivityPalette.onFill(fill);
     final tree = ref.watch(activityTreeProvider);
     final multi = acts.length > 1;
+    final unnamed = isUnsortedSet(acts);
 
     return Container(
       decoration: BoxDecoration(
@@ -106,9 +142,22 @@ class _HeroCard extends ConsumerWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            multi ? acts.map((a) => a.name).join('  +  ') : acts.first.name,
+            unnamed ? 'unnamed' : (multi ? acts.map((a) => a.name).join('  +  ') : acts.first.name),
             style: mono(context, size: 24, weight: FontWeight.w800, color: onFill, height: 1.1),
           ),
+          if (unnamed) ...[
+            const SizedBox(height: 10),
+            // The clock is already running against this block, so answering it
+            // later costs nothing — which is the point.
+            NeoPressable(
+              onTap: () => assignBlockActivity(context, ref, b),
+              fill: onFill,
+              shadowOffset: 4,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Text('▸ WHAT IS THIS?',
+                  style: mono(context, size: 12, weight: FontWeight.w800, spacing: .8, color: fill)),
+            ),
+          ],
           if (multi) ...[
             const SizedBox(height: 6),
             Text('${acts.length} activities · even-split',

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
+import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
 import 'providers.dart';
 import 'repositories.dart';
@@ -41,9 +42,14 @@ class WearSyncService {
 
   final _subscriptions = <StreamSubscription<Object?>>[];
 
-  /// The last snapshot the phone put on the wire, so an unchanged catalogue
-  /// does not re-send on every stream tick.
+  /// The last snapshot the phone *delivered*, so an unchanged catalogue does not
+  /// re-send on every stream tick. Null again after a failed send, so the next
+  /// change retries rather than assuming the peer is up to date.
   String? _lastSentSnapshot;
+
+  /// Watch side: set once a snapshot has arrived, which stops the retry loop.
+  bool _gotSnapshot = false;
+  Timer? _snapshotRetry;
 
   Future<void> start() async {
     _subscriptions.add(_bridge.messages.listen(_onMessage));
@@ -53,25 +59,59 @@ class WearSyncService {
     await _bridge.drainPending();
 
     if (_isWatch) {
-      await _bridge.send(const SnapshotRequest());
+      _beginRequestingSnapshot();
     } else {
-      _subscriptions.add(_watchCatalogue());
+      _subscriptions.addAll(_watchCatalogue());
     }
   }
 
-  /// Phone side: re-send whenever the bookmarked set or the current activity
+  /// Watch side: ask for a snapshot until one arrives.
+  ///
+  /// A single request at startup is not enough. Capability discovery may not
+  /// have finished when the app opens, so the request goes to nobody; and if the
+  /// phone app is not running it cannot answer at all — its listener service
+  /// deliberately drops snapshot requests rather than replaying stale ones. So
+  /// the watch keeps asking, with a widening gap, and stops the moment a
+  /// snapshot lands.
+  void _beginRequestingSnapshot() {
+    _snapshotRetry?.cancel();
+    var attempt = 0;
+
+    Future<void> ask() async {
+      if (_gotSnapshot) return;
+      final delivered = await _bridge.send(const SnapshotRequest());
+      if (delivered || _gotSnapshot) return;
+      attempt++;
+      // 2s, 4s, 8s … capped. Cheap enough to leave running: an unpaired watch
+      // wakes a few times a minute, not continuously.
+      final seconds = (1 << attempt.clamp(1, 5)).clamp(2, 32);
+      _snapshotRetry = Timer(Duration(seconds: seconds), ask);
+    }
+
+    unawaited(ask());
+  }
+
+  /// Phone side: re-send whenever the bookmarked set *or what is tracking*
   /// changes. Driven off the same streams the UI uses, so there is no separate
   /// notion of "dirty".
-  StreamSubscription<Object?> _watchCatalogue() {
-    return _activities.watchActivities().listen((_) => _pushSnapshot());
+  ///
+  /// Both streams are needed. A switch does happen to touch the activity stream
+  /// (it bumps recency), but relying on that would make the watch's view of
+  /// "what is running" depend on a side effect of the autocomplete.
+  List<StreamSubscription<Object?>> _watchCatalogue() {
+    return [
+      _activities.watchActivities().listen((_) => _pushSnapshot()),
+      _changes.watchChanges().listen((_) => _pushSnapshot()),
+    ];
   }
 
   void _onReachability(WearReachability state) {
     if (state != WearReachability.reachable) return;
-    // Reconnected. The watch asks for a fresh set; the phone volunteers one,
+    // Reconnected. The watch asks again from scratch; the phone volunteers one,
     // since the watch may have been away while bookmarks changed.
     if (_isWatch) {
-      _bridge.send(const SnapshotRequest());
+      _gotSnapshot = false;
+      _beginRequestingSnapshot();
     } else {
       _lastSentSnapshot = null; // force a send even if nothing changed meanwhile
       _pushSnapshot();
@@ -83,8 +123,28 @@ class WearSyncService {
       case SnapshotRequest():
         if (!_isWatch) await _pushSnapshot(force: true);
 
-      case BookmarkSnapshot(:final activities):
-        if (_isWatch) await _activities.applyBookmarkSnapshot(activities);
+      case BookmarkSnapshot(:final activities, :final current):
+        if (!_isWatch) return;
+        _gotSnapshot = true;
+        _snapshotRetry?.cancel();
+        await _activities.applyBookmarkSnapshot(activities);
+        if (current != null) {
+          // The tracked activity may not be bookmarked, so it needs a row of its
+          // own before the block can reference it.
+          await _activities.ensurePeerActivity(current.activity);
+          // Same change id and instant as the phone's, so this reproduces that
+          // boundary rather than inventing a second one.
+          //
+          // Not applyRelayedSwitch: that skips a change it already has, which is
+          // right for a one-off event but wrong for a snapshot. The same block
+          // legitimately comes back re-pointed once the phone names it, and
+          // skipping it leaves the watch stuck on "unnamed".
+          await _changes.applyPeerCurrentBlock(
+            changeSyncId: current.changeId,
+            activityId: current.activity.syncId,
+            at: current.startedAt,
+          );
+        }
 
       case SwitchRequest(:final changeSyncId, :final activityId, :final at):
         // Applied on whichever side receives it. In practice that is the phone,
@@ -114,26 +174,50 @@ class WearSyncService {
           WearActivity(syncId: a.syncId, name: a.name, color: a.color),
     ];
 
-    final current = await _changes.currentChange();
-    String? currentActivityId;
-    if (current != null) {
-      final ids = await _changes.activityIdsForChange(current.syncId);
+    final change = await _changes.currentChange();
+    CurrentBlock? current;
+    if (change != null) {
+      final ids = await _changes.activityIdsForChange(change.syncId);
       // A multi-activity block is the retrospective "forgot to switch" case,
-      // which the watch has no way to show — treat it as nothing selected
-      // rather than picking one arbitrarily.
-      if (ids.length == 1) currentActivityId = ids.first;
+      // which the watch has no way to show — send nothing rather than picking
+      // one arbitrarily.
+      if (ids.length == 1) {
+        final tracked = all.where((a) => a.syncId == ids.first).firstOrNull;
+        if (tracked != null) {
+          current = CurrentBlock(
+            changeId: change.syncId,
+            startedAt: change.changedAt,
+            activity: WearActivity(
+              syncId: tracked.syncId,
+              name: tracked.name,
+              color: tracked.color,
+            ),
+          );
+        }
+      }
     }
 
-    final snapshot = BookmarkSnapshot(
-      activities: bookmarked,
-      currentActivityId: currentActivityId,
-    );
+    final snapshot = BookmarkSnapshot(activities: bookmarked, current: current);
 
     final fingerprint = snapshot.toPayload().toString();
     if (!force && fingerprint == _lastSentSnapshot) return;
-    _lastSentSnapshot = fingerprint;
 
-    await _bridge.send(snapshot);
+    // Recorded only on delivery. Marking it sent regardless is what made a
+    // rename vanish: the push went out while nothing was reachable, the phone
+    // considered that state delivered, and no later change re-sent it.
+    final delivered = await _bridge.send(snapshot);
+    _lastSentSnapshot = delivered ? fingerprint : null;
+  }
+
+  /// Watch side: start tracking *something*, without deciding what.
+  ///
+  /// The catch-all has to exist locally before the boundary can point at it —
+  /// the phone only sends *bookmarked* activities, and this one is not a
+  /// bookmark. Its id is fixed, so the row the watch creates and the row the
+  /// phone creates are the same row once they meet.
+  Future<void> startUnsorted() async {
+    await _activities.ensureUnsorted();
+    await requestSwitch(kUnsortedActivityId);
   }
 
   /// Watch side: start tracking [activityId].
@@ -161,6 +245,8 @@ class WearSyncService {
   }
 
   void dispose() {
+    _snapshotRetry?.cancel();
+    _snapshotRetry = null;
     for (final s in _subscriptions) {
       s.cancel();
     }

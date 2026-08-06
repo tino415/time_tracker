@@ -34,6 +34,11 @@ abstract class ActivityRepository {
   /// Bump recency (last-used-first autocomplete).
   Future<void> touchUsed(String id, DateTime at);
 
+  /// The catch-all activity behind "start now, name it later", created on first
+  /// use. Idempotent, and safe to race: the id is fixed, so two devices (or two
+  /// taps) converge on one row rather than making a second catch-all.
+  Future<Activity> ensureUnsorted();
+
   /// Soft-delete: sets [Activities.deletedAt] and bumps version.
   Future<void> deleteActivity(String id);
 
@@ -45,6 +50,11 @@ abstract class ActivityRepository {
   /// snapshot omits may simply not be a bookmark, and the watch has no business
   /// tombstoning the catalogue.
   Future<void> applyBookmarkSnapshot(List<WearActivity> activities);
+
+  /// Make sure a peer's activity exists locally, without claiming it is a
+  /// bookmark. Needed because the phone can be tracking something unbookmarked:
+  /// the watch still has to have that row to point its copy of the block at.
+  Future<void> ensurePeerActivity(WearActivity activity);
 }
 
 /// The timeline: change events and their activity sets.
@@ -63,6 +73,22 @@ abstract class ChangeRepository {
   /// Switch (the normal live action): a new change at [at] (default now)
   /// replacing the whole active set with `{activityId}`.
   Future<ActivityChange> switchTo(String activityId, {DateTime? at});
+
+  /// Adopt a peer's *current state*: the open block, as it is now.
+  ///
+  /// Unlike [applyRelayedSwitch] this is not an event and is **not** skipped
+  /// when the change already exists — a snapshot is authoritative, and the same
+  /// change can legitimately come back re-pointed (an unnamed block that has
+  /// since been named) or retimed. Skipping it is how a watch stays stuck on
+  /// "unnamed" after the phone names the block.
+  ///
+  /// Idempotent in the sense that matters: applying the same snapshot twice
+  /// writes nothing the second time.
+  Future<void> applyPeerCurrentBlock({
+    required String changeSyncId,
+    required String activityId,
+    required DateTime at,
+  });
 
   /// Apply a switch relayed from a peer, under an id the peer minted.
   ///
@@ -87,6 +113,14 @@ abstract class ChangeRepository {
   /// Undo a tag: remove an activity from a change's set. The last activity
   /// cannot be removed (a block always tracks something) — call is a no-op then.
   Future<void> removeActivityFromChange(String changeId, String activityId);
+
+  /// Replace a change's whole activity set with exactly `{activityId}`, leaving
+  /// its [ActivityChanges.changedAt] alone.
+  ///
+  /// This is how an unnamed block is answered later: no new boundary, so the
+  /// elapsed time — including the seconds spent deciding — stays with the block
+  /// and lands on the activity finally chosen.
+  Future<void> setChangeActivity(String changeId, String activityId);
 
   Future<void> setComment(String changeId, String? comment);
 

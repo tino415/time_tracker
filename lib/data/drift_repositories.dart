@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
 import 'database.dart';
 import 'repositories.dart';
@@ -86,6 +87,65 @@ class DriftActivityRepository implements ActivityRepository {
   @override
   Future<void> touchUsed(String id, DateTime at) =>
       _bump(id, ActivitiesCompanion(lastUsedAt: Value(at)));
+
+  @override
+  Future<void> ensurePeerActivity(WearActivity activity) async {
+    await _db.transaction(() async {
+      final existing = await (_db.select(_db.activities)
+            ..where((t) => t.syncId.equals(activity.syncId)))
+          .getSingleOrNull();
+
+      if (existing == null) {
+        await _db.into(_db.activities).insert(
+              ActivitiesCompanion.insert(
+                syncId: activity.syncId,
+                name: activity.name,
+                color: activity.color,
+                // Deliberately not a bookmark: being tracked is not the same as
+                // being pinned to the watch's switch list.
+              ),
+            );
+        return;
+      }
+
+      // Only write on a real difference — see applyBookmarkSnapshot.
+      if (existing.name != activity.name || existing.color != activity.color) {
+        await _bump(
+          activity.syncId,
+          ActivitiesCompanion(name: Value(activity.name), color: Value(activity.color)),
+        );
+      }
+    });
+  }
+
+  @override
+  Future<Activity> ensureUnsorted() async {
+    return _db.transaction(() async {
+      final existing = await (_db.select(_db.activities)
+            ..where((t) => t.syncId.equals(kUnsortedActivityId)))
+          .getSingleOrNull();
+
+      // Un-tombstone rather than insert: deleting the catch-all and then
+      // starting an unnamed block again must not fail on the primary key.
+      if (existing != null) {
+        if (existing.deletedAt != null) {
+          await _bump(kUnsortedActivityId, const ActivitiesCompanion(deletedAt: Value(null)));
+          return (await (_db.select(_db.activities)
+                ..where((t) => t.syncId.equals(kUnsortedActivityId)))
+              .getSingle());
+        }
+        return existing;
+      }
+
+      return _db.into(_db.activities).insertReturning(
+            ActivitiesCompanion.insert(
+              syncId: kUnsortedActivityId,
+              name: kUnsortedName,
+              color: kUnsortedColor,
+            ),
+          );
+    });
+  }
 
   @override
   Future<void> deleteActivity(String id) =>
@@ -223,6 +283,57 @@ class DriftChangeRepository implements ChangeRepository {
   }
 
   @override
+  Future<void> applyPeerCurrentBlock({
+    required String changeSyncId,
+    required String activityId,
+    required DateTime at,
+  }) async {
+    await _db.transaction(() async {
+      // The activity must exist locally or the join row would break its foreign
+      // key. The snapshot carries the tracked activity whole, so the caller has
+      // already ensured it — this is the guard for a malformed peer.
+      final activity = await (_db.select(_db.activities)
+            ..where((t) => t.syncId.equals(activityId)))
+          .getSingleOrNull();
+      if (activity == null) return;
+
+      final existing = await (_db.select(_db.activityChanges)
+            ..where((t) => t.syncId.equals(changeSyncId)))
+          .getSingleOrNull();
+
+      if (existing == null) {
+        await _db.into(_db.activityChanges).insert(
+              ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at),
+            );
+      } else if (existing.changedAt != at) {
+        // Adopting a peer's state is not a local edit, so no version bump —
+        // same rule as SyncStore, for the same reason.
+        await (_db.update(_db.activityChanges)
+              ..where((t) => t.syncId.equals(changeSyncId)))
+            .write(ActivityChangesCompanion(changedAt: Value(at)));
+      }
+
+      final links = await (_db.select(_db.activityChangeActivities)
+            ..where((t) => t.activityChangeId.equals(changeSyncId)))
+          .get();
+      final current = links.map((l) => l.activityId).toList();
+      // Only rewrite when the set actually differs, so re-applying an unchanged
+      // snapshot does not churn the join table on every push.
+      if (current.length == 1 && current.first == activityId) return;
+
+      await (_db.delete(_db.activityChangeActivities)
+            ..where((t) => t.activityChangeId.equals(changeSyncId)))
+          .go();
+      await _db.into(_db.activityChangeActivities).insert(
+            ActivityChangeActivitiesCompanion.insert(
+              activityChangeId: changeSyncId,
+              activityId: activityId,
+            ),
+          );
+    });
+  }
+
+  @override
   Future<bool> applyRelayedSwitch({
     required String changeSyncId,
     required String activityId,
@@ -286,6 +397,35 @@ class DriftChangeRepository implements ChangeRepository {
             ..where((t) =>
                 t.activityChangeId.equals(changeId) & t.activityId.equals(activityId)))
           .go();
+    });
+  }
+
+  @override
+  Future<void> setChangeActivity(String changeId, String activityId) async {
+    await _db.transaction(() async {
+      final change = await (_db.select(_db.activityChanges)
+            ..where((t) => t.syncId.equals(changeId)))
+          .getSingleOrNull();
+      if (change == null) return;
+
+      final activity = await (_db.select(_db.activities)
+            ..where((t) => t.syncId.equals(activityId)))
+          .getSingleOrNull();
+      if (activity == null) return;
+
+      await (_db.delete(_db.activityChangeActivities)
+            ..where((t) => t.activityChangeId.equals(changeId)))
+          .go();
+      await _db.into(_db.activityChangeActivities).insert(
+            ActivityChangeActivitiesCompanion.insert(
+              activityChangeId: changeId,
+              activityId: activityId,
+            ),
+          );
+
+      // The set is part of the change for sync purposes, so re-pointing it has
+      // to bump the change's version or the edit would never leave the device.
+      await _bump(changeId, const ActivityChangesCompanion());
     });
   }
 

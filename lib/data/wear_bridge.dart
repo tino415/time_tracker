@@ -17,7 +17,10 @@ abstract class WearBridge {
   /// How the peer can currently be reached. Emits on every capability change.
   Stream<WearReachability> get reachability;
 
-  Future<void> send(WearMessage message);
+  /// Returns whether the message actually reached a peer. Callers must not
+  /// treat a send as delivered without checking: silently assuming delivery is
+  /// how a state change gets sent once, lost, and never retried.
+  Future<bool> send(WearMessage message);
 
   /// Ask for the backlog the native listener service queued while the app was
   /// dead. Safe to call repeatedly; draining is destructive on the native side.
@@ -76,19 +79,23 @@ class ChannelWearBridge implements WearBridge {
   }
 
   @override
-  Future<void> send(WearMessage message) async {
+  Future<bool> send(WearMessage message) async {
     try {
       await _method.invokeMethod<void>('send', {
         'type': message.type,
         'payload': message.toPayload(),
       });
+      return true;
     } on PlatformException catch (e) {
-      // Out of range, unpaired, or the peer app not installed. The caller
-      // cannot do anything useful about it, and the watch's own state is
-      // already correct, so this is logged rather than thrown.
-      debugPrint('wear send(${message.type}) failed: ${e.message}');
+      // Out of range, unpaired, or the peer app not installed. Not thrown —
+      // the local state is already correct and the caller cannot fix this — but
+      // reported, so the caller knows to try again rather than assuming the
+      // peer has the update.
+      debugPrint('wear send(${message.type}) not delivered: ${e.code}');
+      return false;
     } on MissingPluginException {
       // No native side — e.g. the web build. Nothing to relay to.
+      return false;
     }
   }
 
@@ -128,7 +135,7 @@ class NullWearBridge implements WearBridge {
   Stream<WearReachability> get reachability => const Stream.empty();
 
   @override
-  Future<void> send(WearMessage message) async {}
+  Future<bool> send(WearMessage message) async => false;
 
   @override
   Future<void> drainPending() async {}

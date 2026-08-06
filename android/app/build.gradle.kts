@@ -42,3 +42,12 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Wear Data Layer (MessageClient / CapabilityClient), used by WearBridge on
+    // both form factors — one APK serves the phone and the watch.
+    implementation("com.google.android.gms:play-services-wearable:18.1.0")
+    // Lets the bridge `await()` the Play Services Tasks instead of nesting
+    // callbacks.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+}

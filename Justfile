@@ -34,18 +34,17 @@ test-only +args:
 test-failures +args="test":
     flutter test --no-pub --reporter=failures-only {{args}}
 
-# On-device end-to-end tests (integration_test/). Needs a running emulator —
-# start one with the `droid` CLI. `flutter devices` lists the ids; override with
+# On-device end-to-end test of the phone flow. Needs a running emulator — start
+# one with the `droid` CLI. `flutter devices` lists the ids; override with
 # `just e2e device=<id>` if the emulator came up on a different port.
 e2e device="127.0.0.1:5557":
-    flutter test integration_test --no-pub -d {{device}}
+    flutter test integration_test/flow_test.dart --no-pub -d {{device}}
 
-# Same suite on the Wear OS emulator. EXPECTED TO FAIL until the watch phase
-# lands: the phone layout does not fit a 227x227 round screen — the Now column
-# overflows by ~127px, which puts "+ new activity" outside the render tree, so
-# it is not hit-testable and the first tap fails. Kept here as the harness for
-# the watch UI, and as a check that the failure is still only about layout.
-e2e-watch: (e2e "127.0.0.1:5555")
+# The Wear OS shell on the watch emulator. A different suite, not the phone one:
+# the watch has its own shell because the phone layout does not fit a 227x227
+# round screen.
+e2e-watch device="127.0.0.1:5555":
+    flutter test integration_test/watch_flow_test.dart --no-pub -d {{device}}
 
 # Regenerate drift code (database.g.dart) after a schema change.
 gen:

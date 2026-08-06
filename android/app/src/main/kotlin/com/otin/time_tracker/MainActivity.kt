@@ -6,11 +6,12 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private var wearBridge: WearBridge? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // Phone vs Wear OS detection consumed by _detectIsWatch() in main.dart.
-        // The Wear data-layer bridge (cf. gym_tracker's GymWearBridge) arrives
-        // with the watch phase.
+
+        // Phone vs Wear OS detection, consumed by _detectIsWatch() in main.dart.
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "time_tracker/platform",
@@ -23,5 +24,15 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // Attached on both form factors: one APK, and the protocol is symmetric
+        // enough that the phone side is just a different set of message types.
+        wearBridge = WearBridge(this, flutterEngine.dartExecutor.binaryMessenger).also { it.attach() }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        wearBridge?.detach()
+        wearBridge = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 }

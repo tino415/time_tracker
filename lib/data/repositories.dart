@@ -1,3 +1,4 @@
+import '../domain/wear_protocol.dart';
 import 'database.dart';
 
 /// Repository seam over [AppDatabase]. Every client (phone, watch, web) is
@@ -35,6 +36,15 @@ abstract class ActivityRepository {
 
   /// Soft-delete: sets [Activities.deletedAt] and bumps version.
   Future<void> deleteActivity(String id);
+
+  /// Adopt a peer's bookmarked set (the watch applying a phone snapshot).
+  ///
+  /// The snapshot is *authoritative for bookmarks*: listed activities are
+  /// created or updated and marked bookmarked, and anything locally bookmarked
+  /// but absent from it is un-bookmarked. Nothing is deleted — an activity the
+  /// snapshot omits may simply not be a bookmark, and the watch has no business
+  /// tombstoning the catalogue.
+  Future<void> applyBookmarkSnapshot(List<WearActivity> activities);
 }
 
 /// The timeline: change events and their activity sets.
@@ -53,6 +63,18 @@ abstract class ChangeRepository {
   /// Switch (the normal live action): a new change at [at] (default now)
   /// replacing the whole active set with `{activityId}`.
   Future<ActivityChange> switchTo(String activityId, {DateTime? at});
+
+  /// Apply a switch relayed from a peer, under an id the peer minted.
+  ///
+  /// Idempotent by construction: if [changeSyncId] already exists the call does
+  /// nothing. That is what makes the Wear relay safe to deliver twice — once
+  /// live and once replayed from the listener service's queue after a restart.
+  /// Returns true when a boundary was actually opened.
+  Future<bool> applyRelayedSwitch({
+    required String changeSyncId,
+    required String activityId,
+    required DateTime at,
+  });
 
   /// Live join rows across all changes (change id -> activity id). Combined with
   /// [watchChanges] and the activity catalogue to derive the timeline reactively.

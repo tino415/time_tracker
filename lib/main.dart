@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'data/wear_sync.dart';
 import 'phone/phone_app.dart';
 import 'watch/watch_app.dart';
 
@@ -46,21 +49,35 @@ void main() async {
   );
 }
 
-/// Whether this build runs on a Wear OS device. Overridden in [main] after
-/// platform detection; default false so tests take the phone branch.
-final isWatchProvider = Provider<bool>((ref) => false);
-
 /// Root shell picker. Every surface is offline-first on local Drift — the web
 /// PWA runs the same phone shell (not a server-direct build), so only watch vs
-/// phone differ here. Cross-device sync attaches later as a transport layer.
-class TimeTrackerRoot extends ConsumerWidget {
+/// phone differ here.
+///
+/// Stateful only to own the Wear sync service's lifetime: both form factors run
+/// it (the phone answers snapshot requests and applies relayed switches, the
+/// watch asks and relays), and it must be started once, after the first frame
+/// is on its way rather than blocking it.
+class TimeTrackerRoot extends ConsumerStatefulWidget {
   const TimeTrackerRoot({super.key, required this.isWatch});
 
   final bool isWatch;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (isWatch) return const WatchApp();
+  ConsumerState<TimeTrackerRoot> createState() => _TimeTrackerRootState();
+}
+
+class _TimeTrackerRootState extends ConsumerState<TimeTrackerRoot> {
+  @override
+  void initState() {
+    super.initState();
+    // Fire-and-forget: a missing or unpaired Wear layer must not delay or block
+    // the UI, and every failure inside is already swallowed at the bridge.
+    unawaited(ref.read(wearSyncProvider).start());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.isWatch) return const WatchApp();
     return const PhoneApp();
   }
 }

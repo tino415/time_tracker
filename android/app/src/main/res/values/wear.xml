@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Wear Data Layer capability both form factors advertise. Discovery is by
+  capability rather than by node type, so neither side has to know whether it is
+  "the phone" — it just looks for a peer running this app. Must match
+  WearBridge.CAPABILITY.
+-->
+<resources>
+    <string-array name="android_wear_capabilities">
+        <item>time_tracker_sync</item>
+    </string-array>
+</resources>

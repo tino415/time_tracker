@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../domain/wear_protocol.dart';
 import 'database.dart';
 import 'repositories.dart';
 
@@ -90,6 +91,60 @@ class DriftActivityRepository implements ActivityRepository {
   Future<void> deleteActivity(String id) =>
       _bump(id, ActivitiesCompanion(deletedAt: Value(DateTime.now())));
 
+  @override
+  Future<void> applyBookmarkSnapshot(List<WearActivity> activities) async {
+    await _db.transaction(() async {
+      final incoming = {for (final a in activities) a.syncId: a};
+
+      for (final a in activities) {
+        final existing = await (_db.select(_db.activities)
+              ..where((t) => t.syncId.equals(a.syncId)))
+            .getSingleOrNull();
+
+        if (existing == null) {
+          await _db.into(_db.activities).insert(
+                ActivitiesCompanion.insert(
+                  syncId: a.syncId,
+                  name: a.name,
+                  color: a.color,
+                  bookmarked: const Value(true),
+                ),
+              );
+          continue;
+        }
+
+        // Only write when something actually differs: an unchanged snapshot
+        // arriving every reconnect must not churn `version` and make every
+        // activity look freshly edited to a future sync.
+        if (existing.name != a.name ||
+            existing.color != a.color ||
+            !existing.bookmarked ||
+            existing.deletedAt != null) {
+          await _bump(
+            a.syncId,
+            ActivitiesCompanion(
+              name: Value(a.name),
+              color: Value(a.color),
+              bookmarked: const Value(true),
+              deletedAt: const Value(null),
+            ),
+          );
+        }
+      }
+
+      // Bookmarks the snapshot no longer lists are no longer bookmarks. The
+      // rows stay: the peer told us what is bookmarked, not what exists.
+      final staleBookmarks = await (_db.select(_db.activities)
+            ..where((t) => t.bookmarked.equals(true) & t.deletedAt.isNull()))
+          .get();
+      for (final row in staleBookmarks) {
+        if (!incoming.containsKey(row.syncId)) {
+          await _bump(row.syncId, const ActivitiesCompanion(bookmarked: Value(false)));
+        }
+      }
+    });
+  }
+
   /// Apply [patch] to one activity, bumping [Activities.version] for LWW sync.
   Future<void> _bump(String id, ActivitiesCompanion patch) async {
     final row = await (_db.select(_db.activities)
@@ -159,6 +214,41 @@ class DriftChangeRepository implements ChangeRepository {
             ),
           );
       return change;
+    });
+  }
+
+  @override
+  Future<bool> applyRelayedSwitch({
+    required String changeSyncId,
+    required String activityId,
+    required DateTime at,
+  }) async {
+    return _db.transaction(() async {
+      final existing = await (_db.select(_db.activityChanges)
+            ..where((t) => t.syncId.equals(changeSyncId)))
+          .getSingleOrNull();
+      // Already applied — a duplicate delivery, or our own relay coming back.
+      if (existing != null) return false;
+
+      // The activity must exist locally, or the join row would violate its
+      // foreign key. A watch tapping a tile it was told about cannot hit this;
+      // a stale relay naming a since-deleted activity can.
+      final activity = await (_db.select(_db.activities)
+            ..where((t) => t.syncId.equals(activityId)))
+          .getSingleOrNull();
+      if (activity == null) return false;
+
+      await _db.into(_db.activityChanges).insert(
+            ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at),
+          );
+      await _db.into(_db.activityChangeActivities).insert(
+            ActivityChangeActivitiesCompanion.insert(
+              activityChangeId: changeSyncId,
+              activityId: activityId,
+            ),
+            mode: InsertMode.insertOrIgnore,
+          );
+      return true;
     });
   }
 

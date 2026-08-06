@@ -13,12 +13,14 @@ Activity act(String id, String name) => Activity(
       color: '#4F8FEE',
       bookmarked: false,
       version: 1,
+      dirty: false,
     );
 
 ActivityChange chg(String id, DateTime at) => ActivityChange(
       syncId: id,
       changedAt: at,
       version: 1,
+      dirty: false,
     );
 
 Block block(String id, DateTime start, DateTime? end) => Block(

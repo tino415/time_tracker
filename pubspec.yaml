@@ -27,6 +27,10 @@ dependencies:
   # Browser APIs used directly by the PWA layer (storage persistence probe).
   web: ^1.1.0
 
+  # Sync transport (see worker/). Optional feature; the app runs without a
+  # backend configured.
+  http: ^1.2.0
+
   # Deferred to later phases (kept out of the scaffold on purpose):
   #   wear_plus            — Wear OS shape/ambient (watch phase)
   #   firebase_* / cloud_* — only if a sync backend is chosen (sync phase)

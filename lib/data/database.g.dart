@@ -110,6 +110,19 @@ class $ActivitiesTable extends Activities
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _dirtyMeta = const VerificationMeta('dirty');
+  @override
+  late final GeneratedColumn<bool> dirty = GeneratedColumn<bool>(
+    'dirty',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("dirty" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     syncId,
@@ -121,6 +134,7 @@ class $ActivitiesTable extends Activities
     externalId,
     version,
     deletedAt,
+    dirty,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -197,6 +211,12 @@ class $ActivitiesTable extends Activities
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('dirty')) {
+      context.handle(
+        _dirtyMeta,
+        dirty.isAcceptableOrUnknown(data['dirty']!, _dirtyMeta),
+      );
+    }
     return context;
   }
 
@@ -242,6 +262,10 @@ class $ActivitiesTable extends Activities
         DriftSqlType.dateTime,
         data['${effectivePrefix}deleted_at'],
       ),
+      dirty: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}dirty'],
+      )!,
     );
   }
 
@@ -275,6 +299,13 @@ class Activity extends DataClass implements Insertable<Activity> {
   /// Non-null marks a tombstone: archived/deleted at this instant, row kept
   /// (with bumped [version]) so the deletion participates in version-LWW sync.
   final DateTime? deletedAt;
+
+  /// Set by every local write, cleared once the server has accepted the row.
+  ///
+  /// This is what "needs pushing" means — an `updatedAt > lastSync` comparison
+  /// would be at the mercy of clock skew between devices, and a row edited while
+  /// a sync was in flight would be missed.
+  final bool dirty;
   const Activity({
     required this.syncId,
     this.parentId,
@@ -285,6 +316,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     this.externalId,
     required this.version,
     this.deletedAt,
+    required this.dirty,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -306,6 +338,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<DateTime>(deletedAt);
     }
+    map['dirty'] = Variable<bool>(dirty);
     return map;
   }
 
@@ -328,6 +361,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      dirty: Value(dirty),
     );
   }
 
@@ -346,6 +380,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       externalId: serializer.fromJson<String?>(json['externalId']),
       version: serializer.fromJson<int>(json['version']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      dirty: serializer.fromJson<bool>(json['dirty']),
     );
   }
   @override
@@ -361,6 +396,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       'externalId': serializer.toJson<String?>(externalId),
       'version': serializer.toJson<int>(version),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'dirty': serializer.toJson<bool>(dirty),
     };
   }
 
@@ -374,6 +410,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     Value<String?> externalId = const Value.absent(),
     int? version,
     Value<DateTime?> deletedAt = const Value.absent(),
+    bool? dirty,
   }) => Activity(
     syncId: syncId ?? this.syncId,
     parentId: parentId.present ? parentId.value : this.parentId,
@@ -384,6 +421,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     externalId: externalId.present ? externalId.value : this.externalId,
     version: version ?? this.version,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    dirty: dirty ?? this.dirty,
   );
   Activity copyWithCompanion(ActivitiesCompanion data) {
     return Activity(
@@ -402,6 +440,7 @@ class Activity extends DataClass implements Insertable<Activity> {
           : this.externalId,
       version: data.version.present ? data.version.value : this.version,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      dirty: data.dirty.present ? data.dirty.value : this.dirty,
     );
   }
 
@@ -416,7 +455,8 @@ class Activity extends DataClass implements Insertable<Activity> {
           ..write('lastUsedAt: $lastUsedAt, ')
           ..write('externalId: $externalId, ')
           ..write('version: $version, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('dirty: $dirty')
           ..write(')'))
         .toString();
   }
@@ -432,6 +472,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     externalId,
     version,
     deletedAt,
+    dirty,
   );
   @override
   bool operator ==(Object other) =>
@@ -445,7 +486,8 @@ class Activity extends DataClass implements Insertable<Activity> {
           other.lastUsedAt == this.lastUsedAt &&
           other.externalId == this.externalId &&
           other.version == this.version &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.dirty == this.dirty);
 }
 
 class ActivitiesCompanion extends UpdateCompanion<Activity> {
@@ -458,6 +500,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
   final Value<String?> externalId;
   final Value<int> version;
   final Value<DateTime?> deletedAt;
+  final Value<bool> dirty;
   final Value<int> rowid;
   const ActivitiesCompanion({
     this.syncId = const Value.absent(),
@@ -469,6 +512,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     this.externalId = const Value.absent(),
     this.version = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.dirty = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ActivitiesCompanion.insert({
@@ -481,6 +525,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     this.externalId = const Value.absent(),
     this.version = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.dirty = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : syncId = Value(syncId),
        name = Value(name),
@@ -495,6 +540,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     Expression<String>? externalId,
     Expression<int>? version,
     Expression<DateTime>? deletedAt,
+    Expression<bool>? dirty,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -507,6 +553,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
       if (externalId != null) 'external_id': externalId,
       if (version != null) 'version': version,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (dirty != null) 'dirty': dirty,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -521,6 +568,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     Value<String?>? externalId,
     Value<int>? version,
     Value<DateTime?>? deletedAt,
+    Value<bool>? dirty,
     Value<int>? rowid,
   }) {
     return ActivitiesCompanion(
@@ -533,6 +581,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
       externalId: externalId ?? this.externalId,
       version: version ?? this.version,
       deletedAt: deletedAt ?? this.deletedAt,
+      dirty: dirty ?? this.dirty,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -567,6 +616,9 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<DateTime>(deletedAt.value);
     }
+    if (dirty.present) {
+      map['dirty'] = Variable<bool>(dirty.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -585,6 +637,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
           ..write('externalId: $externalId, ')
           ..write('version: $version, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('dirty: $dirty, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -649,6 +702,19 @@ class $ActivityChangesTable extends ActivityChanges
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _dirtyMeta = const VerificationMeta('dirty');
+  @override
+  late final GeneratedColumn<bool> dirty = GeneratedColumn<bool>(
+    'dirty',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("dirty" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     syncId,
@@ -656,6 +722,7 @@ class $ActivityChangesTable extends ActivityChanges
     comment,
     version,
     deletedAt,
+    dirty,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -695,6 +762,12 @@ class $ActivityChangesTable extends ActivityChanges
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('dirty')) {
+      context.handle(
+        _dirtyMeta,
+        dirty.isAcceptableOrUnknown(data['dirty']!, _dirtyMeta),
+      );
+    }
     return context;
   }
 
@@ -726,6 +799,10 @@ class $ActivityChangesTable extends ActivityChanges
         DriftSqlType.dateTime,
         data['${effectivePrefix}deleted_at'],
       ),
+      dirty: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}dirty'],
+      )!,
     );
   }
 
@@ -746,12 +823,16 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
   final String? comment;
   final int version;
   final DateTime? deletedAt;
+
+  /// See [Activities.dirty].
+  final bool dirty;
   const ActivityChange({
     required this.syncId,
     required this.changedAt,
     this.comment,
     required this.version,
     this.deletedAt,
+    required this.dirty,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -769,6 +850,7 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<DateTime>(deletedAt);
     }
+    map['dirty'] = Variable<bool>(dirty);
     return map;
   }
 
@@ -783,6 +865,7 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      dirty: Value(dirty),
     );
   }
 
@@ -797,6 +880,7 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
       comment: serializer.fromJson<String?>(json['comment']),
       version: serializer.fromJson<int>(json['version']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      dirty: serializer.fromJson<bool>(json['dirty']),
     );
   }
   @override
@@ -808,6 +892,7 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
       'comment': serializer.toJson<String?>(comment),
       'version': serializer.toJson<int>(version),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'dirty': serializer.toJson<bool>(dirty),
     };
   }
 
@@ -817,12 +902,14 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
     Value<String?> comment = const Value.absent(),
     int? version,
     Value<DateTime?> deletedAt = const Value.absent(),
+    bool? dirty,
   }) => ActivityChange(
     syncId: syncId ?? this.syncId,
     changedAt: changedAt ?? this.changedAt,
     comment: comment.present ? comment.value : this.comment,
     version: version ?? this.version,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    dirty: dirty ?? this.dirty,
   );
   ActivityChange copyWithCompanion(ActivityChangesCompanion data) {
     return ActivityChange(
@@ -831,6 +918,7 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
       comment: data.comment.present ? data.comment.value : this.comment,
       version: data.version.present ? data.version.value : this.version,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      dirty: data.dirty.present ? data.dirty.value : this.dirty,
     );
   }
 
@@ -841,14 +929,15 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
           ..write('changedAt: $changedAt, ')
           ..write('comment: $comment, ')
           ..write('version: $version, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('dirty: $dirty')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode =>
-      Object.hash(syncId, changedAt, comment, version, deletedAt);
+      Object.hash(syncId, changedAt, comment, version, deletedAt, dirty);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -857,7 +946,8 @@ class ActivityChange extends DataClass implements Insertable<ActivityChange> {
           other.changedAt == this.changedAt &&
           other.comment == this.comment &&
           other.version == this.version &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.dirty == this.dirty);
 }
 
 class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
@@ -866,6 +956,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
   final Value<String?> comment;
   final Value<int> version;
   final Value<DateTime?> deletedAt;
+  final Value<bool> dirty;
   final Value<int> rowid;
   const ActivityChangesCompanion({
     this.syncId = const Value.absent(),
@@ -873,6 +964,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
     this.comment = const Value.absent(),
     this.version = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.dirty = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ActivityChangesCompanion.insert({
@@ -881,6 +973,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
     this.comment = const Value.absent(),
     this.version = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.dirty = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : syncId = Value(syncId),
        changedAt = Value(changedAt);
@@ -890,6 +983,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
     Expression<String>? comment,
     Expression<int>? version,
     Expression<DateTime>? deletedAt,
+    Expression<bool>? dirty,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -898,6 +992,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
       if (comment != null) 'comment': comment,
       if (version != null) 'version': version,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (dirty != null) 'dirty': dirty,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -908,6 +1003,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
     Value<String?>? comment,
     Value<int>? version,
     Value<DateTime?>? deletedAt,
+    Value<bool>? dirty,
     Value<int>? rowid,
   }) {
     return ActivityChangesCompanion(
@@ -916,6 +1012,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
       comment: comment ?? this.comment,
       version: version ?? this.version,
       deletedAt: deletedAt ?? this.deletedAt,
+      dirty: dirty ?? this.dirty,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -940,6 +1037,9 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<DateTime>(deletedAt.value);
     }
+    if (dirty.present) {
+      map['dirty'] = Variable<bool>(dirty.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -954,6 +1054,7 @@ class ActivityChangesCompanion extends UpdateCompanion<ActivityChange> {
           ..write('comment: $comment, ')
           ..write('version: $version, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('dirty: $dirty, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1200,6 +1301,214 @@ class ActivityChangeActivitiesCompanion
   }
 }
 
+class $SyncMetaTable extends SyncMeta
+    with TableInfo<$SyncMetaTable, SyncMetaData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncMetaTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>(
+    'key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _valueMeta = const VerificationMeta('value');
+  @override
+  late final GeneratedColumn<String> value = GeneratedColumn<String>(
+    'value',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [key, value];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_meta';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncMetaData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('key')) {
+      context.handle(
+        _keyMeta,
+        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_keyMeta);
+    }
+    if (data.containsKey('value')) {
+      context.handle(
+        _valueMeta,
+        value.isAcceptableOrUnknown(data['value']!, _valueMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_valueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {key};
+  @override
+  SyncMetaData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncMetaData(
+      key: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}key'],
+      )!,
+      value: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}value'],
+      )!,
+    );
+  }
+
+  @override
+  $SyncMetaTable createAlias(String alias) {
+    return $SyncMetaTable(attachedDatabase, alias);
+  }
+}
+
+class SyncMetaData extends DataClass implements Insertable<SyncMetaData> {
+  final String key;
+  final String value;
+  const SyncMetaData({required this.key, required this.value});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['key'] = Variable<String>(key);
+    map['value'] = Variable<String>(value);
+    return map;
+  }
+
+  SyncMetaCompanion toCompanion(bool nullToAbsent) {
+    return SyncMetaCompanion(key: Value(key), value: Value(value));
+  }
+
+  factory SyncMetaData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncMetaData(
+      key: serializer.fromJson<String>(json['key']),
+      value: serializer.fromJson<String>(json['value']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'key': serializer.toJson<String>(key),
+      'value': serializer.toJson<String>(value),
+    };
+  }
+
+  SyncMetaData copyWith({String? key, String? value}) =>
+      SyncMetaData(key: key ?? this.key, value: value ?? this.value);
+  SyncMetaData copyWithCompanion(SyncMetaCompanion data) {
+    return SyncMetaData(
+      key: data.key.present ? data.key.value : this.key,
+      value: data.value.present ? data.value.value : this.value,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncMetaData(')
+          ..write('key: $key, ')
+          ..write('value: $value')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(key, value);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncMetaData &&
+          other.key == this.key &&
+          other.value == this.value);
+}
+
+class SyncMetaCompanion extends UpdateCompanion<SyncMetaData> {
+  final Value<String> key;
+  final Value<String> value;
+  final Value<int> rowid;
+  const SyncMetaCompanion({
+    this.key = const Value.absent(),
+    this.value = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncMetaCompanion.insert({
+    required String key,
+    required String value,
+    this.rowid = const Value.absent(),
+  }) : key = Value(key),
+       value = Value(value);
+  static Insertable<SyncMetaData> custom({
+    Expression<String>? key,
+    Expression<String>? value,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (key != null) 'key': key,
+      if (value != null) 'value': value,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncMetaCompanion copyWith({
+    Value<String>? key,
+    Value<String>? value,
+    Value<int>? rowid,
+  }) {
+    return SyncMetaCompanion(
+      key: key ?? this.key,
+      value: value ?? this.value,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (key.present) {
+      map['key'] = Variable<String>(key.value);
+    }
+    if (value.present) {
+      map['value'] = Variable<String>(value.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncMetaCompanion(')
+          ..write('key: $key, ')
+          ..write('value: $value, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1209,6 +1518,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $ActivityChangeActivitiesTable activityChangeActivities =
       $ActivityChangeActivitiesTable(this);
+  late final $SyncMetaTable syncMeta = $SyncMetaTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1217,6 +1527,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     activities,
     activityChanges,
     activityChangeActivities,
+    syncMeta,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -1259,6 +1570,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder =
       Value<String?> externalId,
       Value<int> version,
       Value<DateTime?> deletedAt,
+      Value<bool> dirty,
       Value<int> rowid,
     });
 typedef $$ActivitiesTableUpdateCompanionBuilder =
@@ -1272,6 +1584,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder =
       Value<String?> externalId,
       Value<int> version,
       Value<DateTime?> deletedAt,
+      Value<bool> dirty,
       Value<int> rowid,
     });
 
@@ -1376,6 +1689,11 @@ class $$ActivitiesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get dirty => $composableBuilder(
+    column: $table.dirty,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$ActivitiesTableFilterComposer get parentId {
     final $$ActivitiesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -1476,6 +1794,11 @@ class $$ActivitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get dirty => $composableBuilder(
+    column: $table.dirty,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ActivitiesTableOrderingComposer get parentId {
     final $$ActivitiesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -1538,6 +1861,9 @@ class $$ActivitiesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get dirty =>
+      $composableBuilder(column: $table.dirty, builder: (column) => column);
 
   $$ActivitiesTableAnnotationComposer get parentId {
     final $$ActivitiesTableAnnotationComposer composer = $composerBuilder(
@@ -1630,6 +1956,7 @@ class $$ActivitiesTableTableManager
                 Value<String?> externalId = const Value.absent(),
                 Value<int> version = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
+                Value<bool> dirty = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivitiesCompanion(
                 syncId: syncId,
@@ -1641,6 +1968,7 @@ class $$ActivitiesTableTableManager
                 externalId: externalId,
                 version: version,
                 deletedAt: deletedAt,
+                dirty: dirty,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -1654,6 +1982,7 @@ class $$ActivitiesTableTableManager
                 Value<String?> externalId = const Value.absent(),
                 Value<int> version = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
+                Value<bool> dirty = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivitiesCompanion.insert(
                 syncId: syncId,
@@ -1665,6 +1994,7 @@ class $$ActivitiesTableTableManager
                 externalId: externalId,
                 version: version,
                 deletedAt: deletedAt,
+                dirty: dirty,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -1768,6 +2098,7 @@ typedef $$ActivityChangesTableCreateCompanionBuilder =
       Value<String?> comment,
       Value<int> version,
       Value<DateTime?> deletedAt,
+      Value<bool> dirty,
       Value<int> rowid,
     });
 typedef $$ActivityChangesTableUpdateCompanionBuilder =
@@ -1777,6 +2108,7 @@ typedef $$ActivityChangesTableUpdateCompanionBuilder =
       Value<String?> comment,
       Value<int> version,
       Value<DateTime?> deletedAt,
+      Value<bool> dirty,
       Value<int> rowid,
     });
 
@@ -1857,6 +2189,11 @@ class $$ActivityChangesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get dirty => $composableBuilder(
+    column: $table.dirty,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> activityChangeActivitiesRefs(
     Expression<bool> Function($$ActivityChangeActivitiesTableFilterComposer f)
     f,
@@ -1918,6 +2255,11 @@ class $$ActivityChangesTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get dirty => $composableBuilder(
+    column: $table.dirty,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ActivityChangesTableAnnotationComposer
@@ -1943,6 +2285,9 @@ class $$ActivityChangesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get dirty =>
+      $composableBuilder(column: $table.dirty, builder: (column) => column);
 
   Expression<T> activityChangeActivitiesRefs<T extends Object>(
     Expression<T> Function($$ActivityChangeActivitiesTableAnnotationComposer a)
@@ -2007,6 +2352,7 @@ class $$ActivityChangesTableTableManager
                 Value<String?> comment = const Value.absent(),
                 Value<int> version = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
+                Value<bool> dirty = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivityChangesCompanion(
                 syncId: syncId,
@@ -2014,6 +2360,7 @@ class $$ActivityChangesTableTableManager
                 comment: comment,
                 version: version,
                 deletedAt: deletedAt,
+                dirty: dirty,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2023,6 +2370,7 @@ class $$ActivityChangesTableTableManager
                 Value<String?> comment = const Value.absent(),
                 Value<int> version = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
+                Value<bool> dirty = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivityChangesCompanion.insert(
                 syncId: syncId,
@@ -2030,6 +2378,7 @@ class $$ActivityChangesTableTableManager
                 comment: comment,
                 version: version,
                 deletedAt: deletedAt,
+                dirty: dirty,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -2467,6 +2816,145 @@ typedef $$ActivityChangeActivitiesTableProcessedTableManager =
       ActivityChangeActivity,
       PrefetchHooks Function({bool activityChangeId, bool activityId})
     >;
+typedef $$SyncMetaTableCreateCompanionBuilder =
+    SyncMetaCompanion Function({
+      required String key,
+      required String value,
+      Value<int> rowid,
+    });
+typedef $$SyncMetaTableUpdateCompanionBuilder =
+    SyncMetaCompanion Function({
+      Value<String> key,
+      Value<String> value,
+      Value<int> rowid,
+    });
+
+class $$SyncMetaTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncMetaTable> {
+  $$SyncMetaTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SyncMetaTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncMetaTable> {
+  $$SyncMetaTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get value => $composableBuilder(
+    column: $table.value,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncMetaTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncMetaTable> {
+  $$SyncMetaTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+
+  GeneratedColumn<String> get value =>
+      $composableBuilder(column: $table.value, builder: (column) => column);
+}
+
+class $$SyncMetaTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncMetaTable,
+          SyncMetaData,
+          $$SyncMetaTableFilterComposer,
+          $$SyncMetaTableOrderingComposer,
+          $$SyncMetaTableAnnotationComposer,
+          $$SyncMetaTableCreateCompanionBuilder,
+          $$SyncMetaTableUpdateCompanionBuilder,
+          (
+            SyncMetaData,
+            BaseReferences<_$AppDatabase, $SyncMetaTable, SyncMetaData>,
+          ),
+          SyncMetaData,
+          PrefetchHooks Function()
+        > {
+  $$SyncMetaTableTableManager(_$AppDatabase db, $SyncMetaTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncMetaTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncMetaTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncMetaTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> key = const Value.absent(),
+                Value<String> value = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncMetaCompanion(key: key, value: value, rowid: rowid),
+          createCompanionCallback:
+              ({
+                required String key,
+                required String value,
+                Value<int> rowid = const Value.absent(),
+              }) => SyncMetaCompanion.insert(
+                key: key,
+                value: value,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncMetaTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncMetaTable,
+      SyncMetaData,
+      $$SyncMetaTableFilterComposer,
+      $$SyncMetaTableOrderingComposer,
+      $$SyncMetaTableAnnotationComposer,
+      $$SyncMetaTableCreateCompanionBuilder,
+      $$SyncMetaTableUpdateCompanionBuilder,
+      (
+        SyncMetaData,
+        BaseReferences<_$AppDatabase, $SyncMetaTable, SyncMetaData>,
+      ),
+      SyncMetaData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2480,4 +2968,6 @@ class $AppDatabaseManager {
         _db,
         _db.activityChangeActivities,
       );
+  $$SyncMetaTableTableManager get syncMeta =>
+      $$SyncMetaTableTableManager(_db, _db.syncMeta);
 }

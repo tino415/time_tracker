@@ -17,6 +17,7 @@ Activity act(String id, String name, {String? parent, String color = '#4F8FEE'})
       color: color,
       bookmarked: false,
       version: 1,
+      dirty: false,
     );
 
 ActivityChange chg(String id, DateTime at, {String? comment}) => ActivityChange(
@@ -24,6 +25,7 @@ ActivityChange chg(String id, DateTime at, {String? comment}) => ActivityChange(
       changedAt: at,
       comment: comment,
       version: 1,
+      dirty: false,
     );
 
 DateTime d(int hour, [int minute = 0]) => DateTime(2026, 1, 5, hour, minute); // Mon

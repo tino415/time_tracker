@@ -1,0 +1,16 @@
+name = "track-sync"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# Created with:
+#   wrangler d1 create track-sync
+#   wrangler d1 execute track-sync --remote --file=schema.sql
+# then paste the returned id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "track-sync"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# SYNC_TOKEN is NOT set here — it is the whole security boundary and must not
+# live in the repository. Set it as a secret:
+#   wrangler secret put SYNC_TOKEN

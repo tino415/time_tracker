@@ -146,13 +146,18 @@ class DriftActivityRepository implements ActivityRepository {
   }
 
   /// Apply [patch] to one activity, bumping [Activities.version] for LWW sync.
+  ///
+  /// Also marks the row dirty: this is the single choke point for local edits,
+  /// so "needs pushing" is maintained here rather than remembered at each call
+  /// site. Remote adoptions bypass it deliberately — see [applyRemoteActivity].
   Future<void> _bump(String id, ActivitiesCompanion patch) async {
     final row = await (_db.select(_db.activities)
           ..where((t) => t.syncId.equals(id)))
         .getSingleOrNull();
     if (row == null) return;
-    await (_db.update(_db.activities)..where((t) => t.syncId.equals(id)))
-        .write(patch.copyWith(version: Value(row.version + 1)));
+    await (_db.update(_db.activities)..where((t) => t.syncId.equals(id))).write(
+      patch.copyWith(version: Value(row.version + 1), dirty: const Value(true)),
+    );
   }
 }
 
@@ -304,12 +309,15 @@ class DriftChangeRepository implements ChangeRepository {
     return rows.map((r) => r.activityId).toList();
   }
 
+  /// See [DriftActivityRepository._bump] — same contract, same reason for
+  /// setting `dirty` here rather than at every call site.
   Future<void> _bump(String id, ActivityChangesCompanion patch) async {
     final row = await (_db.select(_db.activityChanges)
           ..where((t) => t.syncId.equals(id)))
         .getSingleOrNull();
     if (row == null) return;
-    await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(id)))
-        .write(patch.copyWith(version: Value(row.version + 1)));
+    await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(id))).write(
+      patch.copyWith(version: Value(row.version + 1), dirty: const Value(true)),
+    );
   }
 }

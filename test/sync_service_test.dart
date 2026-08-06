@@ -1,0 +1,313 @@
+// The sync engine against the real database, with an in-memory stand-in for the
+// server that implements the same acceptance rule as the Worker.
+//
+// Two devices are modelled as two databases talking to one fake server — which
+// is the only way to test convergence, the property the whole design exists for.
+
+import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker/data/database.dart';
+import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/data/sync_service.dart';
+import 'package:time_tracker/data/sync_store.dart';
+import 'package:time_tracker/data/sync_transport.dart';
+import 'package:time_tracker/domain/sync_protocol.dart';
+
+/// An in-memory twin of worker/src/index.js: same acceptance rule, same shared
+/// `seq` order across both tables, same "echo the push back" behaviour.
+class FakeServer implements SyncTransport {
+  final activities = <String, ActivityDto>{};
+  final changes = <String, ChangeDto>{};
+  final _seq = <String, int>{};
+  int _next = 1;
+
+  int exchanges = 0;
+
+  /// Set to make the next exchange fail, as an unreachable network would.
+  bool offline = false;
+
+  @override
+  Future<SyncResponse> exchange(SyncRequest request) async {
+    exchanges++;
+    if (offline) throw const SyncException('unreachable');
+
+    final cursor = int.tryParse(request.cursor ?? '0') ?? 0;
+    final rejected = <String>[];
+
+    for (final dto in request.activities) {
+      final stored = activities[dto.syncId];
+      if (stored != null && !acceptsPush(storedVersion: stored.version, incomingVersion: dto.version)) {
+        rejected.add(dto.syncId);
+        continue;
+      }
+      activities[dto.syncId] = dto;
+      _seq[dto.syncId] = _next++;
+    }
+    for (final dto in request.changes) {
+      final stored = changes[dto.syncId];
+      if (stored != null && !acceptsPush(storedVersion: stored.version, incomingVersion: dto.version)) {
+        rejected.add(dto.syncId);
+        continue;
+      }
+      changes[dto.syncId] = dto;
+      _seq[dto.syncId] = _next++;
+    }
+
+    final outActivities = [
+      for (final e in activities.entries)
+        if ((_seq[e.key] ?? 0) > cursor) e.value,
+    ];
+    final outChanges = [
+      for (final e in changes.entries)
+        if ((_seq[e.key] ?? 0) > cursor) e.value,
+    ];
+
+    final sent = [
+      ...outActivities.map((a) => _seq[a.syncId] ?? 0),
+      ...outChanges.map((c) => _seq[c.syncId] ?? 0),
+    ];
+    final nextCursor = sent.isEmpty ? cursor : sent.reduce((a, b) => a > b ? a : b);
+
+    return SyncResponse(
+      cursor: '$nextCursor',
+      activities: outActivities,
+      changes: outChanges,
+      rejected: rejected,
+    );
+  }
+}
+
+/// One device: its own database, repositories and sync service.
+class Device {
+  Device(this.server) {
+    db = AppDatabase.forTesting(NativeDatabase.memory());
+    activities = DriftActivityRepository(db);
+    changes = DriftChangeRepository(db);
+    store = SyncStore(db);
+    sync = SyncService(store: store, transport: server);
+  }
+
+  final FakeServer server;
+  late final AppDatabase db;
+  late final DriftActivityRepository activities;
+  late final DriftChangeRepository changes;
+  late final SyncStore store;
+  late final SyncService sync;
+
+  Future<void> close() => db.close();
+}
+
+void main() {
+  // Two databases *is* the point here — they model two devices, and each has its
+  // own executor, so drift's shared-executor warning does not apply.
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+
+  late FakeServer server;
+  late Device phone;
+
+  setUp(() {
+    server = FakeServer();
+    phone = Device(server);
+  });
+
+  tearDown(() => phone.close());
+
+  test('a first sync pushes everything the device already has', () async {
+    await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+
+    final result = await phone.sync.syncNow();
+
+    expect(result.pushed, 1);
+    expect(server.activities.values.single.name, 'Deep work');
+    // Pushed rows come back in the same response and are adopted, which is how
+    // a rejected push learns the winning version.
+    expect(result.pulled, 1);
+  });
+
+  test('a synced row is not pushed again', () async {
+    await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+
+    final second = await phone.sync.syncNow();
+
+    expect(second.pushed, 0);
+    expect(second.pulled, 0);
+  });
+
+  test('editing a synced row makes it pending again', () async {
+    final a = await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+
+    await phone.activities.renameActivity(a.syncId, 'Focus');
+    final result = await phone.sync.syncNow();
+
+    expect(result.pushed, 1);
+    expect(server.activities[a.syncId]!.name, 'Focus');
+    expect(server.activities[a.syncId]!.version, 2);
+  });
+
+  test('a second device pulls what the first pushed', () async {
+    final watch = Device(server);
+    addTearDown(watch.close);
+
+    final a = await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.changes.switchTo(a.syncId, at: DateTime(2026, 1, 5, 9));
+    await phone.sync.syncNow();
+
+    final result = await watch.sync.syncNow();
+
+    expect(result.pulled, 2); // the activity and the change
+    final pulled = await watch.activities.loadActivities();
+    expect(pulled.single.name, 'Deep work');
+    // The set travels inside its change, so it arrives whole.
+    final changes = await watch.changes.loadChanges();
+    expect(await watch.changes.activityIdsForChange(changes.single.syncId), [a.syncId]);
+  });
+
+  test('a pulled row is not echoed back as a local edit', () async {
+    final watch = Device(server);
+    addTearDown(watch.close);
+
+    await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+    await watch.sync.syncNow();
+
+    // Adopting must not mark the row dirty, or two devices would ratchet each
+    // other's versions upward forever.
+    expect(await watch.store.pendingActivities(), isEmpty);
+    final second = await watch.sync.syncNow();
+    expect(second.pushed, 0);
+  });
+
+  test('a deletion propagates as a tombstone', () async {
+    final watch = Device(server);
+    addTearDown(watch.close);
+
+    final a = await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+    await watch.sync.syncNow();
+
+    await phone.activities.deleteActivity(a.syncId);
+    await phone.sync.syncNow();
+    await watch.sync.syncNow();
+
+    // Gone from the live list, but the row survives so the deletion cannot be
+    // undone by a stale peer re-pushing the old version.
+    expect(await watch.activities.loadActivities(), isEmpty);
+    final raw = await watch.db.select(watch.db.activities).getSingle();
+    expect(raw.deletedAt, isNotNull);
+  });
+
+  test('concurrent edits converge on the later arrival', () async {
+    final watch = Device(server);
+    addTearDown(watch.close);
+
+    final a = await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+    await watch.sync.syncNow();
+
+    // Both edit the same row from version 1, offline. Both become version 2.
+    await phone.activities.renameActivity(a.syncId, 'From phone');
+    await watch.activities.renameActivity(a.syncId, 'From watch');
+
+    await phone.sync.syncNow();
+    await watch.sync.syncNow();
+    // The phone now pulls whatever won.
+    await phone.sync.syncNow();
+
+    final onPhone = (await phone.activities.loadActivities()).single.name;
+    final onWatch = (await watch.activities.loadActivities()).single.name;
+
+    // One edit is lost — that is the documented trade. What must hold is that
+    // both devices agree, and on the value the server kept.
+    expect(onPhone, onWatch);
+    expect(onPhone, server.activities[a.syncId]!.name);
+    expect(onPhone, 'From watch'); // the later arrival
+  });
+
+  test('a stale push is rejected and the winning version adopted', () async {
+    final watch = Device(server);
+    addTearDown(watch.close);
+
+    final a = await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+    await watch.sync.syncNow();
+
+    // The phone gets two edits ahead while the watch is offline.
+    await phone.activities.renameActivity(a.syncId, 'Second');
+    await phone.sync.syncNow();
+    await phone.activities.renameActivity(a.syncId, 'Third');
+    await phone.sync.syncNow();
+
+    // The watch's single edit is version 2 against the server's 3.
+    await watch.activities.renameActivity(a.syncId, 'From watch');
+    final result = await watch.sync.syncNow();
+
+    expect(result.rejected, 1);
+    // Rejected, and the newer row came back in the same response — so the watch
+    // is left agreeing with the server rather than stuck re-pushing forever.
+    expect((await watch.activities.loadActivities()).single.name, 'Third');
+    final after = await watch.sync.syncNow();
+    expect(after.pushed, 0);
+  });
+
+  test('an offline sync leaves everything pending for next time', () async {
+    await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    server.offline = true;
+
+    await expectLater(phone.sync.syncNow(), throwsA(isA<SyncException>()));
+
+    // Nothing was marked clean and the cursor did not move: the local database
+    // is authoritative, and a failed sync has to be inert.
+    expect(await phone.store.pendingActivities(), hasLength(1));
+    expect(await phone.store.cursor(), isNull);
+
+    server.offline = false;
+    expect((await phone.sync.syncNow()).pushed, 1);
+  });
+
+  test('an edit made while a sync is in flight is not marked clean', () async {
+    final a = await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+
+    // markSynced clears only rows still at the version that was pushed. Bumping
+    // the row to v3 after v2 went out means v3 must survive as pending.
+    await phone.activities.renameActivity(a.syncId, 'Second'); // v2
+    await phone.store.markSynced(
+      activityVersions: {a.syncId: 1}, // a stale ack, as if v1 had been in flight
+      changeVersions: const {},
+    );
+
+    expect(await phone.store.pendingActivities(), hasLength(1));
+  });
+
+  test('a change referencing an unknown activity keeps the change', () async {
+    // Pages are capped server-side, so a change can arrive before the activity
+    // it names. Dropping the change would lose a boundary permanently; dropping
+    // the link is repaired by the next sync.
+    final watch = Device(server);
+    addTearDown(watch.close);
+
+    await watch.store.applyRemoteChange(ChangeDto(
+      syncId: 'c1',
+      changedAt: DateTime(2026, 1, 5, 9),
+      version: 1,
+      activityIds: const ['not-here-yet'],
+    ));
+
+    final changes = await watch.changes.loadChanges();
+    expect(changes, hasLength(1));
+    expect(await watch.changes.activityIdsForChange('c1'), isEmpty);
+  });
+
+  test('concurrent syncNow calls collapse into one', () async {
+    await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+
+    final results = await Future.wait([phone.sync.syncNow(), phone.sync.syncNow()]);
+
+    // Two in flight would push the same rows twice and race on the cursor.
+    expect(server.exchanges, 1);
+    expect(results.where((r) => r.pushed > 0), hasLength(1));
+  });
+}

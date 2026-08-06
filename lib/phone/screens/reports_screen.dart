@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/providers.dart';
+import '../../data/sync_service.dart';
+import '../../data/sync_transport.dart';
 import '../../domain/activity_tree.dart';
 import '../../domain/block.dart';
 import '../../domain/csv_export.dart';
@@ -110,6 +112,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           primary: true,
           onTap: () => _exportCsv(context, ref, blocks, tree, now),
         ),
+        const SizedBox(height: 10),
+        const _SyncAction(),
         const SizedBox(height: 14),
         const _StorageLine(),
       ],
@@ -121,6 +125,72 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final thisWeek = localWeekRange(now).start;
     if (weekStart == thisWeek) return 'This week';
     return '${weekStart.day}/${weekStart.month} – ${end.day}/${end.month}';
+  }
+}
+
+/// Manual sync. Hidden entirely when no backend is configured — sync is
+/// optional, and an action that cannot work is worse than no action.
+///
+/// Manual rather than a background loop, because the local database is
+/// authoritative: syncing is how devices *agree*, not how the app works, so its
+/// failure has to be inert and its timing the user's business.
+class _SyncAction extends ConsumerStatefulWidget {
+  const _SyncAction();
+
+  @override
+  ConsumerState<_SyncAction> createState() => _SyncActionState();
+}
+
+class _SyncActionState extends ConsumerState<_SyncAction> {
+  bool _running = false;
+  String? _status;
+
+  Future<void> _sync(SyncService service) async {
+    setState(() {
+      _running = true;
+      _status = null;
+    });
+    try {
+      final result = await service.syncNow();
+      if (!mounted) return;
+      setState(() {
+        _status = '↑${result.pushed} ↓${result.pulled}'
+            '${result.rejected > 0 ? " · ${result.rejected} superseded" : ""}';
+      });
+    } on SyncException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        // Being offline is the normal state for this app, not a failure worth
+        // alarming about; a bad token is worth naming, because only the user
+        // can fix it.
+        _status = e.unauthorized ? 'token rejected' : 'offline';
+      });
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    final service = ref.watch(syncServiceProvider);
+    if (service == null) return const SizedBox.shrink();
+
+    return Row(
+      children: [
+        Expanded(
+          child: NeoButton(
+            label: _running ? '⟳ syncing…' : '⟳ sync now',
+            shadowOffset: 3,
+            onTap: _running ? null : () => _sync(service),
+          ),
+        ),
+        if (_status != null) ...[
+          const SizedBox(width: 10),
+          Text(_status!, style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted)),
+        ],
+      ],
+    );
   }
 }
 

@@ -43,8 +43,25 @@ class Activities extends Table {
   /// (with bumped [version]) so the deletion participates in version-LWW sync.
   DateTimeColumn get deletedAt => dateTime().nullable()();
 
+  /// Set by every local write, cleared once the server has accepted the row.
+  ///
+  /// This is what "needs pushing" means — an `updatedAt > lastSync` comparison
+  /// would be at the mercy of clock skew between devices, and a row edited while
+  /// a sync was in flight would be missed.
+  BoolColumn get dirty => boolean().withDefault(const Constant(true))();
+
   @override
   Set<Column> get primaryKey => {syncId};
+}
+
+/// Sync bookkeeping: the server cursor, and anything else that is about the
+/// *connection* rather than the data. One row per key.
+class SyncMeta extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
 }
 
 /// Stores a [DateTime] as epoch **milliseconds**.
@@ -77,6 +94,9 @@ class ActivityChanges extends Table {
   IntColumn get version => integer().withDefault(const Constant(1))();
   DateTimeColumn get deletedAt => dateTime().nullable()();
 
+  /// See [Activities.dirty].
+  BoolColumn get dirty => boolean().withDefault(const Constant(true))();
+
   @override
   Set<Column> get primaryKey => {syncId};
 }
@@ -96,14 +116,14 @@ class ActivityChangeActivities extends Table {
 }
 
 @DriftDatabase(
-  tables: [Activities, ActivityChanges, ActivityChangeActivities],
+  tables: [Activities, ActivityChanges, ActivityChangeActivities, SyncMeta],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -116,6 +136,13 @@ class AppDatabase extends _$AppDatabase {
         await customStatement(
           'UPDATE activity_changes SET changed_at = changed_at * 1000',
         );
+      }
+      if (from < 3) {
+        // Sync bookkeeping. Everything already on the device predates any
+        // server, so it all starts dirty and gets pushed on the first sync.
+        await m.addColumn(activities, activities.dirty);
+        await m.addColumn(activityChanges, activityChanges.dirty);
+        await m.createTable(syncMeta);
       }
     },
     beforeOpen: (details) async {

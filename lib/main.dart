@@ -6,6 +6,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'data/auto_sync.dart';
 import 'data/wear_sync.dart';
 import 'phone/phone_app.dart';
 import 'watch/watch_app.dart';
@@ -66,13 +67,32 @@ class TimeTrackerRoot extends ConsumerStatefulWidget {
   ConsumerState<TimeTrackerRoot> createState() => _TimeTrackerRootState();
 }
 
-class _TimeTrackerRootState extends ConsumerState<TimeTrackerRoot> {
+class _TimeTrackerRootState extends ConsumerState<TimeTrackerRoot>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Fire-and-forget: a missing or unpaired Wear layer must not delay or block
     // the UI, and every failure inside is already swallowed at the bridge.
     unawaited(ref.read(wearSyncProvider).start());
+
+    // Null unless a sync backend is configured. Same contract as the Wear
+    // bridge: it must not delay the first frame, and its failures are inert.
+    ref.read(autoSyncProvider)?.start();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the foreground is the moment the other device is most
+    // likely to have moved on.
+    if (state == AppLifecycleState.resumed) ref.read(autoSyncProvider)?.onResumed();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override

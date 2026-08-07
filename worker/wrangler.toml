@@ -9,7 +9,7 @@ compatibility_date = "2026-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "track-sync"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "3e3eb1d0-0d90-4891-b82e-95e9d2adeb13"
 
 # SYNC_TOKEN is NOT set here — it is the whole security boundary and must not
 # live in the repository. Set it as a secret:

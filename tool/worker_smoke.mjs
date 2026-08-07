@@ -56,6 +56,16 @@ if (applySchema.status !== 0) {
 }
 console.log('schema applied to a fresh local D1');
 
+// Refuse to run against someone else's server. If the port is already taken —
+// a `just worker-dev` left running, most likely — wrangler cannot bind, every
+// request goes to *that* worker instead, and the whole suite fails against a
+// database and a token it does not own. It looks exactly like a broken Worker.
+const inUse = await fetch(`${ORIGIN}/`).then(() => true).catch(() => false);
+if (inUse) {
+  console.error(`port ${PORT} is already serving something — stop it, or pass a free port.`);
+  process.exit(1);
+}
+
 const server = spawn(
   'npx',
   ['wrangler', 'dev', '--port', PORT, '--var', `SYNC_TOKEN:${TOKEN}`, '--persist-to', STATE],

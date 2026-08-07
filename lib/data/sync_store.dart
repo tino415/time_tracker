@@ -16,6 +16,42 @@ class SyncStore {
   final AppDatabase _db;
 
   static const _cursorKey = 'cursor';
+  static const _backendKey = 'backend';
+
+  /// Re-point this device at [backend], clearing sync state if it changed.
+  ///
+  /// A cursor is a position in *one server's* sequence and `dirty` records what
+  /// *that* server has accepted; neither means anything against a different
+  /// backend. Carrying them over is silently destructive — the client asks for
+  /// rows after a sequence number the new server has never issued, and considers
+  /// its own rows already delivered, so it pushes nothing and pulls nothing and
+  /// reports a perfectly healthy "0 up, 0 down".
+  ///
+  /// Returns whether a reset happened.
+  Future<bool> adoptBackend(String backend) async {
+    final row = await (_db.select(_db.syncMeta)
+          ..where((t) => t.key.equals(_backendKey)))
+        .getSingleOrNull();
+    if (row?.value == backend) return false;
+
+    await _db.transaction(() async {
+      // Everything must be offered to the new server, including rows the old one
+      // had. Marking them dirty is safe even when the new server already has
+      // them: the push is version-checked, and an identical version is accepted
+      // rather than duplicated.
+      await _db.update(_db.activities).write(
+            const ActivitiesCompanion(dirty: Value(true)),
+          );
+      await _db.update(_db.activityChanges).write(
+            const ActivityChangesCompanion(dirty: Value(true)),
+          );
+      await (_db.delete(_db.syncMeta)..where((t) => t.key.equals(_cursorKey))).go();
+      await _db.into(_db.syncMeta).insertOnConflictUpdate(
+            SyncMetaCompanion.insert(key: _backendKey, value: backend),
+          );
+    });
+    return true;
+  }
 
   Future<String?> cursor() async {
     final row = await (_db.select(_db.syncMeta)

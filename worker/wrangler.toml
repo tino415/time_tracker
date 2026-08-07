@@ -14,3 +14,20 @@ database_id = "3e3eb1d0-0d90-4891-b82e-95e9d2adeb13"
 # SYNC_TOKEN is NOT set here — it is the whole security boundary and must not
 # live in the repository. Set it as a secret:
 #   wrangler secret put SYNC_TOKEN
+
+# The PWA is served by this same Worker, so the app and the API share an origin.
+# That is not just tidiness: a separately-hosted app would be cross-origin,
+# every sync would need a CORS preflight, and the Worker would have to grow
+# origin handling it does not otherwise need. One origin, no preflight, and the
+# same shape as the local nginx setup.
+#
+# Build the bundle first (`just web`), since this uploads whatever is there.
+# Headers — including the cross-origin isolation the app wants — come from
+# web/_headers, which flutter copies into the build.
+#
+# not_found_handling is left at its default: an unmatched path falls through to
+# the Worker, which is what routes /sync and /export.csv. Turning on the
+# single-page-application fallback would answer those with index.html instead.
+[assets]
+directory = "../build/web"
+binding = "ASSETS"

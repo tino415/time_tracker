@@ -13,10 +13,15 @@
 #    gen_snapshot for the target, which not every host has; debug is JIT and
 #    slower, but installs and runs fine on a device.
 
-# Optional sync backend, passed to every recipe that produces a client. Set both
-# in the environment to point a build at one:
+# Reads .env from this directory if present, so the sync settings do not have to
+# be retyped on every build. It is gitignored: SYNC_TOKEN is the whole security
+# boundary. See .env.example.
+set dotenv-load := true
+
+# Optional sync backend, passed to every recipe that produces a client. Put both
+# in .env, or pass them for one command:
 #
-#   SYNC_URL=https://host/api/ SYNC_TOKEN=… just deploy <serial>
+#   SYNC_URL=https://host/ SYNC_TOKEN=… just deploy <serial>
 #
 # Unset, the client is built without them and the sync action does not render at
 # all — sync is optional, and the app is complete without it. SYNC_URL must be an
@@ -74,9 +79,14 @@ gen:
 watch:
     flutter pub run build_runner watch --force-jit
 
+# The _headers copy is not incidental: `flutter build web` copies everything in
+# web/ *except* files starting with an underscore, so the response headers the
+# deployed app needs — cross-origin isolation, no-store on the shell — would
+# silently not ship.
 [doc('Build the web PWA into build/web')]
 web:
     flutter build web {{sync_defines}}
+    cp web/_headers build/web/_headers
 
 # The *built* bundle rather than a dev server, because that is the real artefact
 # — service worker, offline reload, installability, hashed assets — and a dev
@@ -105,8 +115,12 @@ web-smoke port="4242": web
 # network. The Dart suite proves the client's half against a FakeServer written
 # to mirror this Worker; if the Worker diverges from that model, only this
 # notices.
+#
+# A different default port from `worker-dev` on purpose: run both at once and
+# the test would silently exercise the dev worker instead — its own database,
+# its own token, and a wall of failures that look like a broken Worker.
 [doc('Smoke-test the sync worker locally')]
-worker-smoke port="4243":
+worker-smoke port="4245":
     node tool/worker_smoke.mjs {{port}}
 
 # Apply the schema to a local D1. Safe to re-run — the schema is all
@@ -133,6 +147,17 @@ worker-dev port="4243" token="local-dev-token":
         --port {{port}} --ip 0.0.0.0 \
         --var SYNC_TOKEN:{{token}} \
         --persist-to worker/.wrangler/dev-state
+
+# Uploads the Worker *and* build/web as its static assets, so the app and the API
+# end up on one origin. Depends on `web`, because it ships whatever is in
+# build/web — deploying without rebuilding would publish a stale bundle, quite
+# possibly one pointed at a local backend.
+#
+# First-time setup (account, D1, secret) is in worker/README.md; this recipe
+# assumes it is done.
+[doc('Deploy the worker and the PWA to Cloudflare')]
+worker-deploy: web
+    npx wrangler deploy --config worker/wrangler.toml
 
 [doc('Debug APK for a phone (arm64)')]
 phone-apk:
@@ -167,3 +192,4 @@ deploy-watch device: watch-apk
 [doc('flutter clean')]
 clean:
     flutter clean
+

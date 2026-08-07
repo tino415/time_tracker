@@ -56,6 +56,9 @@ result
 # scratch — `just worker-db` recreates it from worker/schema.sql.
 worker/.wrangler/
 
+# Sync backend settings, loaded by just. Holds SYNC_TOKEN — see .env.example.
+/.env
+
 # Per-developer environment files that live in the repo root but are not part of
 # the project. Under the agent sandbox these are bind-mounted to /dev/null, so
 # they read as character devices rather than their real contents — staging them

@@ -1,0 +1,18 @@
+# Response headers for Cloudflare static asset hosting. Copied verbatim into
+# build/web by `flutter build web`, and read by Workers Assets / Pages.
+#
+# The local dev server (tool/serve_web.dart) sets the same headers itself; this
+# is the deployed equivalent, and the two must not drift.
+
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin
+
+# The shell and the service worker must never be served stale, or a deploy stays
+# invisible until caches expire. Hashed assets can be cached hard; these cannot.
+/index.html
+  Cache-Control: no-store
+
+/flutter_service_worker.js
+  Cache-Control: no-store

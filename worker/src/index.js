@@ -16,9 +16,24 @@
 
 const MAX_PAGE = 500;
 
+const API_PATHS = new Set(['/sync', '/export.csv']);
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Anything that is not an API route is the PWA. Serving it from this same
+    // Worker is what keeps the app and the API on one origin — a separately
+    // hosted app would be cross-origin, so every sync would need a CORS
+    // preflight and this Worker would have to grow origin handling.
+    //
+    // Note the order: the token gates the *API*, not the app. Authorising first
+    // would 401 every static file, which is how the first deploy served nothing
+    // but "unauthorized".
+    if (!API_PATHS.has(url.pathname)) {
+      if (env.ASSETS) return env.ASSETS.fetch(request);
+      return json({ error: 'not found' }, 404);
+    }
 
     if (!authorized(request, url, env)) {
       return json({ error: 'unauthorized' }, 401);

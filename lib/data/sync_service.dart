@@ -31,12 +31,19 @@ class SyncResult {
 /// and the local database is authoritative; syncing is how devices *agree*, not
 /// how they work, so it runs when asked and its failures are inert.
 class SyncService {
-  SyncService({required SyncStore store, required SyncTransport transport})
-      : _store = store,
-        _transport = transport;
+  SyncService({
+    required SyncStore store,
+    required SyncTransport transport,
+    required String backend,
+  })  : _store = store,
+        _transport = transport,
+        _backend = backend;
 
   final SyncStore _store;
   final SyncTransport _transport;
+
+  /// Identifies which server this device's cursor and dirty flags refer to.
+  final String _backend;
 
   bool _running = false;
 
@@ -46,6 +53,10 @@ class SyncService {
     if (_running) return SyncResult.none;
     _running = true;
     try {
+      // Before anything else: if this device last synced somewhere else, its
+      // cursor and dirty flags describe that server, not this one.
+      await _store.adoptBackend(_backend);
+
       final activities = await _store.pendingActivities();
       final changes = await _store.pendingChanges();
 
@@ -135,5 +146,9 @@ final syncServiceProvider = Provider<SyncService?>((ref) {
   );
   ref.onDispose(transport.close);
 
-  return SyncService(store: ref.watch(syncStoreProvider), transport: transport);
+  return SyncService(
+    store: ref.watch(syncStoreProvider),
+    transport: transport,
+    backend: config.baseUrl!,
+  );
 });

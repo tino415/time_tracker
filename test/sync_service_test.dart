@@ -80,15 +80,18 @@ class FakeServer implements SyncTransport {
 
 /// One device: its own database, repositories and sync service.
 class Device {
-  Device(this.server) {
+  Device(this.server, {this.backend = 'https://example.test/'}) {
     db = AppDatabase.forTesting(NativeDatabase.memory());
     activities = DriftActivityRepository(db);
     changes = DriftChangeRepository(db);
     store = SyncStore(db);
-    sync = SyncService(store: store, transport: server);
+    sync = SyncService(store: store, transport: server, backend: backend);
   }
 
   final FakeServer server;
+
+  /// Which server this device believes it is talking to.
+  final String backend;
   late final AppDatabase db;
   late final DriftActivityRepository activities;
   late final DriftChangeRepository changes;
@@ -299,6 +302,44 @@ void main() {
     final changes = await watch.changes.loadChanges();
     expect(changes, hasLength(1));
     expect(await watch.changes.activityIdsForChange('c1'), isEmpty);
+  });
+
+  test('switching backend re-offers everything instead of silently skipping', () async {
+    // Found in real use: a phone that had synced against a local worker was
+    // pointed at the deployed one and reported "0 up, 0 down" forever. Its
+    // cursor was a position in the *old* server's sequence, so it asked for rows
+    // after a number the new server had never issued, and its rows were marked
+    // clean against a server that had never seen them.
+    await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+    expect(server.activities, hasLength(1));
+
+    // Same device and database, a different backend.
+    final elsewhere = FakeServer();
+    final moved = SyncService(
+      store: phone.store,
+      transport: elsewhere,
+      backend: 'https://somewhere-else.test/',
+    );
+
+    final result = await moved.syncNow();
+
+    expect(result.pushed, 1, reason: 'the new server has never seen this row');
+    expect(elsewhere.activities.values.single.name, 'Deep work');
+    // And the cursor restarted, so rows already on the new server come down
+    // rather than being skipped.
+    expect(await phone.store.cursor(), isNot('0'));
+  });
+
+  test('an unchanged backend does not reset anything', () async {
+    await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    await phone.sync.syncNow();
+
+    final second = await phone.sync.syncNow();
+
+    // Resetting on every sync would re-push the whole database each time.
+    expect(second.pushed, 0);
+    expect(second.pulled, 0);
   });
 
   test('concurrent syncNow calls collapse into one', () async {

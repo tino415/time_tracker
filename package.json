@@ -2,11 +2,12 @@
   "name": "time_tracker-tools",
   "private": true,
   "type": "module",
-  "description": "Browser tooling for the web PWA (see tool/web_smoke.mjs). Not part of the Flutter app.",
+  "description": "Tooling for the web PWA and the sync worker. Not part of the Flutter app.",
   "scripts": {
     "smoke": "node tool/web_smoke.mjs"
   },
   "dependencies": {
-    "playwright-core": "1.56.1"
+    "playwright-core": "1.56.1",
+    "wrangler": "^4.0.0"
   }
 }

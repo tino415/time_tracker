@@ -87,6 +87,39 @@ node-deps:
 web-smoke port="4242": web
     xvfb-run -a node tool/web_smoke.mjs {{port}}
 
+# Runs the real Worker on workerd against a local D1 — no account, no deploy, no
+# network. The Dart suite proves the client's half against a FakeServer written
+# to mirror this Worker; if the Worker diverges from that model, only this
+# notices.
+[doc('Smoke-test the sync worker locally')]
+worker-smoke port="4243":
+    node tool/worker_smoke.mjs {{port}}
+
+# Apply the schema to a local D1. Safe to re-run — the schema is all
+# CREATE TABLE IF NOT EXISTS — and needed once before `worker-dev` will answer.
+[doc('Create or update the local sync database')]
+worker-db:
+    npx wrangler d1 execute track-sync --local \
+        --config worker/wrangler.toml \
+        --persist-to worker/.wrangler/dev-state \
+        --file worker/schema.sql
+
+# A real Worker on a real local D1, for exercising sync from the app. The token
+# is a throwaway: it only guards a database on this machine, and the deployed one
+# takes its token from `wrangler secret` instead.
+#
+# Build the client against it — same origin as wherever the app is served, so the
+# request is not cross-origin and not mixed content:
+#   flutter build web --dart-define=SYNC_URL=https://<host>/api/ \
+#                     --dart-define=SYNC_TOKEN=local-dev-token
+# with /api/ reverse-proxied to this port, prefix stripped.
+[doc('Run the sync worker locally against a persistent D1')]
+worker-dev port="4243" token="local-dev-token":
+    npx wrangler dev --config worker/wrangler.toml \
+        --port {{port}} --ip 0.0.0.0 \
+        --var SYNC_TOKEN:{{token}} \
+        --persist-to worker/.wrangler/dev-state
+
 [doc('Debug APK for a phone (arm64)')]
 phone-apk:
     flutter build apk --debug --target-platform android-arm64

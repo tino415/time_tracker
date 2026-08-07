@@ -52,6 +52,10 @@ result
 # installs it.
 /node_modules
 
+# Local Worker state: the wrangler dev D1 database and its logs. Machine-local
+# scratch — `just worker-db` recreates it from worker/schema.sql.
+worker/.wrangler/
+
 # Per-developer environment files that live in the repo root but are not part of
 # the project. Under the agent sandbox these are bind-mounted to /dev/null, so
 # they read as character devices rather than their real contents — staging them

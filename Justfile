@@ -81,8 +81,8 @@ node-deps:
     npm install --no-audit --no-fund
 
 # Checks cross-origin isolation, OPFS, persistence, data surviving a reload, and
-# a reload with the network cut. Chromium runs headed under Xvfb — headless
-# swiftshader paints blank CanvasKit frames.
+# a reload with the network cut. Runs headed under Xvfb — headless swiftshader
+# paints blank CanvasKit frames.
 [doc('Build, serve, and smoke-test the PWA in a real browser')]
 web-smoke port="4242": web
     xvfb-run -a node tool/web_smoke.mjs {{port}}

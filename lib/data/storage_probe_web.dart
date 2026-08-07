@@ -8,9 +8,9 @@ import 'storage_status.dart';
 ///
 /// `persist()` is what stops the browser evicting the database when the device
 /// is short on space — without it an offline-first PWA can silently lose
-/// everything it has recorded. Chrome grants it automatically for installed /
-/// sufficiently engaged origins and rejects it otherwise; either way the answer
-/// is surfaced rather than assumed.
+/// everything it has recorded. Browsers grant it to installed or sufficiently
+/// engaged origins and refuse it otherwise; either way the answer is surfaced
+/// rather than assumed.
 ///
 /// Every call is defensive: `navigator.storage` is absent on older browsers and
 /// in insecure contexts, and a rejected promise here must not stop the app from

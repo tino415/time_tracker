@@ -48,9 +48,9 @@ is no hot reload: re-run `just up` to pick up changes.
 **Storage persistence.** Browsers may evict an origin's storage under disk
 pressure, which for this app means losing recorded time. The app calls
 `navigator.storage.persist()` at startup and reports the answer on the Reports
-screen (`LOCAL DB · opfs · persistent · isolated`). Chrome only *grants* it to
-engaged origins — installing the PWA is the reliable way — so a plain browser tab
-may legitimately read `evictable`.
+screen (`LOCAL DB · opfs · persistent · isolated`). Browsers only *grant* it to
+installed or sufficiently engaged origins, so a plain tab may legitimately read
+`evictable`; installing the PWA is the reliable way to get `persistent`.
 
 `just web-smoke` checks all of this in a real browser: the headers, the wasm MIME
 type, cross-origin isolation, that drift's database really lands in OPFS, that it

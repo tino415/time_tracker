@@ -150,12 +150,12 @@ try {
     env.persistApi && env.persistCallable,
     env.persistError ?? '',
   );
-  // Whether the grant is given is Chrome's call, driven by site engagement —
-  // installed / bookmarked / high engagement. A fresh automation profile has
-  // none of that, so a denial here says nothing about the app and must not gate
-  // the run. What matters is that the request is made and the answer surfaced,
-  // which the UI's "local db" line does.
-  info('persistence granted', env.persisted ? 'yes' : 'no (unengaged profile; granted on install)');
+  // Whether the grant is given is the browser's call, driven by installation or
+  // engagement. A fresh automation profile has neither, so a denial here says
+  // nothing about the app and must not gate the run. What matters is that the
+  // request is made and the answer surfaced, which the UI's "local db" line
+  // does — and that the grant has been confirmed by hand on an installed PWA.
+  info('persistence granted', env.persisted ? 'yes' : 'no (uninstalled profile; granted on install)');
 
   const entries = await waitForOpfs(page);
   check('drift database in OPFS', entries.length > 0, entries.join(', ') || 'no OPFS entries');

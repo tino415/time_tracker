@@ -58,8 +58,16 @@ survives a reload, and that the app still loads with the network cut.
 
 ### Hosting
 
-Any static host works, provided it sends the two isolation headers and serves
-`.wasm` as `application/wasm`. For nginx:
+**Serve it over HTTPS.** Service workers, OPFS and `storage.persist()` are all
+gated on a secure context, so over plain HTTP the app loses its database, its
+offline capability and its installability at once. The only exception is a
+loopback origin — `127.0.0.1` or a `*.localhost` name — which browsers already
+treat as trustworthy. That exception is why `just up` can serve plain HTTP and
+why `just web-smoke` passes against `127.0.0.1`; it does not extend to a real
+hostname, even on a private network.
+
+Beyond that, any static host works, provided it sends the two isolation headers
+and serves `.wasm` as `application/wasm`. For nginx:
 
 ```nginx
 location / {

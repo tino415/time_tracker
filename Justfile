@@ -58,14 +58,6 @@ watch:
 web:
     flutter build web
 
-# Serve the *built* PWA (build/web) with COOP/COEP. Not needed for ordinary
-# development — drift works without cross-origin isolation, it just uses an OPFS
-# implementation that does not want SharedArrayBuffer. This exists so the smoke
-# test can exercise a release-shaped bundle: service worker, offline reload,
-# hashed assets. Build first with `just web`.
-web-serve port="4242":
-    dart tool/serve_web.dart build/web {{port}}
-
 # Install the browser tooling used by `web-smoke` (playwright-core). The browser
 # binaries themselves come from the environment, not from npm.
 node-deps:
@@ -78,10 +70,17 @@ node-deps:
 web-smoke port="4242": web
     xvfb-run -a node tool/web_smoke.mjs {{port}}
 
-# Web dev server on dev.local:4116. NOTE: 4116 collides with gym_tracker, and
-# this device cannot send COOP/COEP — prefer `just web-serve`.
-up:
-    flutter run -d web-server --web-hostname dev.local --web-port 4116
+# Run the web PWA for review: build it, then serve build/web with COOP/COEP.
+#
+# The *built* bundle rather than a dev server, because that is the real artefact
+# — service worker, offline reload, installability, hashed assets — and a dev
+# build has none of it. No hot reload as a result; re-run to pick up changes.
+#
+# Binds 0.0.0.0 so a browser outside this machine can reach it, on
+# http://dev.local:{{port}}. Only ports 4000-4999 are shared off this VM, and
+# 4116/4117 belong to gym_tracker — hence 4242.
+up port="4242": web
+    dart tool/serve_web.dart build/web {{port}}
 
 # Debug APK for the phone (arm64).
 phone-apk:

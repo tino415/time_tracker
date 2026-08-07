@@ -20,15 +20,20 @@ to list.
 | `just test-failures [args]` | Same, but only failure output |
 | `just analyze` | Static analysis |
 | `just gen` | Regenerate drift code after a schema change |
-| `just e2e` | On-device end-to-end run (phone emulator) |
-| `just e2e-watch` | Same on the Wear emulator — **expected to fail**, see below |
+| `just e2e` | On-device run of the phone flow (phone emulator) |
+| `just e2e-watch` | On-device run of the *watch* shell (Wear emulator) |
 | `just web` | Build the PWA into `build/web` |
-| `just web-serve` | Serve the build with COOP/COEP |
+| `just up` | Build **and serve** it on `dev.local:4242` — the way to review it |
 | `just web-smoke` | Build, serve, and browser-check the PWA |
-| `just phone-apk` / `just watch-apk` | Debug APKs |
+| `just node-deps` | Install the browser tooling `web-smoke` needs |
+| `just deploy device=<id>` | Build and install on a phone |
+| `just deploy-watch device=<id>` | Same for a Wear device (needs the 32+64 APK) |
+| `just phone-apk` / `just watch-apk` | Debug APKs, without installing |
 
-`e2e-watch` is red on purpose: the phone layout does not fit a 227x227 round
-screen, and it stays in the tree as the harness for the watch phase.
+`e2e` and `e2e-watch` are *different suites*, not the same one on two screens —
+the watch has its own shell because the phone layout does not fit a 227x227 round
+display. Device ids come from `flutter devices`; a phone paired over wifi gets a
+new `ip:port` each pairing.
 
 ## The web PWA
 
@@ -44,10 +49,10 @@ without isolation drift picks an implementation that does not want
 `SharedArrayBuffer`, and everything works. Plain `flutter run -d web-server` is
 fine for development.
 
-`just web-serve` exists for `just web-smoke`, not for development: the smoke test
-needs a *built* bundle (service worker, offline reload, hashed assets), which
-`flutter run` does not produce or serve, and serving it with the headers lets the
-test cover the isolated path too.
+`just up` builds and serves the real bundle rather than running a dev server,
+because the dev build has no service worker — so offline behaviour and
+installability, the two things most worth reviewing, are absent from it. The cost
+is no hot reload: re-run `just up` to pick up changes.
 
 **Storage persistence.** Browsers may evict an origin's storage under disk
 pressure, which for this app means losing recorded time. The app calls

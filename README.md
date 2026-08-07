@@ -10,30 +10,21 @@ drag in the calendar retimes two blocks at once.
 
 ## Commands
 
-Everything runs through the project's nix env: `nx just <recipe>`, or `nx just`
-to list.
+```
+just            # every recipe, with a one-line description
+just <recipe>   # run one
+```
 
-| Recipe | What it does |
-| --- | --- |
-| `just test` | Unit + widget tests |
-| `just test-only <args>` | A subset — a file, or `--plain-name <filter>` |
-| `just test-failures [args]` | Same, but only failure output |
-| `just analyze` | Static analysis |
-| `just gen` | Regenerate drift code after a schema change |
-| `just e2e` | On-device run of the phone flow (phone emulator) |
-| `just e2e-watch` | On-device run of the *watch* shell (Wear emulator) |
-| `just web` | Build the PWA into `build/web` |
-| `just up` | Build **and serve** it on `dev.local:4242` — the way to review it |
-| `just web-smoke` | Build, serve, and browser-check the PWA |
-| `just node-deps` | Install the browser tooling `web-smoke` needs |
-| `just deploy device=<id>` | Build and install on a phone |
-| `just deploy-watch device=<id>` | Same for a Wear device (needs the 32+64 APK) |
-| `just phone-apk` / `just watch-apk` | Debug APKs, without installing |
+The `Justfile` is the reference — each recipe carries its own description and,
+where the reasoning is not obvious, the why. Nothing is duplicated here, so
+there is nothing to fall out of date.
 
-`e2e` and `e2e-watch` are *different suites*, not the same one on two screens —
-the watch has its own shell because the phone layout does not fit a 227x227 round
-display. Device ids come from `flutter devices`; a phone paired over wifi gets a
-new `ip:port` each pairing.
+Start with `just test`, `just up` (build and serve the PWA), and `just deploy
+device=<id>`.
+
+One thing the listing cannot convey: `e2e` and `e2e-watch` are *different
+suites*, not the same one on two screens. The watch has its own shell because the
+phone layout does not fit a 227x227 round display.
 
 ## The web PWA
 
@@ -103,5 +94,5 @@ integration_test/  On-device end-to-end
 tool/          serve_web.dart, web_smoke.mjs
 ```
 
-Planning notes and phase history live in `~/org/todo.org` under
-*Time-activity tracking app*.
+Design decisions and their reasoning live in the commit messages; the code
+comments carry the ones that need to be read alongside the code.

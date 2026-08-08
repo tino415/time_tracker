@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/database.dart' show Activity;
 import '../data/providers.dart';
 import '../data/wear_sync.dart';
 import '../build_info.dart';
@@ -94,17 +95,38 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
 
     final unnamedRunning = current != null && isUnsortedSet(current.activities);
 
+    // The display is a circle, so the usable area narrows towards the top and
+    // bottom and the corners are cut entirely. Insets are a fraction of the
+    // screen rather than fixed pixels, because that is what the geometry is:
+    // proportional to the diameter, not to a device.
+    final size = MediaQuery.of(context).size;
+    final sideInset = size.width * 0.10;
+    final topInset = size.height * 0.09;
+
     return SafeArea(
-      // The whole screen scrolls, so the elapsed clock can take the space it
-      // deserves and the switch candidates live below the fold. Previously
-      // everything was squeezed above it and the timer — the one thing worth a
-      // glance — was the smallest text on screen.
-      child: ListView(
-        // A round screen clips its corners, so nothing sits flush to the edge.
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-        children: [
-          _NowHero(current: current),
-          const SizedBox(height: 10),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(sideInset, topInset, sideInset, 0),
+        child: Column(
+          children: [
+            // Fixed, not scrolled. The elapsed clock is the reason to look at
+            // the watch at all, so it must not be something you can scroll away
+            // from — and at the top of a scroll view it sat exactly where a
+            // round screen cuts.
+            _NowHero(current: current),
+            const SizedBox(height: 8),
+            Expanded(child: _switchList(unnamedRunning, bookmarked, currentId)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _switchList(bool unnamedRunning, List<Activity> bookmarked, String? currentId) {
+    return ListView(
+      // Bottom padding, not an inset: the last tile has to be scrollable clear
+      // of the curve rather than permanently short of it.
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14),
+      children: [
           _ActivityTile(
             // Keyed by identity, not label, so a test can find the tile without
             // depending on wording — and without matching the same name in the
@@ -150,8 +172,7 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: mono(context, size: 8, weight: FontWeight.w700, color: neo(context).muted)),
-        ],
-      ),
+      ],
     );
   }
 }

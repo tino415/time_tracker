@@ -192,6 +192,37 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('the timer stays clear of the round screen edge, and does not scroll', (tester) async {
+    // Reported: the clock was invisible, cut off by the curve. A circular
+    // display narrows towards the top, and the hero had been sitting at the top
+    // of a scroll view — flush against exactly where it cuts.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    await tapTile(tester, tile(deepWorkId));
+
+    final clock = find.textContaining(':');
+    expect(clock, findsWidgets);
+    final rect = tester.getRect(clock.first);
+
+    // Inside the inscribed square of a 227px circle: anything within ~15% of an
+    // edge risks the curve.
+    const margin = 227 * 0.07;
+    expect(rect.top, greaterThan(margin), reason: 'clipped by the top curve');
+    expect(rect.left, greaterThan(0));
+    expect(rect.right, lessThan(227));
+
+    // And it is not inside the scrollable, so it cannot be scrolled away from.
+    expect(
+      find.descendant(of: find.byType(ListView), matching: clock.first),
+      findsNothing,
+      reason: 'the clock is the reason to glance at a watch; it must stay put',
+    );
+
+    await disposeApp(tester);
+  });
+
   testWidgets('one tap arms, it does not switch', (tester) async {
     // A watch is operated by feel, with big targets under a thumb. A misfire
     // there is neither visible nor easy to undo, so the first tap only asks.

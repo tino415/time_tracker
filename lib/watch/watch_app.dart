@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -37,11 +39,49 @@ class WatchApp extends StatelessWidget {
   }
 }
 
-class _WatchHome extends ConsumerWidget {
+/// Tapping a tile arms it; a second tap within [_confirmWindow] switches.
+///
+/// A watch is operated by feel, with 40px targets under a thumb — a misfire is
+/// easy and, unlike on the phone, neither visible nor easy to undo. Two taps is
+/// the cost; it stays one gesture-per-hand and needs no modal, which there is no
+/// room for anyway. Arming expires on its own so a stray tap does not leave the
+/// watch waiting.
+const _confirmWindow = Duration(seconds: 4);
+
+class _WatchHome extends ConsumerStatefulWidget {
   const _WatchHome();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_WatchHome> createState() => _WatchHomeState();
+}
+
+class _WatchHomeState extends ConsumerState<_WatchHome> {
+  String? _armed;
+  Timer? _disarm;
+
+  @override
+  void dispose() {
+    _disarm?.cancel();
+    super.dispose();
+  }
+
+  /// Returns true when the caller should go ahead.
+  bool _confirm(String key) {
+    if (_armed == key) {
+      _disarm?.cancel();
+      setState(() => _armed = null);
+      return true;
+    }
+    _disarm?.cancel();
+    setState(() => _armed = key);
+    _disarm = Timer(_confirmWindow, () {
+      if (mounted) setState(() => _armed = null);
+    });
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final activities = ref.watch(activitiesStreamProvider).valueOrNull ?? const [];
     final bookmarked = [
       for (final a in activities)
@@ -52,71 +92,77 @@ class _WatchHome extends ConsumerWidget {
         ? current.activities.first.syncId
         : null;
 
-    return SafeArea(
-      child: Padding(
-        // A round screen clips its corners, so nothing sits flush to the edge.
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-        child: Column(
-          children: [
-            _NowHeader(current: current),
-            const SizedBox(height: 6),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                // One extra row at the top: "start now". On a watch this is the
-                // most valuable action of all — a glance and a tap, with the
-                // naming deferred to the phone.
-                itemCount: bookmarked.length + 1,
-                separatorBuilder: (_, _) => const SizedBox(height: 6),
-                itemBuilder: (context, index) {
-                  if (index == 0) {
-                    final unnamedRunning =
-                        current != null && isUnsortedSet(current.activities);
-                    return _ActivityTile(
-                      name: unnamedRunning ? 'unnamed · name on phone' : 'start now',
-                      color: parseHexColor(kUnsortedColor),
-                      selected: unnamedRunning,
-                      onTap: unnamedRunning
-                          ? null
-                          : () => ref.read(wearSyncProvider).startUnsorted(),
-                    );
-                  }
+    final unnamedRunning = current != null && isUnsortedSet(current.activities);
 
-                  final a = bookmarked[index - 1];
-                  final selected = a.syncId == currentId;
-                  return _ActivityTile(
-                    name: a.name,
-                    color: parseHexColor(a.color),
-                    selected: selected,
-                    // Tapping what is already running would only split the
-                    // block; the phone guards this too, but not offering it is
-                    // clearer than a tap that does nothing.
-                    onTap: selected
-                        ? null
-                        : () => ref.read(wearSyncProvider).requestSwitch(a.syncId),
-                  );
-                },
-              ),
+    return SafeArea(
+      // The whole screen scrolls, so the elapsed clock can take the space it
+      // deserves and the switch candidates live below the fold. Previously
+      // everything was squeezed above it and the timer — the one thing worth a
+      // glance — was the smallest text on screen.
+      child: ListView(
+        // A round screen clips its corners, so nothing sits flush to the edge.
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+        children: [
+          _NowHero(current: current),
+          const SizedBox(height: 10),
+          _ActivityTile(
+            // Keyed by identity, not label, so a test can find the tile without
+            // depending on wording — and without matching the same name in the
+            // hero above it.
+            key: const ValueKey('tile-$kUnsortedActivityId'),
+            name: unnamedRunning ? 'start another' : 'start now',
+            color: parseHexColor(kUnsortedColor),
+            // Deliberately enabled while an unnamed block runs: two in a row are
+            // two different things to name later, not one long one.
+            selected: false,
+            armed: _armed == kUnsortedActivityId,
+            onTap: () {
+              if (!_confirm(kUnsortedActivityId)) return;
+              ref.read(wearSyncProvider).startUnsorted();
+            },
+          ),
+          const SizedBox(height: 6),
+          for (final a in bookmarked) ...[
+            _ActivityTile(
+              key: ValueKey('tile-${a.syncId}'),
+              name: a.name,
+              color: parseHexColor(a.color),
+              selected: a.syncId == currentId,
+              armed: _armed == a.syncId,
+              // Tapping what is already running would only split the block; the
+              // phone guards this too, but not offering it is clearer than a tap
+              // that does nothing.
+              onTap: a.syncId == currentId
+                  ? null
+                  : () {
+                      if (!_confirm(a.syncId)) return;
+                      ref.read(wearSyncProvider).requestSwitch(a.syncId);
+                    },
             ),
-            // The start-now tile means the screen is never empty, so this is a
-            // hint rather than an empty state.
-            if (bookmarked.isEmpty) const _NoBookmarksHint(),
-            // The watch is the device where "what is installed here?" is hardest
-            // to answer any other way.
-            Text(kBuildId,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: mono(context, size: 8, weight: FontWeight.w700, color: neo(context).muted)),
+            const SizedBox(height: 6),
           ],
-        ),
+          if (bookmarked.isEmpty) const _NoBookmarksHint(),
+          const SizedBox(height: 6),
+          // The watch is the device where "what is installed here?" is hardest
+          // to answer any other way.
+          Text(kBuildId,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: mono(context, size: 8, weight: FontWeight.w700, color: neo(context).muted)),
+        ],
       ),
     );
   }
 }
 
-/// What is tracking, with a live elapsed clock — the one thing worth a glance.
-class _NowHeader extends StatelessWidget {
-  const _NowHeader({required this.current});
+/// What is tracking, dominated by the elapsed clock.
+///
+/// The clock is the reason to look at the watch at all, so it gets the size:
+/// readable at arm's length without focusing, with the activity name as a label
+/// beneath it rather than a heading above.
+class _NowHero extends StatelessWidget {
+  const _NowHero({required this.current});
   final Block? current;
 
   @override
@@ -125,21 +171,38 @@ class _NowHeader extends StatelessWidget {
     final block = current;
 
     if (block == null || block.activities.isEmpty) {
-      return Text(
-        'nothing tracked',
-        style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Text(
+          'nothing tracked',
+          textAlign: TextAlign.center,
+          style: mono(context, size: 13, weight: FontWeight.w700, color: t.muted),
+        ),
       );
     }
 
+    final unnamed = isUnsortedSet(block.activities);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        SecondTicker(
+          builder: (context, now) => FittedBox(
+            // Shrinks rather than wraps once the clock reaches hours — a
+            // three-part time is wider than a 227px screen at this size.
+            fit: BoxFit.scaleDown,
+            child: Text(
+              formatElapsedClock(block.duration(now)),
+              style: mono(context, size: 34, weight: FontWeight.w800, color: t.brand, height: 1),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 7,
-              height: 7,
+              width: 8,
+              height: 8,
               decoration: BoxDecoration(
                 color: parseHexColor(block.activities.first.color),
                 border: Border.all(color: t.line, width: 1),
@@ -148,20 +211,19 @@ class _NowHeader extends StatelessWidget {
             const SizedBox(width: 6),
             Flexible(
               child: Text(
-                block.activities.map((a) => a.name).join(' + '),
+                unnamed ? 'unnamed' : block.activities.map((a) => a.name).join(' + '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: mono(context, size: 12, weight: FontWeight.w800),
+                style: mono(
+                  context,
+                  size: 12,
+                  weight: FontWeight.w800,
+                  color: unnamed ? t.muted : t.ink,
+                ),
               ),
             ),
           ],
-        ),
-        SecondTicker(
-          builder: (context, now) => Text(
-            formatElapsedClock(block.duration(now)),
-            style: mono(context, size: 15, weight: FontWeight.w800, color: t.brand),
-          ),
         ),
       ],
     );
@@ -194,16 +256,21 @@ class _NoBookmarksHint extends ConsumerWidget {
 /// input device, so tiles are sized for a thumb rather than for density.
 class _ActivityTile extends StatelessWidget {
   const _ActivityTile({
+    super.key,
     required this.name,
     required this.color,
     required this.selected,
     required this.onTap,
+    this.armed = false,
   });
 
   final String name;
   final Color color;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// Tapped once and waiting for confirmation.
+  final bool armed;
 
   @override
   Widget build(BuildContext context) {
@@ -212,29 +279,38 @@ class _ActivityTile extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        height: 40,
+        height: 44,
         decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: .30) : t.surface,
-          border: Border.all(color: selected ? color : t.line, width: selected ? 3 : 2),
+          // Armed is the loudest state on the screen on purpose: it is asking a
+          // question, and an unanswered one should not be mistakable for the
+          // running activity.
+          color: armed ? t.brand : (selected ? color.withValues(alpha: .30) : t.surface),
+          border: Border.all(
+            color: armed ? t.brand : (selected ? color : t.line),
+            width: armed || selected ? 3 : 2,
+          ),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
           children: [
-            Container(width: 6, height: 20, color: color),
+            Container(width: 6, height: 22, color: armed ? t.brandInk : color),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                name,
+                armed ? 'tap again' : name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: mono(
                   context,
-                  size: 12,
-                  weight: selected ? FontWeight.w800 : FontWeight.w700,
+                  size: 13,
+                  weight: armed || selected ? FontWeight.w800 : FontWeight.w700,
+                  color: armed ? t.brandInk : t.ink,
                 ),
               ),
             ),
-            if (selected)
+            if (armed)
+              Text('✓', style: mono(context, size: 13, weight: FontWeight.w800, color: t.brandInk))
+            else if (selected)
               Text('●', style: mono(context, size: 10, weight: FontWeight.w800, color: color)),
           ],
         ),

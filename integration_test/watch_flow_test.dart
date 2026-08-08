@@ -26,8 +26,18 @@ import 'package:time_tracker/watch/watch_app.dart';
 import '../test/support/fake_wear_bridge.dart';
 import '../test/support/flow_harness.dart';
 
-Finder tile(String name) =>
-    find.descendant(of: find.byType(ListView), matching: find.text(name));
+/// A switch tile, by the activity it switches to — keyed, because the running
+/// activity's name also appears in the hero above it, in the same scroll view.
+Finder tile(String syncId) => find.byKey(ValueKey('tile-$syncId'));
+
+/// Tiles arm on first tap and act on the second; a misfire on a wrist is
+/// neither visible nor easy to undo.
+Future<void> tapTile(WidgetTester tester, Finder finder) async {
+  await tester.tap(finder);
+  await settle(tester);
+  await tester.tap(finder);
+  await settle(tester);
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -52,7 +62,7 @@ void main() {
     await settle(tester);
 
     // Nothing until the phone says otherwise.
-    expect(find.textContaining('bookmark activities'), findsOneWidget);
+    expect(find.textContaining('bookmark on the phone'), findsOneWidget);
 
     // The watch's own sync service, driven by the fake peer.
     final sync = WearSyncService(
@@ -76,14 +86,13 @@ void main() {
     ]));
     await settle(tester);
 
-    expect(tile('Deep work'), findsOneWidget);
-    expect(tile('Email'), findsOneWidget);
+    expect(tile('a'), findsOneWidget);
+    expect(tile('b'), findsOneWidget);
     expect(find.text('nothing tracked'), findsOneWidget);
 
     // A tap has to do both halves: record locally so the watch is honest with
     // the phone out of range, and relay so the phone converges on the same row.
-    await tester.tap(tile('Deep work'));
-    await settle(tester);
+    await tapTile(tester, tile('a'));
 
     final rows = await DriftChangeRepository(db).loadChanges();
     expect(rows, hasLength(1));

@@ -24,8 +24,20 @@ const _watch = Size(227, 227);
 
 /// A tile in the switch list. Scoped, because once an activity is running its
 /// name also appears in the header — the two are different affordances.
-Finder tile(String name) =>
-    find.descendant(of: find.byType(ListView), matching: find.text(name));
+/// A switch tile, by the activity it switches to.
+///
+/// Keyed rather than found by text: the running activity's name also appears in
+/// the hero above, and both live in the same scroll view.
+Finder tile(String syncId) => find.byKey(ValueKey('tile-$syncId'));
+
+/// Tiles arm on first tap and act on the second — a watch is operated by feel,
+/// and a misfire there is neither visible nor easy to undo.
+Future<void> tapTile(WidgetTester tester, Finder finder) async {
+  await tester.tap(finder);
+  await settle(tester);
+  await tester.tap(finder);
+  await settle(tester);
+}
 
 Future<AppDatabase> pumpWatch(
   WidgetTester tester,
@@ -55,10 +67,17 @@ Future<AppDatabase> pumpWatch(
   return db;
 }
 
+/// Ids of the seeded activities, so tests can address tiles by identity.
+late String deepWorkId;
+late String emailId;
+
 Future<void> seedBookmarks(AppDatabase db) async {
   final activities = DriftActivityRepository(db);
-  await activities.createActivity(name: 'Deep work', color: '#4F8FEE', bookmarked: true);
-  await activities.createActivity(name: 'Email', color: '#EE7C4F', bookmarked: true);
+  deepWorkId =
+      (await activities.createActivity(name: 'Deep work', color: '#4F8FEE', bookmarked: true))
+          .syncId;
+  emailId =
+      (await activities.createActivity(name: 'Email', color: '#EE7C4F', bookmarked: true)).syncId;
   // Not a bookmark: must not reach the watch's list.
   await activities.createActivity(name: 'Admin', color: '#888888');
 }
@@ -118,8 +137,7 @@ void main() {
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
 
-    await tester.tap(tile('Deep work'));
-    await settle(tester);
+    await tapTile(tester, tile(deepWorkId));
 
     final changes = DriftChangeRepository(db);
     final rows = await changes.loadChanges();
@@ -139,13 +157,11 @@ void main() {
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
 
-    await tester.tap(tile('Deep work'));
-    await settle(tester);
+    await tapTile(tester, tile(deepWorkId));
     final before = (await DriftChangeRepository(db).loadChanges()).length;
 
     // Tapping what is already running would only split the block.
-    await tester.tap(tile('Deep work'));
-    await settle(tester);
+    await tapTile(tester, tile(deepWorkId));
 
     expect((await DriftChangeRepository(db).loadChanges()).length, before);
 
@@ -159,11 +175,11 @@ void main() {
 
     // The screen is never empty: "start now" is the action that matters on a
     // watch, and it needs no catalogue.
-    expect(tile('start now'), findsOneWidget);
+    expect(tile(kUnsortedActivityId), findsOneWidget);
+    expect(find.text('start now'), findsOneWidget);
     expect(find.textContaining('bookmark on the phone'), findsOneWidget);
 
-    await tester.tap(tile('start now'));
-    await settle(tester);
+    await tapTile(tester, tile(kUnsortedActivityId));
 
     // The catch-all is created locally — the phone only ever sends *bookmarked*
     // activities, and this one is not a bookmark.
@@ -172,6 +188,70 @@ void main() {
     final rows = await DriftChangeRepository(db).loadChanges();
     expect(rows, hasLength(1));
     expect(bridge.sent.whereType<SwitchRequest>().single.activityId, kUnsortedActivityId);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('one tap arms, it does not switch', (tester) async {
+    // A watch is operated by feel, with big targets under a thumb. A misfire
+    // there is neither visible nor easy to undo, so the first tap only asks.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    await tester.tap(tile(deepWorkId));
+    await settle(tester);
+
+    expect(await DriftChangeRepository(db).loadChanges(), isEmpty);
+    expect(bridge.sent.whereType<SwitchRequest>(), isEmpty);
+    expect(find.text('tap again'), findsOneWidget);
+
+    await tester.tap(tile(deepWorkId));
+    await settle(tester);
+    expect(await DriftChangeRepository(db).loadChanges(), hasLength(1));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('arming one tile disarms another', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    await tester.tap(tile(deepWorkId));
+    await settle(tester);
+    await tester.tap(tile(emailId));
+    await settle(tester);
+
+    // Only one question at a time, and confirming Email must not switch to
+    // whatever was armed before it.
+    expect(find.text('tap again'), findsOneWidget);
+    await tester.tap(tile(emailId));
+    await settle(tester);
+
+    final rows = await DriftChangeRepository(db).loadChanges();
+    expect(rows, hasLength(1));
+    expect(await DriftChangeRepository(db).activityIdsForChange(rows.single.syncId), [emailId]);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('two unnamed blocks can be started in a row', (tester) async {
+    // Reported from wearing the watch: the tile used to be disabled while an
+    // unnamed block ran, and the controller would have no-opped anyway. Two in a
+    // row are two different things to name later.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge);
+
+    await tapTile(tester, tile(kUnsortedActivityId));
+    expect(find.text('start another'), findsOneWidget);
+
+    await tapTile(tester, tile(kUnsortedActivityId));
+
+    final rows = await DriftChangeRepository(db).loadChanges();
+    expect(rows, hasLength(2));
+    expect(bridge.sent.whereType<SwitchRequest>(), hasLength(2));
 
     await disposeApp(tester);
   });

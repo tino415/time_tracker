@@ -59,9 +59,27 @@ void main() {
       expect(await changes.activityIdsForChange(current!.syncId), [kUnsortedActivityId]);
     });
 
-    test('tapping it twice does not split the unnamed block', () async {
-      await controller.startUnsorted();
-      await controller.startUnsorted();
+    test('starts a second unnamed block rather than merging into the first', () async {
+      // Reported from wearing the watch: two unnamed blocks in a row are two
+      // different things to name later. switchTo's no-op guard would collapse
+      // them, silently merging unrelated work with no way to separate it after.
+      await controller.startUnsorted(at: DateTime(2026, 1, 5, 9));
+      await controller.startUnsorted(at: DateTime(2026, 1, 5, 10));
+
+      final rows = await changes.loadChanges();
+      expect(rows, hasLength(2));
+      expect(rows.map((c) => c.changedAt).toSet(), hasLength(2));
+      for (final row in rows) {
+        expect(await changes.activityIdsForChange(row.syncId), [kUnsortedActivityId]);
+      }
+    });
+
+    test('a named activity still refuses to re-open what is running', () async {
+      // The guard that startUnsorted bypasses must stay in place elsewhere:
+      // re-tapping a running activity would split its block for nothing.
+      final work = await activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+      await controller.switchTo(work.syncId);
+      await controller.switchTo(work.syncId);
 
       expect(await changes.loadChanges(), hasLength(1));
     });

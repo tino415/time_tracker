@@ -46,11 +46,18 @@ class TrackerController {
   /// block is answered later with [assignBlock]. Deciding first would charge the
   /// deciding to whatever you were doing before.
   ///
-  /// Tapping it while an unnamed block is already running is a no-op, because
-  /// [switchTo] refuses to re-open what is already tracking.
-  Future<void> startUnsorted() async {
+  /// Always opens a boundary, even when an unnamed block is already running.
+  ///
+  /// [switchTo]'s no-op guard is right for a *named* activity — re-tapping what
+  /// is already running would split the block and lose information — but wrong
+  /// here. Two consecutive unnamed blocks are two different things to be named
+  /// later, and collapsing them merges unrelated work with no way to separate it
+  /// afterwards. That is the common case when only the watch is to hand.
+  Future<void> startUnsorted({DateTime? at}) async {
     final unsorted = await _activities.ensureUnsorted();
-    await switchTo(unsorted.syncId);
+    final now = at ?? DateTime.now();
+    await _changes.switchTo(unsorted.syncId, at: now);
+    await _activities.touchUsed(unsorted.syncId, now);
   }
 
   /// Answer an unnamed block: re-point it at [activityId], keeping its start.

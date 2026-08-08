@@ -163,6 +163,28 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('a short block does not overflow its card', (tester) async {
+    // Reported as "BOTTOM OVERFLOW BY 2.9 PIXELS" while dragging the running
+    // block shorter. The arithmetic matches a card around 15px: one line of
+    // 11px text plus 4px padding needs ~18, so anything between roughly 4px and
+    // 18px overflows — a band the card passes *through* during any drag towards
+    // zero, which is why it showed up as a drag artefact rather than a state.
+    await bootApp(tester, viewport: _phone, seed: (db) async {
+      final activities = DriftActivityRepository(db);
+      final changes = DriftChangeRepository(db);
+      final a = await activities.createActivity(name: 'Alpha', color: '#4F8FEE');
+      final b = await activities.createActivity(name: 'Beta', color: '#EE7C4F');
+      // ~16 minutes ≈ 15px at 56px/hour: squarely in the band.
+      await changes.switchTo(a.syncId, at: _at(9));
+      await changes.switchTo(b.syncId, at: _at(9, 16));
+    });
+    await _openYesterday(tester);
+
+    expect(tester.takeException(), isNull);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('a block of a few seconds renders without error', (tester) async {
     // A card is sized from its block's duration, so a block seconds old is a
     // fraction of a pixel tall — far less than one line of text. It has to

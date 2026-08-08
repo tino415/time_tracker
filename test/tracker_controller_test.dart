@@ -125,11 +125,14 @@ void main() {
       expect(await boundaryOf(ids[1]), at(14, 55));
     });
 
-    test('the newest boundary cannot be dragged into the future', () async {
+    test('the newest boundary cannot be dragged onto the present', () async {
+      // It stops a minute short of `now` rather than on it: the running block
+      // ends at the present, so landing there would leave it zero-length — too
+      // short to draw, and with no boundary left to grab and drag back.
       final ids = await seedDay();
       await controller.moveBoundary(ids[2], at(23), now: now);
 
-      expect(await boundaryOf(ids[2]), now);
+      expect(await boundaryOf(ids[2]), now.subtract(const Duration(minutes: 1)));
     });
 
     test('the earliest boundary can move freely backwards', () async {

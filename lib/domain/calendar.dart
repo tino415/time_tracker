@@ -87,6 +87,11 @@ List<DaySlice> sliceDay({
 /// the target is confined to `(previous, next)` with [minBlock] of clearance on
 /// each side, and never past [notAfter] (the future holds no tracked time).
 ///
+/// [notAfter] gets the same clearance. The running block's end is *now*, which
+/// is not a boundary, so without it a drag could land exactly on the present and
+/// leave a block of zero length — visible as a card too short to draw and a
+/// block that cannot be grabbed again.
+///
 /// Returns null when the window is empty — the neighbours are closer together
 /// than two [minBlock]s — meaning there is no legal position and the caller
 /// should leave the boundary alone.
@@ -99,8 +104,9 @@ DateTime? clampBoundary({
 }) {
   final lower = previous?.add(minBlock);
   var upper = next?.subtract(minBlock);
-  if (notAfter != null && (upper == null || notAfter.isBefore(upper))) {
-    upper = notAfter;
+  final latest = notAfter?.subtract(minBlock);
+  if (latest != null && (upper == null || latest.isBefore(upper))) {
+    upper = latest;
   }
 
   if (lower != null && upper != null && upper.isBefore(lower)) return null;

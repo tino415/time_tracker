@@ -295,13 +295,26 @@ class _SliceCard extends StatelessWidget {
             ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          // A block of a few minutes gets a card shorter than its text; ClipRect
-          // trims it to a colour bar that is still tappable.
+          // A short block gets a card shorter than one line of text. ClipRect
+          // alone is not enough — it trims *painting*, while the Column still
+          // lays out at its natural height and asserts. OverflowBox lifts the
+          // height constraint so there is nothing to overflow, and the clip then
+          // trims what does not fit: a few-minute block degrades to a partial
+          // line over a colour bar, still tappable.
+          //
+          // Hiding the label below a threshold was the alternative. It needs
+          // ~23px — about 25 minutes at this scale — to fit a line plus padding,
+          // which would leave a lot of ordinary blocks unlabelled, and more
+          // still once the axis can zoom out.
           child: ClipRect(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              minHeight: 0,
+              maxHeight: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                 Text(
                   label,
                   maxLines: 1,
@@ -317,7 +330,8 @@ class _SliceCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: mono(context, size: 10, color: t.muted),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

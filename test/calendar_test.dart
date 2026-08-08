@@ -132,10 +132,14 @@ void main() {
       );
     });
 
-    test('never lands in the future', () {
+    test('never lands in the future, and stops short of the present', () {
+      // Not t(17). The running block's end is *now*, which is not a boundary of
+      // its own, so it gets the same clearance a neighbour would: dragging its
+      // start onto the present would leave a block of zero length — a card too
+      // short to draw and a block that cannot be grabbed to undo it.
       expect(
         clampBoundary(desired: t(19), previous: t(9), notAfter: t(17)),
-        t(17),
+        t(16, 59),
       );
     });
 

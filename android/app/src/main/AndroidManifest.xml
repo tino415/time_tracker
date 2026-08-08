@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Scanning a sync token from another device's screen. Requested at the
+         moment the scanner opens, and refusable: the same sheet still takes a
+         pasted token. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- A watch has no camera, and the app must still install there. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+
     <application
         android:label="time_tracker"
         android:name="${applicationName}"

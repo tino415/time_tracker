@@ -31,6 +31,15 @@ dependencies:
   # backend configured.
   http: ^1.2.0
 
+  # Renders the sync token as a QR code, so joining a second device does not mean
+  # typing 32 random characters.
+  qr_flutter: ^4.1.0
+
+  # Reads that code back, on the phone only. The web build keeps paste: this
+  # plugin's web path fetches a decoder from a CDN, which the PWA's
+  # cross-origin-isolation headers refuse.
+  mobile_scanner: ^7.4.0
+
   # Deferred to later phases (kept out of the scaffold on purpose):
   #   wear_plus            — Wear OS shape/ambient (watch phase)
   #   firebase_* / cloud_* — only if a sync backend is chosen (sync phase)

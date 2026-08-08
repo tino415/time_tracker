@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/providers.dart';
 import '../data/wear_sync.dart';
+import '../build_info.dart';
 import '../domain/block.dart';
 import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
@@ -100,6 +101,12 @@ class _WatchHome extends ConsumerWidget {
             // The start-now tile means the screen is never empty, so this is a
             // hint rather than an empty state.
             if (bookmarked.isEmpty) const _NoBookmarksHint(),
+            // The watch is the device where "what is installed here?" is hardest
+            // to answer any other way.
+            Text(kBuildId,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: mono(context, size: 8, weight: FontWeight.w700, color: neo(context).muted)),
           ],
         ),
       ),

@@ -35,6 +35,16 @@ sync_defines := if env_var_or_default("SYNC_URL", "") != "" {
     "--dart-define=SYNC_URL=" + env_var("SYNC_URL")
 } else { "" }
 
+# Stamped into every client so you can tell, on the device, exactly what is
+# running there. `--dirty` matters more than the commit: it is the difference
+# between "this is the code in git" and "this came off someone's working tree".
+# The timestamp distinguishes two builds of the same commit, which is most of
+# what happens during a debugging session.
+build_id := `git describe --always --dirty --tags 2>/dev/null || echo unknown` + "@" + `date -u +%m-%dT%H:%M`
+
+# Every recipe that produces a client passes both of these.
+client_defines := sync_defines + " --dart-define=BUILD_ID=" + build_id
+
 [doc('List these recipes')]
 default:
     @just --list
@@ -43,8 +53,13 @@ default:
 analyze:
     flutter analyze
 
-# --no-pub skips the implicit pub get; run `flutter pub get` yourself after
-# changing dependencies.
+# Needed after changing pubspec.yaml: the test and build recipes pass --no-pub so
+# an ordinary run does not stop to re-resolve.
+[doc('Resolve Dart dependencies')]
+deps:
+    flutter pub get
+
+# --no-pub skips the implicit pub get — see `just deps`.
 [doc('Unit + widget tests')]
 test:
     flutter test --no-pub
@@ -88,7 +103,7 @@ watch:
 # silently not ship.
 [doc('Build the web PWA into build/web')]
 web:
-    flutter build web {{sync_defines}}
+    flutter build web {{client_defines}}
     cp web/_headers build/web/_headers
 
 # The *built* bundle rather than a dev server, because that is the real artefact
@@ -135,20 +150,17 @@ worker-db:
         --persist-to worker/.wrangler/dev-state \
         --file worker/schema.sql
 
-# A real Worker on a real local D1, for exercising sync from the app. The token
-# is a throwaway: it only guards a database on this machine, and the deployed one
-# takes its token from `wrangler secret` instead.
+# A real Worker on a real local D1, for exercising sync from the app. There is
+# no server-side secret to pass: a token identifies an account and is created
+# through the app, so this database simply starts with no accounts in it.
 #
-# Build the client against it — same origin as wherever the app is served, so the
-# request is not cross-origin and not mixed content:
-#   flutter build web --dart-define=SYNC_URL=https://<host>/api/ \
-#                     --dart-define=SYNC_TOKEN=local-dev-token
-# with /api/ reverse-proxied to this port, prefix stripped.
+# Point a client at it with SYNC_URL. Serving the app from the same origin — a
+# reverse proxy at /api/, prefix stripped — avoids CORS, which is the same
+# reason the deployed Worker serves the PWA itself.
 [doc('Run the sync worker locally against a persistent D1')]
-worker-dev port="4243" token="local-dev-token":
+worker-dev port="4243":
     npx wrangler dev --config worker/wrangler.toml \
         --port {{port}} --ip 0.0.0.0 \
-        --var SYNC_TOKEN:{{token}} \
         --persist-to worker/.wrangler/dev-state
 
 # Uploads the Worker *and* build/web as its static assets, so the app and the API
@@ -164,13 +176,13 @@ worker-deploy: web
 
 [doc('Debug APK for a phone (arm64)')]
 phone-apk:
-    flutter build apk --debug --target-platform android-arm64 {{sync_defines}}
+    flutter build apk --debug --target-platform android-arm64 {{client_defines}}
 
 # Fat 32+64: Wear devices are often armeabi-v7a, and an arm64-only APK will not
 # install on them.
 [doc('Debug APK for a watch (fat 32+64)')]
 watch-apk:
-    flutter build apk --debug --target-platform android-arm,android-arm64 {{sync_defines}}
+    flutter build apk --debug --target-platform android-arm,android-arm64 {{client_defines}}
 
 # `adb install -r` rather than `flutter install`. The latter uninstalls the old
 # version first, and uninstalling deletes app data — which here is the database

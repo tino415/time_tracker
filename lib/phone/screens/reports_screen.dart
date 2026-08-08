@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../build_info.dart';
 import '../../data/providers.dart';
 import '../../data/sync_service.dart';
 import '../../data/sync_transport.dart';
@@ -224,24 +225,34 @@ class _StorageLine extends ConsumerWidget {
     final status = ref.watch(storageStatusProvider).valueOrNull;
     if (status == null) return const SizedBox.shrink();
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('LOCAL DB · ',
-            style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
-        Expanded(
-          child: Text(
-            status.summary,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: mono(
-              context,
-              size: 10,
-              weight: FontWeight.w700,
-              // Evictable storage is the one state worth looking at.
-              color: status.persistent ? t.muted : t.brand,
+        Row(
+          children: [
+            Text('LOCAL DB · ',
+                style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+            Expanded(
+              child: Text(
+                status.summary,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: mono(
+                  context,
+                  size: 10,
+                  weight: FontWeight.w700,
+                  // Evictable storage is the one state worth looking at.
+                  color: status.persistent ? t.muted : t.brand,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
+        const SizedBox(height: 4),
+        // So "which version is on this device?" is answerable by looking, rather
+        // than by inferring from what was last installed.
+        Text('BUILD · $kBuildId',
+            style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted)),
       ],
     );
   }

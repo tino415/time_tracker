@@ -1,12 +1,15 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../data/sync_account.dart';
 import '../../data/sync_transport.dart';
 import '../../theme/tokens.dart';
 import '../screens/now_screen.dart' show DottedField;
 import 'neo.dart';
+import 'scan_token.dart';
 
 /// Setting up, showing, or leaving a sync account.
 ///
@@ -120,9 +123,27 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
           onTap: _busy ? null : () => setState(() => _entering = true),
         ),
       ] else ...[
-        Text('Paste the token from your other device',
+        Text('Scan the code on your other device, or paste its token',
             style: mono(context, size: 12, color: t.muted)),
         const SizedBox(height: 8),
+        // Camera on the phone only — the web build has no decoder, see
+        // scan_token.dart.
+        if (!kIsWeb) ...[
+          NeoButton(
+            label: '⛶ scan qr',
+            onTap: _busy
+                ? null
+                : () async {
+                    final scanned = await scanSyncToken(context);
+                    if (scanned == null || !mounted) return;
+                    _entry.text = scanned;
+                    // Straight through: having scanned it, being made to press
+                    // "join" as well would be pure ceremony.
+                    await _run(() => ref.read(syncAccountProvider).joinAccount(scanned));
+                  },
+          ),
+          const SizedBox(height: 10),
+        ],
         DottedField(controller: _entry, hint: 'sync token'),
         const SizedBox(height: 10),
         NeoButton(
@@ -148,6 +169,35 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
         ),
         const SizedBox(height: 12),
       ],
+      Center(
+        child: Container(
+          // Always light, whatever the theme: scanners expect dark modules on a
+          // light field, and an inverted code is a coin toss across readers.
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFFFF),
+            border: Border.all(color: t.line, width: 3),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: QrImageView(
+            data: token,
+            size: 180,
+            // Lowest correction level: the payload is short and this is read
+            // from a screen at arm's length, not off a creased label, so the
+            // redundancy would only make the modules smaller.
+            errorCorrectionLevel: QrErrorCorrectLevel.L,
+            backgroundColor: const Color(0xFFFFFFFF),
+            eyeStyle: const QrEyeStyle(
+              eyeShape: QrEyeShape.square,
+              color: Color(0xFF000000),
+            ),
+            dataModuleStyle: const QrDataModuleStyle(
+              dataModuleShape: QrDataModuleShape.square,
+              color: Color(0xFF000000),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
       Text('TOKEN', style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
       const SizedBox(height: 6),
       Container(
@@ -165,7 +215,7 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
         },
       ),
       const SizedBox(height: 10),
-      Text('Enter it on another device to sync them together.',
+      Text('Scan the code with another device, or copy the token and paste it there.',
           style: mono(context, size: 12, color: t.muted)),
       const SizedBox(height: 16),
       NeoButton(

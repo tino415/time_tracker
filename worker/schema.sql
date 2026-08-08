@@ -10,8 +10,22 @@
 -- twice moves to the end of the order and is re-delivered — clients adopt
 -- idempotently, so re-delivery is cheap and missing a row is not.
 
+-- One account per sync token. The token itself is never stored, only its hash,
+-- so a dump of this table does not hand over anyone's data. There is no
+-- username: the token *is* the identity, generated on the first device and
+-- entered on the others to join the same account.
+--
+-- `seq` is per account, so one account's writes cannot advance another's cursor.
+CREATE TABLE IF NOT EXISTS accounts (
+  id         TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  next_seq   INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS activities (
-  sync_id      TEXT PRIMARY KEY,
+  account_id   TEXT NOT NULL,
+  sync_id      TEXT NOT NULL,
   parent_id    TEXT,
   name         TEXT NOT NULL,
   color        TEXT NOT NULL,
@@ -20,11 +34,13 @@ CREATE TABLE IF NOT EXISTS activities (
   external_id  TEXT,
   version      INTEGER NOT NULL,
   deleted_at   INTEGER,
-  seq          INTEGER NOT NULL
+  seq          INTEGER NOT NULL,
+  PRIMARY KEY (account_id, sync_id)
 );
 
 CREATE TABLE IF NOT EXISTS changes (
-  sync_id      TEXT PRIMARY KEY,
+  account_id   TEXT NOT NULL,
+  sync_id      TEXT NOT NULL,
   changed_at   INTEGER NOT NULL,
   comment      TEXT,
   version      INTEGER NOT NULL,
@@ -33,17 +49,10 @@ CREATE TABLE IF NOT EXISTS changes (
   -- so it is stored as a JSON array rather than a join table. Nothing on the
   -- server ever queries by activity.
   activity_ids TEXT NOT NULL DEFAULT '[]',
-  seq          INTEGER NOT NULL
+  seq          INTEGER NOT NULL,
+  PRIMARY KEY (account_id, sync_id)
 );
 
--- Every pull is "rows with seq > cursor, oldest first".
-CREATE INDEX IF NOT EXISTS activities_seq ON activities (seq);
-CREATE INDEX IF NOT EXISTS changes_seq ON changes (seq);
-
--- Single-row counter. D1 has no sequences, and AUTOINCREMENT would not give a
--- shared order across two tables — a cursor has to advance over both.
-CREATE TABLE IF NOT EXISTS sync_seq (
-  id      INTEGER PRIMARY KEY CHECK (id = 1),
-  next    INTEGER NOT NULL
-);
-INSERT OR IGNORE INTO sync_seq (id, next) VALUES (1, 1);
+-- Every pull is "this account's rows with seq > cursor, oldest first".
+CREATE INDEX IF NOT EXISTS activities_seq ON activities (account_id, seq);
+CREATE INDEX IF NOT EXISTS changes_seq ON changes (account_id, seq);

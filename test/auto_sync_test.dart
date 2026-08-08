@@ -19,6 +19,9 @@ class CountingTransport implements SyncTransport {
   bool offline = false;
 
   @override
+  Future<void> claimAccount() async {}
+
+  @override
   Future<SyncResponse> exchange(SyncRequest request) async {
     calls++;
     if (offline) throw const SyncException('unreachable');

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/sync_protocol.dart';
 import 'providers.dart';
+import 'sync_account.dart';
 import 'sync_store.dart';
 import 'sync_transport.dart';
 
@@ -109,46 +110,45 @@ class SyncService {
   }
 }
 
-/// Where the backend lives and how to authenticate. Empty by default: sync is
-/// optional, and the app is fully usable without it.
+/// Where the backend lives. Only the URL is built in — the token is per account
+/// and lives in the local database, because a token compiled into a web build is
+/// served to everyone who loads the page.
 class SyncConfig {
-  const SyncConfig({this.baseUrl, this.token});
+  const SyncConfig({this.baseUrl});
 
   final String? baseUrl;
-  final String? token;
 
-  bool get configured =>
-      (baseUrl ?? '').isNotEmpty && (token ?? '').isNotEmpty;
+  bool get hasServer => (baseUrl ?? '').isNotEmpty;
 }
 
-/// Supplied at build time, so no credentials live in the repository:
-///   flutter build web --dart-define=SYNC_URL=... --dart-define=SYNC_TOKEN=...
+/// Supplied at build time:
+///   flutter build web --dart-define=SYNC_URL=https://example.workers.dev/
+///
+/// Without it the app never offers sync at all.
 final syncConfigProvider = Provider<SyncConfig>((ref) {
-  return const SyncConfig(
-    baseUrl: String.fromEnvironment('SYNC_URL'),
-    token: String.fromEnvironment('SYNC_TOKEN'),
-  );
+  return const SyncConfig(baseUrl: String.fromEnvironment('SYNC_URL'));
 });
 
 final syncStoreProvider = Provider<SyncStore>((ref) {
   return SyncStore(ref.watch(databaseProvider));
 });
 
-/// Null when sync is not configured — which is the normal state, and why every
-/// caller has to handle it.
+/// Null until this device has both a server and an account — which is the state
+/// every new install starts in, and why every caller has to handle it.
 final syncServiceProvider = Provider<SyncService?>((ref) {
   final config = ref.watch(syncConfigProvider);
-  if (!config.configured) return null;
+  final token = ref.watch(syncTokenProvider).valueOrNull;
+  if (!config.hasServer || token == null) return null;
 
-  final transport = HttpSyncTransport(
-    baseUrl: Uri.parse(config.baseUrl!),
-    token: config.token!,
-  );
+  final transport = HttpSyncTransport(baseUrl: Uri.parse(config.baseUrl!), token: token);
   ref.onDispose(transport.close);
 
   return SyncService(
     store: ref.watch(syncStoreProvider),
     transport: transport,
-    backend: config.baseUrl!,
+    // Identity includes the token: joining a *different* account is as much a
+    // change of backend as pointing at a different server, and carrying a cursor
+    // across either is silently destructive.
+    backend: '${config.baseUrl}#${token.hashCode}',
   );
 });

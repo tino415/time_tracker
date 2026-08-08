@@ -18,18 +18,21 @@
 # boundary. See .env.example.
 set dotenv-load := true
 
-# Optional sync backend, passed to every recipe that produces a client. Put both
-# in .env, or pass them for one command:
+# Where the sync server lives, baked into every client build. Put it in .env, or
+# pass it for one command:
 #
-#   SYNC_URL=https://host/ SYNC_TOKEN=… just deploy <serial>
+#   SYNC_URL=https://host/ just deploy <serial>
 #
-# Unset, the client is built without them and the sync action does not render at
-# all — sync is optional, and the app is complete without it. SYNC_URL must be an
-# origin the *device* can reach over HTTPS: Android blocks cleartext, and on the
-# web anything but a secure context has no storage to sync in the first place.
+# Only the URL: the token identifies an *account* and is set up in the app, not
+# compiled in. A token in a web build is served to everyone who loads the page,
+# and it could only ever be one account's.
+#
+# Unset, the client is built without a server and never offers sync — the app is
+# complete without it. The URL must be reachable *from the device* over HTTPS:
+# Android blocks cleartext, and on the web anything but a secure context has no
+# storage to sync in the first place.
 sync_defines := if env_var_or_default("SYNC_URL", "") != "" {
-    "--dart-define=SYNC_URL=" + env_var("SYNC_URL") +
-    " --dart-define=SYNC_TOKEN=" + env_var_or_default("SYNC_TOKEN", "")
+    "--dart-define=SYNC_URL=" + env_var("SYNC_URL")
 } else { "" }
 
 [doc('List these recipes')]

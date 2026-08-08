@@ -15,6 +15,7 @@ import '../../domain/reporting.dart';
 import '../../format.dart';
 import '../widgets/activity_picker.dart';
 import '../widgets/neo.dart';
+import '../widgets/sync_setup.dart';
 
 /// Weekly per-category report: a hero total, rolled-up horizontal bars per
 /// top-level category, and a client-side CSV export (optionally subtree-filtered).
@@ -173,8 +174,18 @@ class _SyncActionState extends ConsumerState<_SyncAction> {
   @override
   Widget build(BuildContext context) {
     final t = neo(context);
+    // No server in this build: nothing to offer, so offer nothing.
+    if (!ref.watch(syncConfigProvider).hasServer) return const SizedBox.shrink();
+
     final service = ref.watch(syncServiceProvider);
-    if (service == null) return const SizedBox.shrink();
+    // A server but no account — sync is opt-in, and this is the invitation.
+    if (service == null) {
+      return NeoButton(
+        label: '⟳ set up sync',
+        shadowOffset: 3,
+        onTap: () => showSyncSetup(context, ref),
+      );
+    }
 
     return Row(
       children: [
@@ -184,6 +195,13 @@ class _SyncActionState extends ConsumerState<_SyncAction> {
             shadowOffset: 3,
             onTap: _running ? null : () => _sync(service),
           ),
+        ),
+        const SizedBox(width: 8),
+        NeoButton(
+          label: '⚙',
+          shadowOffset: 3,
+          compact: true,
+          onTap: () => showSyncSetup(context, ref),
         ),
         if (_status != null) ...[
           const SizedBox(width: 10),

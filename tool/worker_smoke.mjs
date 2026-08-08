@@ -13,7 +13,10 @@ import { rmSync } from 'node:fs';
 
 const PORT = process.argv[2] ?? '4243';
 const ORIGIN = `http://127.0.0.1:${PORT}`;
-const TOKEN = 'smoke-test-token';
+// Long enough to be accepted: the Worker rejects anything under 16 characters,
+// since a short token is not a token.
+const TOKEN = 'smoke-test-token-aaaaaaaaaaaa';
+const OTHER_TOKEN = 'smoke-test-token-bbbbbbbbbbbb';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -87,14 +90,39 @@ try {
   check('worker boots', up);
   if (!up) throw new Error('wrangler dev never came up');
 
-  // --- auth ----------------------------------------------------------------
+  // --- auth and accounts ----------------------------------------------------
   check('rejects a missing token', (await fetch(`${ORIGIN}/sync`, { method: 'POST' })).status === 401);
-  check('rejects a wrong token', (await sync({ cursor: null }, 'nope')).status === 401);
+  check(
+    'rejects a token that has no account',
+    (await sync({ cursor: null }, 'unclaimed-token-aaaaaaaaaaaa')).status === 401,
+  );
+  check(
+    'rejects a token too short to be one',
+    (await fetch(`${ORIGIN}/account`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer short' },
+    })).status === 401,
+  );
+
+  const claim = async (token) =>
+    fetch(`${ORIGIN}/account`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+  let res = await claim(TOKEN);
+  let body = await res.json();
+  check('claims an account for a new token', res.status === 200 && body.created === true, JSON.stringify(body));
+
+  body = await (await claim(TOKEN)).json();
+  // Idempotent so a client that lost the response can retry, and so entering an
+  // existing token on a second device joins rather than colliding.
+  check('claiming again joins the same account', body.created === false && !!body.accountId);
 
   // --- push and pull -------------------------------------------------------
-  let res = await sync({ cursor: null, activities: [activity('a', 'Deep work', 1)], changes: [] });
+  res = await sync({ cursor: null, activities: [activity('a', 'Deep work', 1)], changes: [] });
   check('accepts an authorised push', res.status === 200, `http ${res.status}`);
-  let body = await res.json();
+  body = await res.json();
   check('echoes the push back', body.activities?.length === 1, JSON.stringify(body.activities));
   check('nothing rejected', (body.rejected ?? []).length === 0);
   check('returns a cursor', typeof body.cursor === 'string' && body.cursor !== '0', body.cursor);
@@ -164,6 +192,23 @@ try {
   check('export has the closed block only', lines.length === 2, `${lines.length - 1} row(s)`);
   check('export computes the duration', lines[1]?.includes(',60,'), lines[1]);
   check('export.csv rejects a bad token', (await fetch(`${ORIGIN}/export.csv?token=nope`)).status === 401);
+
+  // --- accounts are isolated ------------------------------------------------
+  // The whole point of accounts: another token must not see this data, and must
+  // not be able to advance or read this account's sequence.
+  await claim(OTHER_TOKEN);
+  body = await (await sync({ cursor: null }, OTHER_TOKEN)).json();
+  check('a second account starts empty', (body.activities ?? []).length === 0, JSON.stringify(body.activities));
+  check('and sees none of the first account\'s changes', (body.changes ?? []).length === 0);
+
+  await sync({ cursor: null, activities: [activity('a', 'Their own row', 1)] }, OTHER_TOKEN);
+  body = await (await sync({ cursor: null })).json();
+  const mine = (body.activities ?? []).find((x) => x.syncId === 'a');
+  // Same syncId in both accounts — they must not collide.
+  check('a colliding syncId in another account does not overwrite', mine?.name !== 'Their own row', mine?.name);
+
+  const otherCsv = await fetch(`${ORIGIN}/export.csv?token=${OTHER_TOKEN}`);
+  check('export is scoped to its account', (await otherCsv.text()).trim().split('\n').length === 1);
 
   // --- unknown routes ------------------------------------------------------
   check('unknown route is 404', (await fetch(`${ORIGIN}/nope`, {

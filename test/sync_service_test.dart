@@ -23,9 +23,16 @@ class FakeServer implements SyncTransport {
   int _next = 1;
 
   int exchanges = 0;
+  int claims = 0;
 
   /// Set to make the next exchange fail, as an unreachable network would.
   bool offline = false;
+
+  @override
+  Future<void> claimAccount() async {
+    claims++;
+    if (offline) throw const SyncException('unreachable');
+  }
 
   @override
   Future<SyncResponse> exchange(SyncRequest request) async {

@@ -23,6 +23,11 @@ class SyncException implements Exception {
 /// can be dropped in without touching the merge logic.
 abstract class SyncTransport {
   Future<SyncResponse> exchange(SyncRequest request);
+
+  /// Claim the account this transport's token identifies, creating it if it does
+  /// not exist yet. Idempotent: entering an existing token on a second device
+  /// joins that account rather than colliding.
+  Future<void> claimAccount();
 }
 
 /// Talks to the Cloudflare Worker in `worker/`.
@@ -77,6 +82,24 @@ class HttpSyncTransport implements SyncTransport {
       throw const SyncException('malformed response');
     }
     return decoded;
+  }
+
+  @override
+  Future<void> claimAccount() async {
+    final http.Response response;
+    try {
+      response = await _client
+          .post(baseUrl.resolve('account'), headers: {'authorization': 'Bearer $token'})
+          .timeout(timeout);
+    } catch (e) {
+      throw SyncException('unreachable: $e');
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw const SyncException('the server refused this token', unauthorized: true);
+    }
+    if (response.statusCode != 200) {
+      throw SyncException('http ${response.statusCode}: ${response.body}');
+    }
   }
 
   void close() => _client.close();

@@ -1,4 +1,5 @@
-// Sync backend: a Cloudflare Worker over D1.
+// Sync backend: a Cloudflare Worker over D1, serving the PWA from the same
+// origin so the app and the API never need CORS.
 //
 // The server is a relay with a total order, not a second application. It stores
 // rows opaquely, decides staleness by `version` alone, and never interprets a
@@ -7,44 +8,56 @@
 // server that "helpfully" merged fields could only disagree with it.
 //
 // Endpoints:
+//   POST /account     claim an account for a sync token
 //   POST /sync        push + pull in one round trip
 //   GET  /export.csv  the whole timeline as CSV, for a spreadsheet or a script
+//   *                 the PWA, served from static assets
 //
-// Auth is a single bearer token in SYNC_TOKEN. This is one person's own devices,
-// so there are no accounts to model; the token is the whole security boundary,
-// which is why it is compared in constant time and why there is nothing else.
+// ## Accounts
+//
+// A sync token *is* an account: generated on the first device, entered on the
+// others to join. No usernames, no reset flow, no third party — which suits a
+// handful of people who know each other, and is the whole security boundary.
+//
+// Only the token's hash is stored, so a database dump does not hand over
+// anyone's data. It is a plain SHA-256 rather than a slow password hash on
+// purpose: a generated token has far more entropy than a password, so there is
+// nothing to brute force, and this runs on every request.
 
 const MAX_PAGE = 500;
 
-const API_PATHS = new Set(['/sync', '/export.csv']);
+const API_PATHS = new Set(['/sync', '/export.csv', '/account']);
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Anything that is not an API route is the PWA. Serving it from this same
-    // Worker is what keeps the app and the API on one origin — a separately
-    // hosted app would be cross-origin, so every sync would need a CORS
-    // preflight and this Worker would have to grow origin handling.
-    //
-    // Note the order: the token gates the *API*, not the app. Authorising first
-    // would 401 every static file, which is how the first deploy served nothing
-    // but "unauthorized".
+    // Anything that is not an API route is the PWA. Note the order: the token
+    // gates the *API*, not the app. Authorising first would 401 every static
+    // file, which is how the first deploy served nothing but "unauthorized".
     if (!API_PATHS.has(url.pathname)) {
       if (env.ASSETS) return env.ASSETS.fetch(request);
       return json({ error: 'not found' }, 404);
     }
 
-    if (!authorized(request, url, env)) {
-      return json({ error: 'unauthorized' }, 401);
-    }
-
     try {
+      const token = presentedToken(request, url);
+      if (!token) return json({ error: 'unauthorized' }, 401);
+
+      if (url.pathname === '/account' && request.method === 'POST') {
+        return await handleClaimAccount(token, env);
+      }
+
+      const account = await accountFor(token, env);
+      // An unknown token is indistinguishable from a wrong one, deliberately:
+      // "no such account" would confirm which tokens exist.
+      if (!account) return json({ error: 'unauthorized' }, 401);
+
       if (url.pathname === '/sync' && request.method === 'POST') {
-        return await handleSync(request, env);
+        return await handleSync(request, env, account);
       }
       if (url.pathname === '/export.csv' && request.method === 'GET') {
-        return await handleExport(env);
+        return await handleExport(env, account);
       }
       return json({ error: 'not found' }, 404);
     } catch (e) {
@@ -55,43 +68,61 @@ export default {
 
 /**
  * Bearer token, or `?token=` for the export URL — a spreadsheet fetching a CSV
- * cannot set headers. Compared in constant time: a timing oracle on a
- * single-token system would be the whole security boundary.
+ * cannot set headers.
  */
-function authorized(request, url, env) {
-  const expected = env.SYNC_TOKEN;
-  if (!expected) return false;
-
+function presentedToken(request, url) {
   const header = request.headers.get('authorization') || '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
-  const supplied = bearer || url.searchParams.get('token') || '';
-  return timingSafeEqual(supplied, expected);
+  const token = bearer || url.searchParams.get('token') || '';
+  // A short token is not a token. This is also what stops an empty string
+  // matching an empty hash somewhere downstream.
+  return token.length >= 16 ? token : '';
 }
 
-function timingSafeEqual(a, b) {
-  const ab = new TextEncoder().encode(a);
-  const bb = new TextEncoder().encode(b);
-  // Length alone is not secret enough to be worth hiding, but the comparison
-  // still runs over a fixed length so a partial match reveals nothing.
-  if (ab.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
-  return diff === 0;
+async function hashToken(token) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function handleSync(request, env) {
+async function accountFor(token, env) {
+  const hash = await hashToken(token);
+  return env.DB.prepare('SELECT id, next_seq FROM accounts WHERE token_hash = ?').bind(hash).first();
+}
+
+/**
+ * Claim an account for a token, or confirm it is already claimed.
+ *
+ * Idempotent so a client that generated a token and lost the response can retry,
+ * and so entering an existing token on a second device succeeds rather than
+ * colliding. Anyone can create an account — there is nothing to gate it with,
+ * and an account is worth nothing without its token.
+ */
+async function handleClaimAccount(token, env) {
+  const existing = await accountFor(token, env);
+  if (existing) return json({ accountId: existing.id, created: false });
+
+  const id = crypto.randomUUID();
+  await env.DB.prepare('INSERT INTO accounts (id, token_hash, created_at, next_seq) VALUES (?, ?, ?, 1)')
+    .bind(id, await hashToken(token), Date.now())
+    .run();
+  return json({ accountId: id, created: true });
+}
+
+async function handleSync(request, env, account) {
   const body = await request.json();
   const cursor = Number.parseInt(body.cursor ?? '0', 10) || 0;
   const activities = Array.isArray(body.activities) ? body.activities : [];
   const changes = Array.isArray(body.changes) ? body.changes : [];
 
   const rejected = [];
-  let seq = await nextSeq(env, activities.length + changes.length);
+  let seq = await nextSeq(env, account, activities.length + changes.length);
 
   for (const dto of activities) {
     if (!validActivity(dto)) continue;
-    const stored = await env.DB.prepare('SELECT version FROM activities WHERE sync_id = ?')
-      .bind(dto.syncId)
+    const stored = await env.DB.prepare(
+      'SELECT version FROM activities WHERE account_id = ? AND sync_id = ?',
+    )
+      .bind(account.id, dto.syncId)
       .first();
     // Accepting the *equal* case is what makes concurrent edits converge: two
     // devices that both edited version 3 both arrive with 4, and whoever gets
@@ -102,9 +133,9 @@ async function handleSync(request, env) {
     }
     await env.DB.prepare(
       `INSERT INTO activities
-         (sync_id, parent_id, name, color, bookmarked, last_used_at, external_id, version, deleted_at, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(sync_id) DO UPDATE SET
+         (account_id, sync_id, parent_id, name, color, bookmarked, last_used_at, external_id, version, deleted_at, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(account_id, sync_id) DO UPDATE SET
          parent_id = excluded.parent_id,
          name = excluded.name,
          color = excluded.color,
@@ -116,6 +147,7 @@ async function handleSync(request, env) {
          seq = excluded.seq`,
     )
       .bind(
+        account.id,
         dto.syncId,
         dto.parentId ?? null,
         dto.name,
@@ -132,8 +164,10 @@ async function handleSync(request, env) {
 
   for (const dto of changes) {
     if (!validChange(dto)) continue;
-    const stored = await env.DB.prepare('SELECT version FROM changes WHERE sync_id = ?')
-      .bind(dto.syncId)
+    const stored = await env.DB.prepare(
+      'SELECT version FROM changes WHERE account_id = ? AND sync_id = ?',
+    )
+      .bind(account.id, dto.syncId)
       .first();
     if (stored && dto.version < stored.version) {
       rejected.push(dto.syncId);
@@ -141,9 +175,9 @@ async function handleSync(request, env) {
     }
     await env.DB.prepare(
       `INSERT INTO changes
-         (sync_id, changed_at, comment, version, deleted_at, activity_ids, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(sync_id) DO UPDATE SET
+         (account_id, sync_id, changed_at, comment, version, deleted_at, activity_ids, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(account_id, sync_id) DO UPDATE SET
          changed_at = excluded.changed_at,
          comment = excluded.comment,
          version = excluded.version,
@@ -152,6 +186,7 @@ async function handleSync(request, env) {
          seq = excluded.seq`,
     )
       .bind(
+        account.id,
         dto.syncId,
         dto.changedAt,
         dto.comment ?? null,
@@ -167,23 +202,21 @@ async function handleSync(request, env) {
   // Echoing a push back costs one adopt (idempotent) and is what tells a client
   // whose row was rejected which version actually won.
   const outActivities = await env.DB.prepare(
-    'SELECT * FROM activities WHERE seq > ? ORDER BY seq LIMIT ?',
+    'SELECT * FROM activities WHERE account_id = ? AND seq > ? ORDER BY seq LIMIT ?',
   )
-    .bind(cursor, MAX_PAGE)
+    .bind(account.id, cursor, MAX_PAGE)
     .all();
   const outChanges = await env.DB.prepare(
-    'SELECT * FROM changes WHERE seq > ? ORDER BY seq LIMIT ?',
+    'SELECT * FROM changes WHERE account_id = ? AND seq > ? ORDER BY seq LIMIT ?',
   )
-    .bind(cursor, MAX_PAGE)
+    .bind(account.id, cursor, MAX_PAGE)
     .all();
 
   const rows = [...(outActivities.results ?? []), ...(outChanges.results ?? [])];
   // The new cursor is the highest seq actually *sent*. Advancing past a row that
   // was truncated by the page limit would skip it permanently; leaving the
   // cursor short only costs a re-delivery.
-  const nextCursor = rows.length
-    ? Math.max(...rows.map((r) => r.seq))
-    : cursor;
+  const nextCursor = rows.length ? Math.max(...rows.map((r) => r.seq)) : cursor;
 
   return json({
     cursor: String(nextCursor),
@@ -193,12 +226,11 @@ async function handleSync(request, env) {
   });
 }
 
-/** Reserve [count] positions in the shared order in one write. */
-async function nextSeq(env, count) {
-  const row = await env.DB.prepare('SELECT next FROM sync_seq WHERE id = 1').first();
-  const start = row ? row.next : 1;
-  await env.DB.prepare('UPDATE sync_seq SET next = ? WHERE id = 1')
-    .bind(start + Math.max(count, 0))
+/** Reserve [count] positions in this account's order in one write. */
+async function nextSeq(env, account, count) {
+  const start = account.next_seq ?? 1;
+  await env.DB.prepare('UPDATE accounts SET next_seq = ? WHERE id = ?')
+    .bind(start + Math.max(count, 0), account.id)
     .run();
   return start;
 }
@@ -264,13 +296,17 @@ function changeToDto(row) {
  * Server-side because the point is reaching it from something that is not the
  * app: a spreadsheet's "import from URL", a cron job, a script.
  */
-async function handleExport(env) {
+async function handleExport(env, account) {
   const changes = await env.DB.prepare(
-    'SELECT * FROM changes WHERE deleted_at IS NULL ORDER BY changed_at',
-  ).all();
+    'SELECT * FROM changes WHERE account_id = ? AND deleted_at IS NULL ORDER BY changed_at',
+  )
+    .bind(account.id)
+    .all();
   const activities = await env.DB.prepare(
-    'SELECT * FROM activities WHERE deleted_at IS NULL',
-  ).all();
+    'SELECT * FROM activities WHERE account_id = ? AND deleted_at IS NULL',
+  )
+    .bind(account.id)
+    .all();
 
   const byId = new Map((activities.results ?? []).map((a) => [a.sync_id, a]));
   const rows = changes.results ?? [];
@@ -283,8 +319,7 @@ async function handleExport(env) {
     // depend on when it was fetched, so it is left out entirely.
     if (!next) break;
 
-    const ids = changeToDto(row).activityIds;
-    for (const id of ids) {
+    for (const id of changeToDto(row).activityIds) {
       const activity = byId.get(id);
       if (!activity) continue;
       lines.push(

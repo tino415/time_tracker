@@ -38,19 +38,21 @@ pushes come back in the same response so the loser finds out immediately.
 npm install -g wrangler          # or: npx wrangler
 wrangler d1 create track-sync    # put the returned id in wrangler.toml
 wrangler d1 execute track-sync --remote --file=schema.sql
-wrangler secret put SYNC_TOKEN   # generate something long and random
-wrangler deploy
 ```
 
-Point the app at it at build time, so no credentials enter the repository:
+Then `just worker-deploy`, which builds the PWA and uploads it with the Worker —
+the app is served from this same origin, so the two never need CORS.
+
+There is no server-side secret to set. Clients take only the URL at build time:
 
 ```bash
-flutter build web \
-  --dart-define=SYNC_URL=https://track-sync.<subdomain>.workers.dev/ \
-  --dart-define=SYNC_TOKEN=<the same token>
+SYNC_URL=https://track-sync.<subdomain>.workers.dev/ just worker-deploy
+SYNC_URL=https://track-sync.<subdomain>.workers.dev/ just deploy <serial>
 ```
 
-Without both defines the app runs exactly as before, with the sync action hidden.
+Without it the app runs exactly as before, with sync hidden entirely. With it,
+sync is offered but *opt-in*: the app contacts nothing until someone creates or
+joins an account.
 
 ## Endpoints
 
@@ -83,10 +85,33 @@ headers.
 The open block is omitted: it has no end, and exporting "now" would make the
 file's meaning depend on when it was fetched.
 
-## Auth
+## Accounts
 
-One bearer token in `SYNC_TOKEN`. This is one person's own devices, so there are
-no accounts to model — which also means the token is the *entire* security
-boundary. It is compared in constant time, and it is the only thing standing
-between the internet and the data. Rotate it with `wrangler secret put` and
-rebuild the clients.
+**A sync token is an account.** It is generated on the first device and entered
+on the others to join. There are no usernames, no password reset and no third
+party — which suits a handful of people who know each other, and keeps the whole
+thing to one secret a user can copy between their devices.
+
+- `POST /account` claims an account for the presented token, creating it if the
+  token is unknown. Idempotent, so retrying is safe and entering an existing
+  token on a second device joins rather than collides. Anyone may create one:
+  there is nothing to gate it with, and an account is worth nothing without its
+  token.
+- Only the token's **hash** is stored, so a database dump does not hand over
+  anyone's data. A plain SHA-256 rather than a slow password hash, deliberately:
+  a generated token has far more entropy than a password, so there is nothing to
+  brute force, and this runs on every request.
+- Tokens shorter than 16 characters are refused outright.
+- An unknown token and a wrong one both return 401. "No such account" would
+  confirm which tokens exist.
+- Every row carries `account_id`, and `seq` is per account — so one account's
+  writes cannot advance another's cursor, and the same `syncId` in two accounts
+  does not collide.
+
+The token is **not** compiled into clients. A token baked into a web build is
+served to everyone who loads the page, and it could only ever be one account's;
+clients take `SYNC_URL` at build time and get their token from the user.
+
+There is no way to recover a lost token, and no way to change one without
+re-entering it everywhere. That is the cost of having no accounts to manage.
+Anyone holding a token has that account's data.

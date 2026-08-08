@@ -17,6 +17,29 @@ class SyncStore {
 
   static const _cursorKey = 'cursor';
   static const _backendKey = 'backend';
+  static const _tokenKey = 'token';
+
+  /// The sync token, or null when this device has not joined an account.
+  ///
+  /// Stored rather than compiled in: a token baked into a web build is served to
+  /// anyone who loads the page, and it has to differ per account anyway.
+  Future<String?> token() async {
+    final row = await (_db.select(_db.syncMeta)
+          ..where((t) => t.key.equals(_tokenKey)))
+        .getSingleOrNull();
+    final value = row?.value ?? '';
+    return value.isEmpty ? null : value;
+  }
+
+  Future<void> setToken(String? token) async {
+    if (token == null || token.isEmpty) {
+      await (_db.delete(_db.syncMeta)..where((t) => t.key.equals(_tokenKey))).go();
+      return;
+    }
+    await _db.into(_db.syncMeta).insertOnConflictUpdate(
+          SyncMetaCompanion.insert(key: _tokenKey, value: token),
+        );
+  }
 
   /// Re-point this device at [backend], clearing sync state if it changed.
   ///

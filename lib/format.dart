@@ -38,6 +38,36 @@ String formatElapsedClock(Duration d) {
 String formatTimeOfDay(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
+/// Parse a typed time-of-day onto [onDay]: `14:05`, `14.05`, `1405` or `905`.
+/// Returns null for anything else, so the caller can leave the field alone
+/// rather than jumping to a time nobody asked for.
+///
+/// The date comes from [onDay], not from today — a block that began before
+/// midnight is corrected against its own clock.
+///
+/// Minutes must be two digits unless a separator makes the split unambiguous:
+/// `145` would otherwise be both 1:45 and 14:05.
+DateTime? parseTimeOfDay(String input, {required DateTime onDay}) {
+  final text = input.trim();
+  final separated = RegExp(r'^(\d{1,2})[:.h ](\d{1,2})$').firstMatch(text);
+  final compact = RegExp(r'^(\d{3,4})$').firstMatch(text);
+
+  final int hour, minute;
+  if (separated != null) {
+    hour = int.parse(separated.group(1)!);
+    minute = int.parse(separated.group(2)!);
+  } else if (compact != null) {
+    final digits = compact.group(1)!;
+    hour = int.parse(digits.substring(0, digits.length - 2));
+    minute = int.parse(digits.substring(digits.length - 2));
+  } else {
+    return null;
+  }
+
+  if (hour > 23 || minute > 59) return null;
+  return DateTime(onDay.year, onDay.month, onDay.day, hour, minute);
+}
+
 /// Readable local timestamp, e.g. `14:05` today or `Mon 14:05` otherwise.
 String formatTimestamp(DateTime t, DateTime now) {
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

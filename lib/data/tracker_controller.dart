@@ -60,7 +60,9 @@ class TrackerController {
     await _activities.touchUsed(unsorted.syncId, now);
   }
 
-  /// Answer an unnamed block: re-point it at [activityId], keeping its start.
+  /// Re-point a block at [activityId], keeping its start and replacing whatever
+  /// set it had. This answers an unnamed block, and is also how a named one is
+  /// corrected ("that hour was Email, not Deep work").
   ///
   /// Not a switch — no new boundary — so the elapsed time, including the seconds
   /// spent choosing, belongs to the activity finally picked.

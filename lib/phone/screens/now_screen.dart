@@ -10,7 +10,9 @@ import '../../format.dart';
 import '../../theme/tokens.dart';
 import '../widgets/activity_editor.dart';
 import '../widgets/assign_activity.dart';
+import '../widgets/block_actions.dart';
 import '../widgets/block_comment.dart';
+import '../widgets/block_start.dart';
 import '../widgets/neo.dart';
 
 /// The live "Now" screen: the current-activity hero, a bookmarked quick-switch
@@ -145,19 +147,41 @@ class _HeroCard extends ConsumerWidget {
             unnamed ? 'unnamed' : (multi ? acts.map((a) => a.name).join('  +  ') : acts.first.name),
             style: mono(context, size: 24, weight: FontWeight.w800, color: onFill, height: 1.1),
           ),
-          if (unnamed) ...[
-            const SizedBox(height: 10),
-            // The clock is already running against this block, so answering it
-            // later costs nothing — which is the point.
-            NeoPressable(
-              onTap: () => assignBlockActivity(context, ref, b),
-              fill: onFill,
-              shadowOffset: 4,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Text('▸ WHAT IS THIS?',
-                  style: mono(context, size: 12, weight: FontWeight.w800, spacing: .8, color: fill)),
-            ),
-          ],
+          const SizedBox(height: 10),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (unnamed) ...[
+                // The clock is already running against this block, so answering
+                // it later costs nothing — which is the point.
+                NeoPressable(
+                  onTap: () => assignBlockActivity(context, ref, b),
+                  fill: onFill,
+                  shadowOffset: 4,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Text('▸ WHAT IS THIS?',
+                      style: mono(context, size: 12, weight: FontWeight.w800, spacing: .8, color: fill)),
+                ),
+                const SizedBox(width: 8),
+              ],
+              // The full block menu — change, tag, untag, retime — on the block
+              // that is hardest to reach any other way, because it has no end
+              // yet and so is only one card on the timeline.
+              NeoPressable(
+                onTap: () => showBlockActions(
+                  context,
+                  ref,
+                  b,
+                  canMerge: ref.read(blocksProvider).length > 1,
+                ),
+                fill: onFill,
+                shadowOffset: 4,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Text(unnamed ? '⋯' : '⋯ EDIT BLOCK',
+                    style: mono(context, size: 12, weight: FontWeight.w800, spacing: .8, color: fill)),
+              ),
+            ],
+          ),
           if (multi) ...[
             const SizedBox(height: 6),
             Text('${acts.length} activities · even-split',
@@ -171,8 +195,22 @@ class _HeroCard extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Text('since ${formatTimeOfDay(b.start)}',
-              style: mono(context, size: 12, weight: FontWeight.w700, color: onFill)),
+          // The one correction worth a direct tap: you almost always notice the
+          // start is wrong while looking at the clock it drives.
+          GestureDetector(
+            onTap: () => editBlockStart(context, ref, b),
+            behavior: HitTestBehavior.opaque,
+            child: Row(
+              children: [
+                Text('since ${formatTimeOfDay(b.start)}',
+                    style: mono(context, size: 12, weight: FontWeight.w700, color: onFill)),
+                const SizedBox(width: 8),
+                Text('edit',
+                    style: mono(context, size: 10, weight: FontWeight.w800, spacing: .8, color: onFill)
+                        .copyWith(decoration: TextDecoration.underline, decorationColor: onFill)),
+              ],
+            ),
+          ),
           const SizedBox(height: 14),
           _CommentRow(block: b, onFill: onFill),
         ],

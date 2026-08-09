@@ -1,9 +1,10 @@
 // Pure-domain unit tests: no plugins / no DB, so the suite runs anywhere.
 // Covers block derivation, per-category roll-up (even-split + tree), CSV export,
-// the activity tree, and pasted-task parsing.
+// the activity tree, pasted-task parsing, and typed time-of-day parsing.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
+import 'package:time_tracker/format.dart';
 import 'package:time_tracker/domain/activity_tree.dart';
 import 'package:time_tracker/domain/block.dart';
 import 'package:time_tracker/domain/csv_export.dart';
@@ -304,6 +305,43 @@ void main() {
 
     test('a name with no usable characters still yields a valid file name', () {
       expect(csvFileName(DateTime(2026, 7, 30), scopeName: '★★'), 'track-subtree-2026-07-30.csv');
+    });
+  });
+
+  group('parseTimeOfDay', () {
+    final day = DateTime(2026, 3, 9, 22, 40);
+
+    test('separated forms land on the given day', () {
+      expect(parseTimeOfDay('14:05', onDay: day), DateTime(2026, 3, 9, 14, 5));
+      expect(parseTimeOfDay('14.05', onDay: day), DateTime(2026, 3, 9, 14, 5));
+      expect(parseTimeOfDay('9:5', onDay: day), DateTime(2026, 3, 9, 9, 5));
+      expect(parseTimeOfDay('  7:30  ', onDay: day), DateTime(2026, 3, 9, 7, 30));
+    });
+
+    test('compact forms split the last two digits as minutes', () {
+      expect(parseTimeOfDay('1405', onDay: day), DateTime(2026, 3, 9, 14, 5));
+      expect(parseTimeOfDay('905', onDay: day), DateTime(2026, 3, 9, 9, 5));
+    });
+
+    test('the date comes from the block, not from today', () {
+      // A block opened at 23:50 and corrected to 23:20 stays on its own day
+      // rather than jumping to the current one.
+      final lateBlock = DateTime(2025, 12, 31, 23, 50);
+      expect(parseTimeOfDay('23:20', onDay: lateBlock), DateTime(2025, 12, 31, 23, 20));
+    });
+
+    test('rejects out-of-range and unparseable input', () {
+      expect(parseTimeOfDay('24:00', onDay: day), isNull);
+      expect(parseTimeOfDay('12:60', onDay: day), isNull);
+      expect(parseTimeOfDay('', onDay: day), isNull);
+      expect(parseTimeOfDay('soon', onDay: day), isNull);
+      expect(parseTimeOfDay('12', onDay: day), isNull);
+    });
+
+    test('an ambiguous 3-digit-with-separator split is not invented', () {
+      // "145" is compact 1:45; the separated branch never sees it, so there is
+      // no path where the same string means both 1:45 and 14:05.
+      expect(parseTimeOfDay('145', onDay: day), DateTime(2026, 3, 9, 1, 45));
     });
   });
 }

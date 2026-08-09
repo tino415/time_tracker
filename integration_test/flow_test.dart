@@ -1,4 +1,5 @@
-// On-device end-to-end run of the phone MVP flow. Same screens and helpers as
+// On-device end-to-end run of the phone MVP flow, ending with the Now hero's
+// own edits (retime the open block, re-point it). Same screens and helpers as
 // test/phone_flow_test.dart, but on a real engine: real rasterisation, the
 // device's own screen size, and a real sqlite3 library rather than the host's.
 //
@@ -9,6 +10,8 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/format.dart';
 import 'package:time_tracker/phone/screens/activities_screen.dart';
 import 'package:time_tracker/phone/screens/calendar_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
@@ -21,7 +24,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('create an activity, track it, tag the block, report and chart it', (tester) async {
-    await bootApp(tester);
+    final db = await bootApp(tester);
 
     // ---- Now: empty state -> create & switch -------------------------------
     expect(inScreen(NowScreen, find.text('nothing tracked yet')), findsOneWidget);
@@ -72,6 +75,39 @@ void main() {
     // The block is only seconds old here, so its card is a sliver — it still has
     // to render.
     expect(inScreen(CalendarScreen, find.text('Deep work  +  Email')), findsOneWidget);
+
+    // ---- Now: retime the running block, then re-point it -------------------
+    // The two verbs the hero adds on top of the list views. A third activity,
+    // because "change activity" excludes whatever the block already tracks.
+    await openTab(tester, 'ACTIVITIES');
+    await tester.tap(inScreen(ActivitiesScreen, find.text('+ NEW ACTIVITY')));
+    await settle(tester);
+    await fillEditor(tester, 'Review', confirm: 'CREATE');
+    await openTab(tester, 'NOW');
+
+    final before = (await DriftChangeRepository(db).loadChanges()).single.changedAt;
+
+    await tester.tap(inScreen(NowScreen, find.textContaining('since ')));
+    await settle(tester);
+    await tester.tap(find.text('-15'));
+    await settle(tester);
+    await tester.tap(find.text('SAVE'));
+    await settle(tester);
+
+    final after = (await DriftChangeRepository(db).loadChanges()).single.changedAt;
+    expect(before.difference(after), const Duration(minutes: 15));
+    expect(inScreen(NowScreen, find.text('since ${formatTimeOfDay(after)}')), findsOneWidget);
+
+    await tester.tap(inScreen(NowScreen, find.text('⋯ EDIT BLOCK')));
+    await settle(tester);
+    await tester.tap(find.text('CHANGE ACTIVITY'));
+    await settle(tester);
+    await tester.tap(find.text('Review').last);
+    await settle(tester);
+
+    expect(inScreen(NowScreen, find.text('Review')), findsWidgets);
+    expect((await DriftChangeRepository(db).loadChanges()), hasLength(1),
+        reason: 'a correction re-points the block; it must not open a boundary');
 
     await disposeApp(tester);
   });

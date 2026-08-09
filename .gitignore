@@ -78,3 +78,4 @@ worker/.wrangler/
 # shared project config is ever wanted, add it deliberately with
 # `git add -f .claude/settings.json`.
 /.claude/
+/CLAUDE.local.md

@@ -228,6 +228,59 @@ try {
   }
   check('a semantics node drives the app', drivable, drivable ? 'editor opened' : 'click had no effect');
 
+  // --- the Now hero's edits, on the web engine ------------------------------
+  // The widget suite cannot cover this: test/support/flow_harness.dart opens a
+  // NativeDatabase, which is sqlite3 FFI and will not compile to JS. So driving
+  // it here is the only place retiming the running block meets drift-wasm/OPFS
+  // and a real soft keyboard rather than the host's sqlite3.
+  const sinceTime = () =>
+    page.evaluate(() => {
+      for (const n of document.querySelectorAll('flt-semantics')) {
+        const m = (n.textContent ?? '').match(/since (\d{2}:\d{2})/);
+        if (m) return m[1];
+      }
+      return null;
+    });
+
+  let retimed = false;
+  let retimeDetail = 'not reached';
+  if (drivable) {
+    try {
+      await page.locator('input, textarea').first().fill('Deep work');
+      await sleep(400);
+      await label('CREATE & SWITCH').click({ timeout: 10000 });
+      await sleep(2500);
+
+      const before = await sinceTime();
+      if (!before) throw new Error('no "since HH:MM" node on the hero');
+
+      // The row is a Row of two Texts under one GestureDetector, so the exact
+      // node may be either the label itself or a merged parent.
+      const sinceNode = page
+        .locator('flt-semantics')
+        .filter({ hasText: new RegExp(`since ${before}`) })
+        .last();
+      await sinceNode.click({ timeout: 10000 });
+      await sleep(1500);
+
+      await label('-15').click({ timeout: 10000 });
+      await sleep(500);
+      await label('SAVE').click({ timeout: 10000 });
+      await sleep(2500);
+
+      const after = await sinceTime();
+      const mins = (s) => {
+        const [h, m] = s.split(':').map(Number);
+        return h * 60 + m;
+      };
+      retimed = !!after && (mins(before) - mins(after) + 1440) % 1440 === 15;
+      retimeDetail = `${before} -> ${after}`;
+    } catch (e) {
+      retimeDetail = (e.message ?? String(e)).split('\n')[0];
+    }
+  }
+  check('Now hero retimes the running block', retimed, retimeDetail);
+
   const fatal = errors.filter((e) => !/favicon/i.test(e));
   check('no page errors', fatal.length === 0, fatal.slice(0, 3).join(' | '));
 } finally {

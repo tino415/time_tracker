@@ -71,7 +71,9 @@ if (inUse) {
 
 const server = spawn(
   'npx',
-  ['wrangler', 'dev', '--port', PORT, '--var', `SYNC_TOKEN:${TOKEN}`, '--persist-to', STATE],
+  // No --var: the Worker reads no token from its environment. TOKEN below is a
+  // *client* credential, claimed through POST /account like any other.
+  ['wrangler', 'dev', '--port', PORT, '--persist-to', STATE],
   { cwd: 'worker', stdio: ['ignore', 'pipe', 'pipe'] },
 );
 server.stdout.on('data', (d) => process.stdout.write(`[wrangler] ${d}`));

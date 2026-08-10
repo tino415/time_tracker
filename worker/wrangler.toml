@@ -11,9 +11,15 @@ binding = "DB"
 database_name = "track-sync"
 database_id = "3e3eb1d0-0d90-4891-b82e-95e9d2adeb13"
 
-# SYNC_TOKEN is NOT set here — it is the whole security boundary and must not
-# live in the repository. Set it as a secret:
-#   wrangler secret put SYNC_TOKEN
+# There is no server-side secret, so there is nothing to set here and nothing to
+# `wrangler secret put`. A sync token is an *account*, not a shared credential:
+# it is generated in the app, carried to another device by QR, and presented on
+# every request, which the Worker only ever compares as a SHA-256 against
+# accounts.token_hash. It never reads the token from its own environment.
+#
+# The token is still the whole security boundary — it just lives in the client
+# and in that table. Anyone may claim an unused one (POST /account); an account
+# is worth nothing without its token.
 
 # The PWA is served by this same Worker, so the app and the API share an origin.
 # That is not just tidiness: a separately-hosted app would be cross-origin,

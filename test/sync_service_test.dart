@@ -61,14 +61,18 @@ class FakeServer implements SyncTransport {
       _seq[dto.syncId] = _next++;
     }
 
+    // Ordered by `seq`, like the Worker's "rows with seq > cursor, oldest
+    // first" — and not by insertion, which would hide the case this order
+    // creates: a row edited twice moves to the *end*, so a parent edited after
+    // its child is delivered after it.
     final outActivities = [
       for (final e in activities.entries)
         if ((_seq[e.key] ?? 0) > cursor) e.value,
-    ];
+    ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0));
     final outChanges = [
       for (final e in changes.entries)
         if ((_seq[e.key] ?? 0) > cursor) e.value,
-    ];
+    ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0));
 
     final sent = [
       ...outActivities.map((a) => _seq[a.syncId] ?? 0),
@@ -122,6 +126,32 @@ void main() {
   });
 
   tearDown(() => phone.close());
+
+  // Observed in the wild (2026-08-10): one device sat on the same cursor for a
+  // day, pushing its own blocks and receiving nothing, because a parent it did
+  // not have yet was delivered *after* the child pointing at it. The insert
+  // failed the foreign key, the exception left the loop before the cursor moved,
+  // and every later sync replayed the same page and failed identically.
+  test('a parent edited after its child still applies to a device that has neither', () async {
+    final web = Device(server);
+    final work = await web.activities.createActivity(name: 'Work', color: '#4F8FEE');
+    await web.activities.createActivity(name: 'Payout', color: '#F4B740', parentId: work.syncId);
+    await web.sync.syncNow();
+
+    // Touching the parent moves it to the end of the server's order — so a
+    // device syncing from scratch is offered the child first.
+    await web.activities.renameActivity(work.syncId, 'Work & co');
+    await web.sync.syncNow();
+
+    await phone.sync.syncNow();
+
+    final rows = await phone.db.select(phone.db.activities).get();
+    expect(rows.map((r) => r.name), containsAll(<String>['Work & co', 'Payout']));
+    // The cursor has to move, or the next sync replays this page forever.
+    expect(await phone.store.cursor(), isNot('0'));
+
+    await web.close();
+  });
 
   test('a first sync pushes everything the device already has', () async {
     await phone.activities.createActivity(name: 'Deep work', color: '#4F8FEE');

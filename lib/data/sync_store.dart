@@ -136,8 +136,38 @@ class SyncStore {
     });
   }
 
+  /// Adopt a page of remote activities as one unit. Returns how many were taken.
+  ///
+  /// One transaction, with foreign keys deferred to the commit, because the
+  /// server's order cannot satisfy them row by row. `seq` is assigned on write,
+  /// so editing a *parent* after its child gives the parent the higher seq and
+  /// the child arrives first — and a child inserted before its parent exists is
+  /// a foreign key violation. That threw out of the apply loop before the cursor
+  /// moved, so every later sync replayed the same page, hit the same row and
+  /// failed the same way: a device stuck on one seq forever, still pushing its
+  /// own rows and never receiving any. Deferring the check to the commit makes
+  /// the *page* the unit of consistency, which is what it always was.
+  ///
+  /// A parent split across a page boundary would still fail — the whole batch
+  /// rolls back rather than committing something inconsistent. That needs the
+  /// server to page on a parents-first order, and has not happened here: a page
+  /// is [MAX_PAGE] rows.
+  Future<int> applyRemoteActivities(Iterable<ActivityDto> dtos) async {
+    return _db.transaction(() async {
+      await _db.customStatement('PRAGMA defer_foreign_keys = ON');
+      var applied = 0;
+      for (final dto in dtos) {
+        if (await applyRemoteActivity(dto)) applied++;
+      }
+      return applied;
+    });
+  }
+
   /// Adopt a remote activity if it wins under [decideIncoming]. Returns whether
   /// it was taken.
+  ///
+  /// Prefer [applyRemoteActivities] for anything the server sent: applied alone,
+  /// this enforces foreign keys immediately and so depends on delivery order.
   Future<bool> applyRemoteActivity(ActivityDto dto) async {
     return _db.transaction(() async {
       final local = await (_db.select(_db.activities)

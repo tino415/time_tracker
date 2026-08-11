@@ -85,12 +85,12 @@ class SyncService {
         },
       );
 
-      var pulled = 0;
       // Activities first: a change's links reference them, and a link naming an
       // unknown activity is skipped rather than applied.
-      for (final dto in response.activities) {
-        if (await _store.applyRemoteActivity(dto)) pulled++;
-      }
+      //
+      // As one batch, not row by row: the server orders by `seq`, which puts a
+      // reparented child before the parent it points at.
+      var pulled = await _store.applyRemoteActivities(response.activities);
       for (final dto in response.changes) {
         if (await _store.applyRemoteChange(dto)) pulled++;
       }

@@ -68,8 +68,13 @@ status:
     set -uo pipefail
     echo "REPO"
     printf '  head    %s\n' "$(git log -1 --format='%h %s')"
-    if [ -n "$(git status --porcelain -- lib test worker tool Justfile 2>/dev/null)" ]; then
-        printf '  tree    dirty — a build now would not match any commit\n'
+    # The whole tree, because that is what `git describe --dirty` in build_id
+    # judges — reporting a narrower "clean" beside a `-dirty` stamp is the kind
+    # of contradiction this recipe exists to remove. Named, not just counted:
+    # the answer to "why is my build dirty" is the file list.
+    dirty=$(git status --porcelain | awk '{ print $NF }' | tr '\n' ' ')
+    if [ -n "$dirty" ]; then
+        printf '  tree    dirty: %s\n' "$dirty"
     else
         printf '  tree    clean\n'
     fi

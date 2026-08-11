@@ -89,7 +89,11 @@ status:
         echo "DEPLOYED  no SYNC_URL in .env — clients built here would have no server"
     else
         echo "DEPLOYED  $url"
-        stamp=$(curl -fsS --max-time 20 "${url%/}/main.dart.js" 2>/dev/null \
+        # Cache-busted, and not politely: a plain GET here is answered by the
+        # edge cache, so this reported the *previous* deploy's stamp for minutes
+        # after a successful upload — the exact lie the recipe exists to catch.
+        stamp=$(curl -fsS --max-time 20 -H 'Cache-Control: no-cache' \
+            "${url%/}/main.dart.js?cachebust=$(date +%s)" 2>/dev/null \
             | grep -oE '[A-Za-z0-9._-]+@[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}' | head -1)
         printf '  build   %s\n' "${stamp:-unreachable, or no build stamp in the bundle}"
     fi

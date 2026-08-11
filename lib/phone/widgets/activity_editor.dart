@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -53,6 +54,7 @@ class _EditorSheet extends ConsumerStatefulWidget {
 
 class _EditorSheetState extends ConsumerState<_EditorSheet> {
   late final TextEditingController _name;
+  final _nameFocus = FocusNode();
   String? _parentId;
   String? _externalId;
   late Color _color;
@@ -81,7 +83,36 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
   @override
   void dispose() {
     _name.dispose();
+    _nameFocus.dispose();
     super.dispose();
+  }
+
+  /// Run [action], then put the keyboard back where it was.
+  ///
+  /// A web-only failure, and a silent one. Flutter routes typing through a
+  /// hidden DOM input; a pointer down on a non-focusable area blurs that element
+  /// in the *browser* while Flutter's focus tree still believes the field is
+  /// focused. The two disagree, so the caret stays put and every keystroke goes
+  /// nowhere — the field looks focused and the keyboard looks broken.
+  ///
+  /// Simply re-requesting focus does not help: the framework sees no change and
+  /// does nothing. The connection has to be dropped and rebuilt, which is what
+  /// the unfocus/requestFocus pair across a frame does. Guarded by [kIsWeb]
+  /// because on a phone it would bounce the soft keyboard for no reason.
+  ///
+  /// Making the controls refuse focus is *not* sufficient on its own — measured,
+  /// by neutering this method with `_Swatch`'s `ExcludeFocus` still in place:
+  /// `just web-smoke` then reports the field holding "". What `ExcludeFocus`
+  /// buys is that Flutter's focus tree stays put, so [wasTyping] below still has
+  /// a truthful answer to restore from.
+  void _keepTyping(VoidCallback action) {
+    final wasTyping = _nameFocus.hasFocus;
+    action();
+    if (!wasTyping || !kIsWeb) return;
+    _nameFocus.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
   }
 
   /// Colour used when the user hasn't explicitly chosen one: inherit the parent's.
@@ -172,7 +203,12 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                 ],
               ),
               const SizedBox(height: 14),
-              _Field(controller: _name, hint: 'name (paste CU-1234 Title…)', autofocus: !_isEdit),
+              _Field(
+                controller: _name,
+                focusNode: _nameFocus,
+                hint: 'name (paste CU-1234 Title…)',
+                autofocus: !_isEdit,
+              ),
               if (_externalId != null) ...[
                 const SizedBox(height: 8),
                 Row(children: [
@@ -188,22 +224,13 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                 runSpacing: 8,
                 children: [
                   for (final c in ActivityPalette.all)
-                    GestureDetector(
-                      onTap: () => setState(() {
+                    _Swatch(
+                      color: c,
+                      selected: _effectiveColor.toARGB32() == c.toARGB32(),
+                      onTap: () => _keepTyping(() => setState(() {
                         _color = c;
                         _colorTouched = true;
-                      }),
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          color: c,
-                          border: Border.all(
-                            color: _effectiveColor.toARGB32() == c.toARGB32() ? t.brand : t.line,
-                            width: _effectiveColor.toARGB32() == c.toARGB32() ? 4 : 2,
-                          ),
-                        ),
-                      ),
+                      })),
                     ),
                 ],
               ),
@@ -221,7 +248,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                     const SizedBox(width: 8),
                     NeoButton(
                       label: 'clear',
-                      onTap: () => setState(() => _parentId = null),
+                      onTap: () => _keepTyping(() => setState(() => _parentId = null)),
                       shadowOffset: 3,
                       compact: true,
                     ),
@@ -229,7 +256,10 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                 ],
               ),
               const SizedBox(height: 10),
-              _BookmarkToggle(value: _bookmarked, onChanged: (v) => setState(() => _bookmarked = v)),
+              _BookmarkToggle(
+                value: _bookmarked,
+                onChanged: (v) => _keepTyping(() => setState(() => _bookmarked = v)),
+              ),
               const SizedBox(height: 16),
               NeoButton(
                 label: _isEdit
@@ -249,9 +279,18 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
 }
 
 class _Field extends StatelessWidget {
-  const _Field({required this.controller, required this.hint, this.autofocus = false});
+  const _Field({
+    required this.controller,
+    required this.hint,
+    this.focusNode,
+    this.autofocus = false,
+  });
   final TextEditingController controller;
   final String hint;
+
+  /// Supplied when the caller needs to put the keyboard back after a tap
+  /// elsewhere in the form — see `_EditorSheetState._keepTyping`.
+  final FocusNode? focusNode;
   final bool autofocus;
 
   @override
@@ -262,12 +301,54 @@ class _Field extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: TextField(
         controller: controller,
+        focusNode: focusNode,
         autofocus: autofocus,
         style: mono(context, weight: FontWeight.w700),
         decoration: InputDecoration(
           border: InputBorder.none,
           hintText: hint,
           hintStyle: mono(context, color: t.muted),
+        ),
+      ),
+    );
+  }
+}
+
+/// One colour in the palette.
+///
+/// A real, named control rather than a bare `GestureDetector` around a coloured
+/// box: it carries a semantics label (so it is announced, and reachable from a
+/// browser-driven test — the only harness that sees the web focus bug this
+/// widget exists to keep fixed), and it refuses focus, so tapping one cannot
+/// take the caret out of the name field.
+class _Swatch extends StatelessWidget {
+  const _Swatch({required this.color, required this.selected, required this.onTap});
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'colour ${toHexColor(color)}',
+      child: ExcludeFocus(
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color,
+              border: Border.all(
+                color: selected ? t.brand : t.line,
+                width: selected ? 4 : 2,
+              ),
+            ),
+          ),
         ),
       ),
     );

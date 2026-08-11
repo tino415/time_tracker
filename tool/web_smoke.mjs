@@ -110,9 +110,17 @@ try {
   const page = await context.newPage();
 
   const errors = [];
+  // Set while the *script* has the network cut on purpose. Failed loads are the
+  // expected result there, not a defect — and whether any escape the service
+  // worker's cache is timing, so counting them makes `no page errors` flaky in
+  // proportion to how long the rest of the run takes.
+  let networkCut = false;
   page.on('pageerror', (e) => errors.push(e.message.split('\n')[0]));
   page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text().slice(0, 200));
+    if (m.type() !== 'error') return;
+    const text = m.text().slice(0, 200);
+    if (networkCut && /ERR_INTERNET_DISCONNECTED|Failed to load resource/i.test(text)) return;
+    errors.push(text);
   });
 
   await page.goto(ORIGIN, { waitUntil: 'load', timeout: 60000 });
@@ -175,6 +183,7 @@ try {
   );
 
   // --- offline -------------------------------------------------------------
+  networkCut = true;
   await context.setOffline(true);
   let offlineOk = false;
   try {
@@ -185,6 +194,9 @@ try {
   }
   check('reloads with the network cut', offlineOk);
   await context.setOffline(false);
+  // Console errors from the cut arrive slightly after the socket is back.
+  await sleep(500);
+  networkCut = false;
 
   // --- semantics: is the web build actually drivable? -----------------------
   // main() calls ensureSemantics() on web, so the engine should emit a DOM
@@ -280,6 +292,60 @@ try {
     }
   }
   check('Now hero retimes the running block', retimed, retimeDetail);
+
+  // --- the keyboard survives a tap on a non-text control --------------------
+  // Web-only, and invisible to the widget suite: typing goes through a hidden
+  // DOM input, so a tap that blurs it in the *browser* while Flutter still
+  // thinks the field is focused leaves the form looking fine and silently
+  // eating every keystroke. Reproduced by clicking a colour swatch first and
+  // typing second — which is why this types on the real keyboard rather than
+  // using locator.fill(), which writes to the DOM element directly and would
+  // pass even with the bug present.
+  let keyboardSurvives = false;
+  let keyboardDetail = 'not reached';
+  let step = 'open Activities';
+  try {
+    // Via the Activities tab: by now a block is running, so the Now screen's
+    // first-run "+ NEW ACTIVITY" is gone.
+    await label('ACTIVITIES').click({ timeout: 10000 });
+    await sleep(1200);
+
+    step = 'open the editor';
+    await label('+ NEW ACTIVITY').click({ timeout: 10000 });
+    await sleep(1500);
+
+    // Discovered rather than hardcoded, so changing the palette does not break
+    // this. The anchored regex is what isolates a swatch's own node: an ancestor
+    // node's text is every descendant's concatenated, so only the leaf matches.
+    step = 'find the colour swatches';
+    const swatchLabels = await page.evaluate(() =>
+      [...document.querySelectorAll('flt-semantics')]
+        .map((n) => n.getAttribute('aria-label') || n.textContent?.trim() || '')
+        .filter((s) => /^colour #[0-9a-f]{6}$/i.test(s)),
+    );
+    if (swatchLabels.length < 2) {
+      throw new Error(`expected labelled swatches, found ${swatchLabels.length}`);
+    }
+
+    // Not the first: that is the default, and tapping it would change nothing.
+    step = `click swatch ${swatchLabels[1]}`;
+    await label(swatchLabels[1]).click({ timeout: 10000 });
+    await sleep(600);
+
+    step = 'type into the name field';
+
+    await page.keyboard.type('Typed after the swatch');
+    await sleep(600);
+
+    const typed = await page.evaluate(
+      () => [...document.querySelectorAll('input, textarea')].map((e) => e.value).join('|'),
+    );
+    keyboardSurvives = typed.includes('Typed after the swatch');
+    keyboardDetail = keyboardSurvives ? 'keystrokes landed' : `field held "${typed}"`;
+  } catch (e) {
+    keyboardDetail = `at "${step}": ${(e.message ?? String(e)).split('\n')[0]}`;
+  }
+  check('typing still works after tapping a colour swatch', keyboardSurvives, keyboardDetail);
 
   const fatal = errors.filter((e) => !/favicon/i.test(e));
   check('no page errors', fatal.length === 0, fatal.slice(0, 3).join(' | '));

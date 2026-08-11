@@ -14,7 +14,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
 import 'package:time_tracker/domain/reporting.dart';
-import 'package:time_tracker/phone/phone_app.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
 import 'package:time_tracker/theme/tokens.dart';
 
@@ -61,11 +60,11 @@ Future<void> _seedLastWeek(AppDatabase db) async {
 
 /// Register the app's own mono face.
 ///
-/// Needed by every test here, not just the golden: these rows are laid out from
-/// text widths, and the harness's fallback face is wide enough that a realistic
-/// task name overflows a row by a pixel or two — an artefact of the stand-in
-/// font that says nothing about the screen. Read off disk rather than through
-/// `rootBundle`: `flutter test` runs from the package root.
+/// These rows are laid out from text widths, and the harness's fallback face is
+/// wide enough that a realistic task name overflows one by a pixel or two — an
+/// artefact of the stand-in font that says nothing about the screen. Read off
+/// disk rather than through `rootBundle`: `flutter test` runs from the package
+/// root.
 Future<void> _loadMonoFont() async {
   final loader = FontLoader(kMonoFont);
   for (final weight in ['Regular', 'Bold', 'ExtraBold']) {
@@ -73,17 +72,6 @@ Future<void> _loadMonoFont() async {
     loader.addFont(Future.value(ByteData.sublistView(bytes)));
   }
   await loader.load();
-}
-
-/// Open the report on last week and drill Work, then Payout, open.
-Future<void> _openDrilledReport(WidgetTester tester) async {
-  await openTab(tester, 'REPORTS');
-  await tester.tap(inScreen(ReportsScreen, find.text('‹'))); // last week
-  await settle(tester);
-  await tester.tap(inScreen(ReportsScreen, find.text('Work')));
-  await settle(tester);
-  await tester.tap(inScreen(ReportsScreen, find.text('Payout')));
-  await settle(tester);
 }
 
 void main() {
@@ -143,18 +131,12 @@ void main() {
     await disposeApp(tester);
   });
 
-  // Pins the drill-down's layout — indent, bar sizes, the row order — which the
-  // finder-based tests above cannot see. Refresh with:
-  //   just test-only test/reports_drilldown_test.dart --update-goldens
-  testWidgets('golden: two levels drilled open', (tester) async {
-    await bootApp(tester, viewport: _phone, seed: _seedLastWeek);
-    await _openDrilledReport(tester);
-
-    await expectLater(
-      find.byType(PhoneApp),
-      matchesGoldenFile('goldens/reports_drilldown.png'),
-    );
-
-    await disposeApp(tester);
-  });
 }
+
+// A golden of the drilled-open report was tried and removed. It pinned what the
+// finders cannot see — indent, bar widths, row order — and earned its keep once,
+// showing that scaling each bar against its largest *sibling* made every equal
+// child full-width and said nothing, which is why they scale against the parent
+// instead. But the week selector renders a date range, so the image changes when
+// the calendar does and the test would fail weekly rather than on a regression.
+// Reintroducing it needs an injectable clock first.

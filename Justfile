@@ -45,9 +45,54 @@ build_id := `git describe --always --dirty --tags 2>/dev/null || echo unknown` +
 # Every recipe that produces a client passes both of these.
 client_defines := sync_defines + " --dart-define=BUILD_ID=" + build_id
 
+# From android/app/build.gradle.kts. Hardcoded rather than parsed out of it: it
+# changes about as often as the app is renamed.
+package_id := "com.otin.time_tracker"
+
 [doc('List these recipes')]
 default:
     @just --list
+
+# "What is running where" — the question that costs the most time whenever two
+# clients disagree, and one that used to need `git log`, file timestamps,
+# `wrangler deployments` and a database pull to answer.
+#
+# Reads only, and nothing privileged: the repo, the deployed bundle over plain
+# HTTP, and each attached device's own copy of the database. The deployed stamp
+# comes out of the shipped bundle rather than from Cloudflare's deployment list,
+# because what is *serving* is the question — a deploy that half-succeeded shows
+# up here and not there.
+[doc('What is running where: repo, deployed bundle, and every attached device')]
+status:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo "REPO"
+    printf '  head    %s\n' "$(git log -1 --format='%h %s')"
+    if [ -n "$(git status --porcelain -- lib test worker tool Justfile 2>/dev/null)" ]; then
+        printf '  tree    dirty — a build now would not match any commit\n'
+    else
+        printf '  tree    clean\n'
+    fi
+    printf '  next    a build now stamps %s\n' '{{ build_id }}'
+    echo
+    url='{{ env_var_or_default("SYNC_URL", "") }}'
+    if [ -z "$url" ]; then
+        echo "DEPLOYED  no SYNC_URL in .env — clients built here would have no server"
+    else
+        echo "DEPLOYED  $url"
+        stamp=$(curl -fsS --max-time 20 "${url%/}/main.dart.js" 2>/dev/null \
+            | grep -oE '[A-Za-z0-9._-]+@[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}' | head -1)
+        printf '  build   %s\n' "${stamp:-unreachable, or no build stamp in the bundle}"
+    fi
+    echo
+    echo "DEVICES"
+    found=0
+    for serial in $(adb devices | awk 'NR>1 && $2 == "device" { print $1 }'); do
+        found=1
+        printf '  %s (%s)\n' "$serial" "$(adb -s "$serial" shell getprop ro.product.model 2>/dev/null | tr -d '\r')"
+        just _sync_state "$serial" '    '
+    done
+    [ "$found" = 1 ] || echo "  none attached"
 
 [doc('Static analysis')]
 analyze:
@@ -203,6 +248,43 @@ deploy device: phone-apk
 [doc('Build and install on a watch')]
 deploy-watch device: watch-apk
     @just _install {{device}} build/app/outputs/flutter-apk/app-debug.apk
+
+# One device's view of sync, read straight from the app's own database.
+#
+# `backend` is the whole pairing question in one string: it is the server URL
+# *and* the account, so two devices that print the same value are genuinely
+# talking to the same place as the same account, and two that differ cannot
+# converge no matter how often either syncs. `cursor` frozen while the server
+# has moved on is the signature of a pull that keeps failing — which is silent,
+# because a background sync's failures are deliberately inert.
+#
+# Needs a debug build: `run-as` is how a device without root lets anything read
+# app-private storage, and it refuses on a non-debuggable package.
+[doc("One device's sync state: backend, cursor and row counts")]
+sync-state device:
+    @just _sync_state {{device}} ''
+
+_sync_state device indent='':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    if ! command -v sqlite3 >/dev/null 2>&1; then
+        printf '{{indent}}sqlite3 is not installed\n'; exit 0
+    fi
+    db=$(mktemp)
+    trap 'rm -f "$db"' EXIT
+    adb -s {{device}} exec-out run-as {{package_id}} cat app_flutter/time_tracker.sqlite > "$db" 2>/dev/null
+    # Checked by magic, not by size: `run-as` reports its own failures on stdout
+    # through exec-out, so a refusal arrives as a perfectly non-empty file.
+    if [ "$(head -c 15 "$db" 2>/dev/null)" != "SQLite format 3" ]; then
+        printf '{{indent}}no database — app not installed, never opened, or not a debug build\n'; exit 0
+    fi
+    q() { sqlite3 "$db" "$1" 2>/dev/null; }
+    # Spelled out rather than left blank: an empty field reads as "the tool
+    # failed", which is the ambiguity this recipe exists to remove.
+    printf '{{indent}}backend    %s\n' "$(q "select value from sync_meta where key = 'backend'" | grep . || echo 'none — no sync account on this device')"
+    printf '{{indent}}cursor     %s\n' "$(q "select value from sync_meta where key = 'cursor'" | grep . || echo 'none — never pulled')"
+    printf '{{indent}}activities %s\n' "$(q 'select count(*) from activities')"
+    printf '{{indent}}changes    %s\n' "$(q 'select count(*) from activity_changes')"
 
 [doc('flutter clean')]
 clean:

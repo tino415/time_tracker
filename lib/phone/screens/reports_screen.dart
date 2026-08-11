@@ -253,6 +253,51 @@ class _StorageLine extends ConsumerWidget {
         // than by inferring from what was last installed.
         Text('BUILD · $kBuildId',
             style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted)),
+        const SizedBox(height: 4),
+        const _SyncBackendLine(),
+      ],
+    );
+  }
+}
+
+/// Which server this device syncs with, next to the build stamp for the same
+/// reason: two devices that disagree are usually not talking to the same place,
+/// and until now the only way to know was to remember how each was built.
+///
+/// The URL is compiled in (`--dart-define=SYNC_URL`), so it cannot be read off
+/// the running app any other way — an APK built against a local worker and a web
+/// build served from Cloudflare look identical from the inside.
+class _SyncBackendLine extends ConsumerWidget {
+  const _SyncBackendLine();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = neo(context);
+    final config = ref.watch(syncConfigProvider);
+
+    // The scheme is the same on every build worth comparing and eats a third of
+    // a narrow line; the host and path are what actually differ.
+    final label = config.hasServer
+        ? config.baseUrl!.replaceFirst(RegExp(r'^https?://'), '')
+        : 'not configured';
+
+    return Row(
+      children: [
+        Text('SYNC · ',
+            style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+        Expanded(
+          child: SelectableText(
+            label,
+            maxLines: 1,
+            style: mono(
+              context,
+              size: 10,
+              weight: FontWeight.w700,
+              // A build with no server at all is the surprising state.
+              color: config.hasServer ? t.muted : t.brand,
+            ),
+          ),
+        ),
       ],
     );
   }

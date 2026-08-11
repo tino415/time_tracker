@@ -19,7 +19,12 @@ import '../widgets/neo.dart';
 import '../widgets/sync_setup.dart';
 
 /// Weekly per-category report: a hero total, rolled-up horizontal bars per
-/// top-level category, and a client-side CSV export (optionally subtree-filtered).
+/// top-level category that **drill down into their sub-activities**, and a
+/// client-side CSV export (optionally subtree-filtered).
+///
+/// The drill-down is the point of a hierarchical catalogue: `Work > Payout >
+/// CU-1042` means "how much did I work for Payout" is a question about a middle
+/// node, and a roots-only report cannot answer it.
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
@@ -29,6 +34,11 @@ class ReportsScreen extends ConsumerStatefulWidget {
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   int _weekOffset = 0; // 0 = current week, -1 = last week, …
+
+  /// Which rows are drilled open, by activity id. Deliberately kept across week
+  /// changes: the question ("how much for Payout?") outlives the week you happen
+  /// to be looking at, so stepping back a week should keep the same view open.
+  final _expanded = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +50,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final base = DateTime(now.year, now.month, now.day + _weekOffset * 7);
     final week = localWeekRange(base);
 
-    final totals = rollUpTotals(
+    final totals = reportTotals(
       blocks: blocks,
       tree: tree,
       rangeStart: week.start,
@@ -58,11 +68,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
     final total = Duration(microseconds: totalMicros);
 
-    final roots = tree.rootIds.where((id) => (totals[id] ?? Duration.zero) > Duration.zero).toList()
-      ..sort((a, b) => (totals[b] ?? Duration.zero).compareTo(totals[a] ?? Duration.zero));
-    final maxRoot = roots.isEmpty
-        ? Duration.zero
-        : roots.map((id) => totals[id]!).reduce((a, b) => a > b ? a : b);
+    // Sorted largest first, so the widest bar is always the level's first row.
+    final roots = _tracked(totals, tree.rootIds);
+    final maxRoot = roots.isEmpty ? Duration.zero : totals.subtreeOf(roots.first);
+    final drillable = roots.any((id) => _tracked(totals, tree.childrenOf(id)).isNotEmpty);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -92,21 +101,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ),
         ),
         const SizedBox(height: 18),
-        NeoSectionHeader('Per category'),
+        NeoSectionHeader(
+          'Per category',
+          trailing: drillable
+              ? Text('tap to drill in',
+                  style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted))
+              : null,
+        ),
         const SizedBox(height: 12),
         if (roots.isEmpty)
           Text('nothing tracked this week', style: mono(context, color: t.muted))
         else
-          for (final id in roots)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _CategoryBar(
-                label: tree[id]!.name,
-                color: parseHexColor(tree[id]!.color),
-                value: totals[id]!,
-                max: maxRoot,
-              ),
-            ),
+          ..._rows(tree, totals, roots, max: maxRoot, depth: 0),
         const SizedBox(height: 18),
         NeoButton(
           label: '↧ export csv · all history',
@@ -120,6 +126,60 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         const _StorageLine(),
       ],
     );
+  }
+
+  /// One level of the drill-down: a bar per id in [ids], and — under any that is
+  /// open — the rows for its children.
+  ///
+  /// [max] scales this level's bars: the largest root for the top level, and
+  /// otherwise the parent's own total. So a child's bar is its **share of the
+  /// row above it** — the level's bars fill their parent's bar between them —
+  /// rather than its share of the week, which at depth 3 would be a sliver.
+  List<Widget> _rows(
+    ActivityTree tree,
+    ReportTotals totals,
+    List<String> ids, {
+    required Duration max,
+    required int depth,
+  }) {
+    final out = <Widget>[];
+    for (final id in ids) {
+      final activity = tree[id]!;
+      final children = _tracked(totals, tree.childrenOf(id));
+      final open = _expanded.contains(id);
+
+      out.add(_ReportBar(
+        label: activity.name,
+        color: parseHexColor(activity.color),
+        value: totals.subtreeOf(id),
+        max: max,
+        depth: depth,
+        expanded: open,
+        onTap: children.isEmpty
+            ? null
+            : () => setState(() => open ? _expanded.remove(id) : _expanded.add(id)),
+      ));
+
+      if (!open || children.isEmpty) continue;
+
+      // Time booked on the node itself belongs to this level too, or the
+      // children would visibly fail to add up to their parent.
+      final direct = totals.directOf(id);
+      final childMax = totals.subtreeOf(id);
+
+      if (direct > Duration.zero) {
+        out.add(_ReportBar(
+          label: 'direct',
+          color: parseHexColor(activity.color),
+          value: direct,
+          max: childMax,
+          depth: depth + 1,
+          muted: true,
+        ));
+      }
+      out.addAll(_rows(tree, totals, children, max: childMax, depth: depth + 1));
+    }
+    return out;
   }
 
   static String _weekLabel(DateTime weekStart, DateTime now) {
@@ -323,37 +383,93 @@ class _WeekSelector extends StatelessWidget {
   }
 }
 
-class _CategoryBar extends StatelessWidget {
-  const _CategoryBar({required this.label, required this.color, required this.value, required this.max});
+/// The ids in [ids] that have time in the range, largest first — the only ones
+/// worth a row. An untracked branch is noise in a report.
+List<String> _tracked(ReportTotals totals, List<String> ids) {
+  return ids.where((id) => totals.subtreeOf(id) > Duration.zero).toList()
+    ..sort((a, b) => totals.subtreeOf(b).compareTo(totals.subtreeOf(a)));
+}
+
+/// One labelled bar in the drill-down. Deeper rows are indented and rendered a
+/// size down, so the level a number belongs to is readable without a legend.
+class _ReportBar extends StatelessWidget {
+  const _ReportBar({
+    required this.label,
+    required this.color,
+    required this.value,
+    required this.max,
+    required this.depth,
+    this.onTap,
+    this.expanded = false,
+    this.muted = false,
+  });
+
   final String label;
   final Color color;
   final Duration value;
   final Duration max;
+  final int depth;
+
+  /// Null when the row has nothing to drill into.
+  final VoidCallback? onTap;
+  final bool expanded;
+
+  /// The synthetic "time on this node itself" row, which is a remainder rather
+  /// than an activity of its own.
+  final bool muted;
 
   @override
   Widget build(BuildContext context) {
     final t = neo(context);
     final frac = max.inMicroseconds == 0 ? 0.0 : value.inMicroseconds / max.inMicroseconds;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    final root = depth == 0;
+    final size = root ? 14.0 : 12.0;
+    final ink = muted ? t.muted : t.ink;
+
+    return Padding(
+      padding: EdgeInsets.only(left: depth * 14.0, bottom: root ? 12 : 8),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono(context, weight: FontWeight.w700))),
-            Text(formatDurationHm(value), style: mono(context, weight: FontWeight.w800)),
+            Row(
+              children: [
+                // A fixed slot, so labels line up whether or not a row drills.
+                SizedBox(
+                  width: 16,
+                  child: Text(
+                    onTap == null ? '' : (expanded ? '▾' : '▸'),
+                    style: mono(context, size: size, weight: FontWeight.w800, color: t.muted),
+                  ),
+                ),
+                Expanded(
+                  child: Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: mono(context, size: size, weight: FontWeight.w700, color: ink)),
+                ),
+                Text(formatDurationHm(value),
+                    style: mono(context, size: size, weight: FontWeight.w800, color: ink)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Container(
+              height: root ? 22 : 16,
+              decoration: BoxDecoration(
+                color: t.surface2,
+                border: Border.all(color: t.line, width: root ? 3 : 2),
+              ),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: frac.clamp(0.0, 1.0),
+                child: Container(color: color),
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 6),
-        Container(
-          height: 22,
-          decoration: BoxDecoration(color: t.surface2, border: Border.all(color: t.line, width: 3)),
-          child: FractionallySizedBox(
-            alignment: Alignment.centerLeft,
-            widthFactor: frac.clamp(0.0, 1.0),
-            child: Container(color: color),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

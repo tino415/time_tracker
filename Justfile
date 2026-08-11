@@ -1,9 +1,13 @@
 # Build / test / run commands for time_tracker.
 #
-# `just` lists them; `just <recipe>` runs one. Each carries a [doc('…')]
-# one-liner for that listing and, where the reasoning is not obvious, a comment
-# above it with the why. The listing is the reference — nothing duplicates it
-# elsewhere, so it cannot go stale.
+# `just` lists them; `just <recipe>` runs one. Each [doc('…')] one-liner is
+# written to be sufficient on its own: what the recipe does, what it rebuilds or
+# needs first, and the one thing that would otherwise surprise you. The listing
+# is the reference — you should not have to open this file to run something, and
+# nothing duplicates it elsewhere, so it cannot go stale.
+#
+# The comments above a recipe are the *why*, for whoever changes it. If using a
+# recipe ever requires reading one of them, that belongs in its [doc] instead.
 #
 # Two standing constraints:
 #  * drift codegen needs --force-jit (plain build_runner hits a "dart compile
@@ -49,7 +53,7 @@ client_defines := sync_defines + " --dart-define=BUILD_ID=" + build_id
 # changes about as often as the app is renamed.
 package_id := "com.otin.time_tracker"
 
-[doc('List these recipes')]
+[doc('List these recipes — the full command reference, no need to open the Justfile')]
 default:
     @just --list
 
@@ -62,7 +66,7 @@ default:
 # comes out of the shipped bundle rather than from Cloudflare's deployment list,
 # because what is *serving* is the question — a deploy that half-succeeded shows
 # up here and not there.
-[doc('What is running where: repo, deployed bundle, and every attached device')]
+[doc('What is running where: repo, deployed bundle, and every attached device. Read-only')]
 status:
     #!/usr/bin/env bash
     set -uo pipefail
@@ -99,18 +103,18 @@ status:
     done
     [ "$found" = 1 ] || echo "  none attached"
 
-[doc('Static analysis')]
+[doc('Static analysis (flutter analyze) over the whole package')]
 analyze:
     flutter analyze
 
 # Needed after changing pubspec.yaml: the test and build recipes pass --no-pub so
 # an ordinary run does not stop to re-resolve.
-[doc('Resolve Dart dependencies')]
+[doc('Resolve Dart dependencies — needed after a pubspec change; every other recipe passes --no-pub')]
 deps:
     flutter pub get
 
 # --no-pub skips the implicit pub get — see `just deps`.
-[doc('Unit + widget tests')]
+[doc('Unit + widget tests — the whole suite under test/')]
 test:
     flutter test --no-pub
 
@@ -118,7 +122,7 @@ test:
 #   just test-only test/calendar_test.dart
 #   just test-only --plain-name moveBoundary
 #   just test-only test/calendar_test.dart test/domain_test.dart
-[doc('A subset of the suite, for a tight edit/run loop')]
+[doc('A subset of the suite, for a tight edit/run loop — takes any flutter test args: files, --plain-name, --update-goldens')]
 test-only +args:
     flutter test --no-pub {{args}}
 
@@ -129,21 +133,21 @@ test-failures +args="test":
 # Needs a running emulator or a connected device. `flutter devices` lists the
 # ids; a phone paired over wifi gets a new ip:port each pairing, so pass it
 # explicitly when it changes.
-[doc('On-device run of the phone flow')]
+[doc('On-device run of the phone flow — needs an emulator or device; `flutter devices` lists the ids')]
 e2e device="127.0.0.1:5557":
     flutter test integration_test/flow_test.dart --no-pub -d {{device}}
 
 # A *different suite*, not the phone one on a smaller screen: the watch has its
 # own shell because the phone layout does not fit a 227x227 round display.
-[doc('On-device run of the watch shell')]
+[doc('On-device run of the watch shell — a different suite from `e2e`, not the same one on a smaller screen')]
 e2e-watch device="127.0.0.1:5555":
     flutter test integration_test/watch_flow_test.dart --no-pub -d {{device}}
 
-[doc('Regenerate drift code after a schema change')]
+[doc('Regenerate drift code — run after editing the schema in lib/data/database.dart')]
 gen:
     flutter pub run build_runner build --force-jit
 
-[doc('Regenerate drift code on every change')]
+[doc('Regenerate drift code on every change (watching `gen`)')]
 watch:
     flutter pub run build_runner watch --force-jit
 
@@ -151,7 +155,7 @@ watch:
 # web/ *except* files starting with an underscore, so the response headers the
 # deployed app needs — cross-origin isolation, no-store on the shell — would
 # silently not ship.
-[doc('Build the web PWA into build/web')]
+[doc('Build the web PWA into build/web — also copies web/_headers, which the build itself skips')]
 web:
     flutter build web {{client_defines}}
     cp web/_headers build/web/_headers
@@ -161,21 +165,21 @@ web:
 # build has none of it. No hot reload as a result; re-run to pick up changes.
 #
 # Binds 0.0.0.0 so a browser on another machine can reach it.
-[doc('Build and serve the PWA on :4242 — the way to review it')]
+[doc('Build and serve the PWA on :4242 — the way to review it. Rebuilds `web`; no hot reload, re-run to pick up changes')]
 up port="4242": web
     dart tool/serve_web.dart build/web {{port}}
 
 # Only playwright-core comes from npm; the browser binaries are expected on the
 # machine already, found via PLAYWRIGHT_BROWSERS_PATH. package.json pins
 # playwright to a version matching those binaries.
-[doc('Install the browser tooling web-smoke needs (playwright-core)')]
+[doc('Install the browser tooling web-smoke needs (playwright-core); browser binaries must already be on the machine')]
 node-deps:
     npm install --no-audit --no-fund
 
 # Checks cross-origin isolation, OPFS, persistence, data surviving a reload, and
 # a reload with the network cut. Runs headed under Xvfb — headless swiftshader
 # paints blank CanvasKit frames.
-[doc('Build, serve, and smoke-test the PWA in a real browser')]
+[doc('Build, serve, and smoke-test the PWA in a real browser — rebuilds `web`; needs `node-deps` and Xvfb')]
 web-smoke port="4242": web
     xvfb-run -a node tool/web_smoke.mjs {{port}}
 
@@ -187,13 +191,13 @@ web-smoke port="4242": web
 # A different default port from `worker-dev` on purpose: run both at once and
 # the test would silently exercise the dev worker instead — its own database,
 # its own token, and a wall of failures that look like a broken Worker.
-[doc('Smoke-test the sync worker locally')]
+[doc('Smoke-test the sync worker locally on :4245 — a different port from `worker-dev` on purpose; do not run both')]
 worker-smoke port="4245":
     node tool/worker_smoke.mjs {{port}}
 
 # Apply the schema to a local D1. Safe to re-run — the schema is all
 # CREATE TABLE IF NOT EXISTS — and needed once before `worker-dev` will answer.
-[doc('Create or update the local sync database')]
+[doc('Create or update the local sync database — run once before `worker-dev`; safe to re-run')]
 worker-db:
     npx wrangler d1 execute track-sync --local \
         --config worker/wrangler.toml \
@@ -207,7 +211,7 @@ worker-db:
 # Point a client at it with SYNC_URL. Serving the app from the same origin — a
 # reverse proxy at /api/, prefix stripped — avoids CORS, which is the same
 # reason the deployed Worker serves the PWA itself.
-[doc('Run the sync worker locally against a persistent D1')]
+[doc('Run the sync worker locally against a persistent D1 on :4243 — needs `worker-db` first; starts with no accounts')]
 worker-dev port="4243":
     npx wrangler dev --config worker/wrangler.toml \
         --port {{port}} --ip 0.0.0.0 \
@@ -220,17 +224,17 @@ worker-dev port="4243":
 #
 # First-time setup (account, D1, secret) is in worker/README.md; this recipe
 # assumes it is done.
-[doc('Deploy the worker and the PWA to Cloudflare')]
+[doc('Deploy the worker and the PWA to Cloudflare — rebuilds `web` first, so it ships this working tree, SYNC_URL and all')]
 worker-deploy: web
     npx wrangler deploy --config worker/wrangler.toml
 
-[doc('Debug APK for a phone (arm64)')]
+[doc('Debug APK for a phone (arm64) into build/app/outputs/flutter-apk')]
 phone-apk:
     flutter build apk --debug --target-platform android-arm64 {{client_defines}}
 
 # Fat 32+64: Wear devices are often armeabi-v7a, and an arm64-only APK will not
 # install on them.
-[doc('Debug APK for a watch (fat 32+64)')]
+[doc('Debug APK for a watch (fat 32+64) — Wear devices are often armeabi-v7a')]
 watch-apk:
     flutter build apk --debug --target-platform android-arm,android-arm64 {{client_defines}}
 
@@ -246,11 +250,11 @@ _install device apk:
     @echo "→ installing to {{device}} ($(adb -s {{device}} shell getprop ro.product.model | tr -d '\r'))"
     adb -s {{device}} install -r {{apk}}
 
-[doc('Build and install on a phone')]
+[doc('Build and install on a phone — positional serial (`just deploy <serial>`); upgrades in place, keeping the database')]
 deploy device: phone-apk
     @just _install {{device}} build/app/outputs/flutter-apk/app-debug.apk
 
-[doc('Build and install on a watch')]
+[doc('Build and install on a watch — positional serial; upgrades in place, keeping the database')]
 deploy-watch device: watch-apk
     @just _install {{device}} build/app/outputs/flutter-apk/app-debug.apk
 
@@ -265,7 +269,7 @@ deploy-watch device: watch-apk
 #
 # Needs a debug build: `run-as` is how a device without root lets anything read
 # app-private storage, and it refuses on a non-debuggable package.
-[doc("One device's sync state: backend, cursor and row counts")]
+[doc("One device's sync state: backend, cursor and row counts — positional serial; needs a debug build and sqlite3")]
 sync-state device:
     @just _sync_state {{device}} ''
 
@@ -291,7 +295,6 @@ _sync_state device indent='':
     printf '{{indent}}activities %s\n' "$(q 'select count(*) from activities')"
     printf '{{indent}}changes    %s\n' "$(q 'select count(*) from activity_changes')"
 
-[doc('flutter clean')]
+[doc('flutter clean — wipe build/ and .dart_tool')]
 clean:
     flutter clean
-

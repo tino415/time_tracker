@@ -95,7 +95,7 @@ void main() {
     });
   });
 
-  group('rollUpTotals', () {
+  group('reportTotals', () {
     // Work > Client > Task(leaf); plus a flat Break.
     final work = act('work', 'Work');
     final client = act('client', 'Client', parent: 'work');
@@ -110,7 +110,7 @@ void main() {
         activityIdsByChange: {'c1': ['task'], 'c2': ['break']},
         activitiesById: byId,
       );
-      final totals = rollUpTotals(
+      final totals = reportTotals(
         blocks: blocks,
         tree: tree,
         rangeStart: d(0),
@@ -118,10 +118,38 @@ void main() {
         now: d(11),
       );
       // task block = 1h, break block = 1h (open, to now=11)
-      expect(totals['task'], const Duration(hours: 1));
-      expect(totals['client'], const Duration(hours: 1));
-      expect(totals['work'], const Duration(hours: 1));
-      expect(totals['break'], const Duration(hours: 1));
+      expect(totals.subtreeOf('task'), const Duration(hours: 1));
+      expect(totals.subtreeOf('client'), const Duration(hours: 1));
+      expect(totals.subtreeOf('work'), const Duration(hours: 1));
+      expect(totals.subtreeOf('break'), const Duration(hours: 1));
+    });
+
+    test('direct time is the node itself, subtree time includes descendants', () {
+      // 1h on the leaf, then 1h on the Client category directly.
+      final blocks = deriveBlocks(
+        changes: [chg('c1', d(9)), chg('c2', d(10)), chg('c3', d(11))],
+        activityIdsByChange: {
+          'c1': ['task'],
+          'c2': ['client'],
+          'c3': ['break'],
+        },
+        activitiesById: byId,
+      );
+      final totals = reportTotals(
+        blocks: blocks,
+        tree: tree,
+        rangeStart: d(0),
+        rangeEnd: DateTime(2026, 1, 6),
+        now: d(11), // the break block is open but zero-length
+      );
+
+      expect(totals.subtreeOf('client'), const Duration(hours: 2));
+      expect(totals.directOf('client'), const Duration(hours: 1));
+      // A leaf's two totals agree; a root that is never tracked itself has none.
+      expect(totals.subtreeOf('task'), const Duration(hours: 1));
+      expect(totals.directOf('task'), const Duration(hours: 1));
+      expect(totals.subtreeOf('work'), const Duration(hours: 2));
+      expect(totals.directOf('work'), Duration.zero);
     });
 
     test('multi-activity block is even-split among its activities', () {
@@ -134,7 +162,7 @@ void main() {
         },
         activitiesById: byId,
       );
-      final totals = rollUpTotals(
+      final totals = reportTotals(
         blocks: blocks,
         tree: tree,
         rangeStart: d(0),
@@ -142,9 +170,9 @@ void main() {
         now: d(10), // second block has zero duration
       );
       // 1h split → 30m task (rolled to client+work), 30m break (+ 0 from open)
-      expect(totals['task'], const Duration(minutes: 30));
-      expect(totals['work'], const Duration(minutes: 30));
-      expect(totals['break'], const Duration(minutes: 30));
+      expect(totals.subtreeOf('task'), const Duration(minutes: 30));
+      expect(totals.subtreeOf('work'), const Duration(minutes: 30));
+      expect(totals.subtreeOf('break'), const Duration(minutes: 30));
     });
 
     test('blocks are clipped to the range', () {
@@ -154,14 +182,14 @@ void main() {
         activitiesById: byId,
       );
       // Range covers only 09:00–09:30 of the open block.
-      final totals = rollUpTotals(
+      final totals = reportTotals(
         blocks: blocks,
         tree: tree,
         rangeStart: d(9),
         rangeEnd: d(9, 30),
         now: d(23),
       );
-      expect(totals['work'], const Duration(minutes: 30));
+      expect(totals.subtreeOf('work'), const Duration(minutes: 30));
     });
   });
 

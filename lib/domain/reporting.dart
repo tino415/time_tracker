@@ -1,27 +1,49 @@
 import 'activity_tree.dart';
 import 'block.dart';
 
-/// Per-category time roll-up for the Reports screen.
+/// Time totals for one report range, keyed by activity id.
+///
+/// Both maps come out of a single pass over the blocks, so they cannot disagree
+/// about clipping or about the even split.
+class ReportTotals {
+  const ReportTotals({required this.subtree, required this.direct});
+
+  /// Time on an activity **and everything under it** — which is what "how much
+  /// did I work for Payout" means once Payout has sub-tasks of its own. So
+  /// `subtree[workRootId]` is the whole Work subtree's time.
+  final Map<String, Duration> subtree;
+
+  /// Time booked on the activity *itself*, with no descendants counted.
+  ///
+  /// A node's [subtree] total minus its [direct] time is exactly what its
+  /// children account for. Without this the drill-down would show children that
+  /// silently fail to add up to their parent.
+  final Map<String, Duration> direct;
+
+  Duration subtreeOf(String id) => subtree[id] ?? Duration.zero;
+
+  Duration directOf(String id) => direct[id] ?? Duration.zero;
+}
+
+/// Per-activity time roll-up for the Reports screen.
 ///
 /// Rules (from ~/org/todo.org "Time-activity tracking app" → Requirements):
 ///  * A multi-activity block's duration is split **evenly** among its activities
 ///    (sequential, unknown split).
 ///  * Each activity's time then **rolls up the tree**: a leaf's time counts
-///    toward every ancestor category. So `totals[workRootId]` is the whole Work
-///    subtree's time.
+///    toward every ancestor category.
 ///  * Blocks are **clipped to the report range** [rangeStart, rangeEnd); the
 ///    open block is measured up to [now]. A block straddling the range boundary
 ///    contributes only its in-range portion.
-///
-/// Returns rolled-up totals keyed by activity id (self + ancestors accrued).
-Map<String, Duration> rollUpTotals({
+ReportTotals reportTotals({
   required List<Block> blocks,
   required ActivityTree tree,
   required DateTime rangeStart,
   required DateTime rangeEnd,
   required DateTime now,
 }) {
-  final micros = <String, int>{};
+  final subtree = <String, int>{};
+  final direct = <String, int>{};
 
   for (final block in blocks) {
     final blockEnd = block.end ?? now;
@@ -36,14 +58,21 @@ Map<String, Duration> rollUpTotals({
     if (share <= 0) continue;
 
     for (final a in acts) {
+      direct[a.syncId] = (direct[a.syncId] ?? 0) + share;
       for (final ancestor in tree.ancestorIdsInclusive(a.syncId)) {
-        micros[ancestor] = (micros[ancestor] ?? 0) + share;
+        subtree[ancestor] = (subtree[ancestor] ?? 0) + share;
       }
     }
   }
 
-  return micros.map((k, v) => MapEntry(k, Duration(microseconds: v)));
+  return ReportTotals(
+    subtree: _asDurations(subtree),
+    direct: _asDurations(direct),
+  );
 }
+
+Map<String, Duration> _asDurations(Map<String, int> micros) =>
+    micros.map((k, v) => MapEntry(k, Duration(microseconds: v)));
 
 /// Local-day bucketing helper: split [start, end) at each local midnight,
 /// yielding one `(dayStart, segmentStart, segmentEnd)` per calendar day the

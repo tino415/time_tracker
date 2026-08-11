@@ -15,24 +15,19 @@ just            # every recipe, with a one-line description
 just <recipe>   # run one
 ```
 
-The `Justfile` is the reference — each recipe carries its own description and,
-where the reasoning is not obvious, the why. Nothing is duplicated here, so
-there is nothing to fall out of date.
+**The listing is the reference.** Each recipe's description says what it does,
+what it rebuilds or needs first, and the one thing that would otherwise surprise
+you — enough to use it without opening the `Justfile`. Nothing is duplicated
+here, so there is nothing to fall out of date.
 
 Start with `just test`, `just up` (build and serve the PWA), and `just deploy
 <serial>`. The device argument is positional: `device=<serial>` is passed
 through as a literal and adb answers "device not found".
 
-Two things the listing cannot convey:
-
-`e2e` and `e2e-watch` are *different suites*, not the same one on two screens.
-The watch has its own shell because the phone layout does not fit a 227x227
-round display.
-
-`just status` answers "what is running where" — the repo, the build stamp read
-out of the bundle that is actually serving, and every attached device's backend
-and cursor. Two clients that disagree are usually not talking to the same place,
-and that is the fastest way to find out.
+The one worth pointing at: `just status` answers "what is running where" — the
+repo, the build stamp read out of the bundle that is actually serving, and every
+attached device's backend and cursor. Two clients that disagree are usually not
+talking to the same place, and that is the fastest way to find out.
 
 ## The web PWA
 

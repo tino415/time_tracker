@@ -20,11 +20,19 @@ where the reasoning is not obvious, the why. Nothing is duplicated here, so
 there is nothing to fall out of date.
 
 Start with `just test`, `just up` (build and serve the PWA), and `just deploy
-device=<id>`.
+<serial>`. The device argument is positional: `device=<serial>` is passed
+through as a literal and adb answers "device not found".
 
-One thing the listing cannot convey: `e2e` and `e2e-watch` are *different
-suites*, not the same one on two screens. The watch has its own shell because the
-phone layout does not fit a 227x227 round display.
+Two things the listing cannot convey:
+
+`e2e` and `e2e-watch` are *different suites*, not the same one on two screens.
+The watch has its own shell because the phone layout does not fit a 227x227
+round display.
+
+`just status` answers "what is running where" — the repo, the build stamp read
+out of the bundle that is actually serving, and every attached device's backend
+and cursor. Two clients that disagree are usually not talking to the same place,
+and that is the fastest way to find out.
 
 ## The web PWA
 
@@ -66,8 +74,11 @@ treat as trustworthy. That exception is why `just up` can serve plain HTTP and
 why `just web-smoke` passes against `127.0.0.1`; it does not extend to a real
 hostname, even on a private network.
 
-Beyond that, any static host works, provided it sends the two isolation headers
-and serves `.wasm` as `application/wasm`. For nginx:
+In practice the PWA is served **by the sync Worker**, which is what `just
+worker-deploy` uploads — see *Sync* below for why the two share an origin.
+
+Any static host works too, provided it sends the two isolation headers and
+serves `.wasm` as `application/wasm`. For nginx:
 
 ```nginx
 location / {
@@ -88,18 +99,44 @@ location = /flutter_service_worker.js  { add_header Cache-Control "no-store" alw
 `types { application/wasm wasm; }` is already in nginx's default mime.types on
 recent versions — verify, because a wrong type breaks the streaming wasm compile.
 
+## Sync
+
+Optional, and deliberately so: every client keeps an authoritative offline-first
+copy, so syncing is how a person's *own* devices agree, not how the app works.
+Built without `SYNC_URL` (see `.env.example`) the app never offers it at all.
+
+The backend is a Cloudflare Worker over D1 — a relay with a total order, which
+stores rows opaquely and decides staleness by `version`. **`worker/README.md`
+is the reference**: the relay model, what `seq` means, and how conflicts
+resolve.
+
+Two things belong here rather than there, because they shape the whole repo:
+
+**The Worker serves the PWA.** Not tidiness — a separately hosted app would be
+cross-origin, so every sync would pay a CORS preflight and the Worker would grow
+origin handling it otherwise does not need. One origin, no preflight, and the
+same shape as the local nginx setup.
+
+**A token is an account, not a shared password.** It is generated on the first
+device and carried to the others by QR or paste; the Worker only ever compares
+its SHA-256 against a row. Nothing is compiled in — a token in a web build is
+served to everyone who loads the page.
+
 ## Layout
 
 ```
 lib/
-  data/        Drift schema, repositories, TrackerController, storage probe
-  domain/      Pure logic: block derivation, reporting, calendar geometry, CSV
+  data/        Drift schema, repositories, TrackerController, storage probe,
+               sync (service, store, account, transport, auto) and the Wear bridge
+  domain/      Pure logic: block derivation, reporting, calendar geometry, CSV,
+               task paste, and the sync and Wear protocols
   phone/       The phone/web shell: screens + neobrutalist widget kit
-  watch/       Wear OS shell (later phase)
+  watch/       Wear OS shell
   theme/       NeoTokens design tokens
+worker/        The sync backend: Cloudflare Worker, D1 schema, its own README
 test/          Unit + widget tests; support/ holds the shared flow harness
 integration_test/  On-device end-to-end
-tool/          serve_web.dart, web_smoke.mjs
+tool/          serve_web.dart, web_smoke.mjs, worker_smoke.mjs
 ```
 
 Design decisions and their reasoning live in the commit messages; the code

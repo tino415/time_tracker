@@ -126,20 +126,47 @@ class _HeroCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Only the breadcrumb gives way: the dot and TRACKING keep their
+          // natural width, and a deep path is cut off at the hero's border
+          // instead of pushing the row past it.
+          //
+          // spaceBetween rather than a Spacer: a Spacer is flexible too, so it
+          // would take half the free width and the chip would ellipsize with
+          // room to spare. As the only flexible child the chip is offered
+          // everything the trailing group does not need, and loose fit lets a
+          // short path stay short.
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                color: onFill,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                child: Text(
-                  tree.pathName(acts.first.syncId),
-                  style: mono(context, size: 11, weight: FontWeight.w800, color: fill),
+              Flexible(
+                child: Container(
+                  color: onFill,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  child: Text(
+                    tree.pathName(acts.first.syncId),
+                    maxLines: 1,
+                    softWrap: false,
+                    // Truncated at the end, losing the leaf, which is right
+                    // here: the leaf is already the 24pt headline directly
+                    // below, so what this chip uniquely carries is the ancestor
+                    // chain. Head-truncation was tried and reverted — a `rtl`
+                    // textDirection moves the ellipsis glyph to the left but
+                    // still keeps the string's *head*, so it renders "…Work /
+                    // Infrastructure": an ellipsis pointing at text that was
+                    // never cut.
+                    overflow: TextOverflow.ellipsis,
+                    style: mono(context, size: 11, weight: FontWeight.w800, color: fill),
+                  ),
                 ),
               ),
-              const Spacer(),
-              _LiveDot(color: onFill),
-              const SizedBox(width: 6),
-              Text('TRACKING', style: mono(context, size: 10, weight: FontWeight.w800, color: onFill)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _LiveDot(color: onFill),
+                  const SizedBox(width: 6),
+                  Text('TRACKING', style: mono(context, size: 10, weight: FontWeight.w800, color: onFill)),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 14),

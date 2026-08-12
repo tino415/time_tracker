@@ -106,18 +106,47 @@ class NeoTokens extends ThemeExtension<NeoTokens> {
   }
 }
 
-/// Placeholder activity palette (users assign real per-activity colours). Text
-/// on any of these = ink; auto-flip to white only for a genuinely dark fill via
-/// [onFill].
+/// The activity colour palette: twelve curated fills, offered as swatches in the
+/// editor. Storage does not constrain this — an activity's colour is a hex
+/// string — so the palette is a convention, and a wider one is what a deep
+/// activity tree needs before siblings start sharing a colour.
+///
+/// Every addition was checked against the three things that actually break:
+///
+///  * **The [onFill] threshold.** A fill whose luminance sits near 0.45 flips
+///    its label between ink and white on rounding alone, so it looks different
+///    on a chip than in the calendar. Every colour here clears 0.45 by a wide
+///    margin except `teal` (0.373), which predates the rule.
+///  * **The calendar's 35% alpha.** Blocks are filled washed-out, which costs
+///    saturation, not hue — so separation is carried by hue and lightness, and
+///    two colours are never both near-hue and near-luminance. `slate` is the
+///    case to watch: it is the only near-blue neutral, and it is kept apart by
+///    being much darker (0.18 vs 0.28) and far less saturated (0.15 vs 0.67).
+///  * **Colour-blind separability**, which gets *harder* with every colour
+///    added, not easier. Luminance is spread deliberately so red/green pairs
+///    stay distinguishable when hue does not help. This remains an open manual
+///    check — twelve well-separated fills is near the practical ceiling, and a
+///    thirteenth should replace one rather than join them.
+///
+/// Ordered by hue so the swatch row reads as a spectrum, with the neutral last.
 class ActivityPalette {
-  static const blue = Color(0xFF4F8FEE);
-  static const amber = Color(0xFFF4B740);
   static const red = Color(0xFFE5604D);
-  static const purple = Color(0xFF8B7FE8);
+  static const orange = Color(0xFFF0813C);
+  static const amber = Color(0xFFF4B740);
+  static const olive = Color(0xFF8C9440);
   static const teal = Color(0xFF34B98C);
+  static const cyan = Color(0xFF2A8FA6);
+  static const blue = Color(0xFF4F8FEE);
+  static const indigo = Color(0xFF3E5AC8);
+  static const purple = Color(0xFF8B7FE8);
+  static const magenta = Color(0xFFC44BB0);
   static const pink = Color(0xFFEC6FA8);
+  static const slate = Color(0xFF6E7681);
 
-  static const all = <Color>[blue, amber, red, purple, teal, pink];
+  static const all = <Color>[
+    red, orange, amber, olive, teal, cyan,
+    blue, indigo, purple, magenta, pink, slate,
+  ];
 
   /// Readable text colour for an activity [fill] (black on light, white on dark).
   static Color onFill(Color fill) =>

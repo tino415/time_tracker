@@ -302,6 +302,10 @@ class _LiveDotState extends State<_LiveDot> with SingleTickerProviderStateMixin 
   }
 }
 
+/// Two lines of 13pt name at 1.15 line-height, plus the tile's vertical padding
+/// and its 3px borders. Named so the reason for the number stays with it.
+const _tileHeight = 56.0;
+
 class _SwitchGrid extends ConsumerWidget {
   const _SwitchGrid({required this.activities, required this.current});
   final List<Activity> activities;
@@ -314,42 +318,59 @@ class _SwitchGrid extends ConsumerWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: activities.length,
+      // mainAxisExtent, not childAspectRatio: a ratio ties tile *height* to
+      // column width, so the tiles grew with the screen and a handful of
+      // bookmarks pushed the paste field out of thumb reach. A fixed height
+      // keeps a tile two lines of text tall on every device — which is all it
+      // has ever needed to be.
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 1.9,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        mainAxisExtent: _tileHeight,
       ),
       itemBuilder: (_, i) {
         final a = activities[i];
         final fill = parseHexColor(a.color);
         final onFill = ActivityPalette.onFill(fill);
         final active = currentIds.contains(a.syncId);
+        // Paste-to-create keeps the id inside the name ("CU-1042 Refund
+        // webhook"), so an id line above it would print the id twice and spend
+        // one of the tile's two lines doing it.
+        final id = a.externalId;
+        final showId = id != null && !a.name.contains(id);
         return NeoPressable(
           fill: fill,
-          shadowOffset: 6,
-          padding: const EdgeInsets.all(12),
+          shadowOffset: 4,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           onTap: () => ref.read(trackerControllerProvider).switchTo(a.syncId),
+          // Centred rather than spaceBetween: at this height there is no room to
+          // push a header and a name apart, and the external id now shares the
+          // name's line instead of claiming one of its own.
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              if (showId)
+                Text(id,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono(context, size: 9, weight: FontWeight.w800, color: onFill)),
               Row(
                 children: [
-                  if (active) Text('● ', style: mono(context, size: 11, weight: FontWeight.w800, color: onFill)),
-                  if (a.externalId != null)
-                    Expanded(
-                      child: Text(a.externalId!,
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: mono(context, size: 10, weight: FontWeight.w800, color: onFill)),
+                  if (active)
+                    Text('● ', style: mono(context, size: 11, weight: FontWeight.w800, color: onFill)),
+                  Expanded(
+                    child: Text(
+                      a.name,
+                      // One line when the tile also carries an id line, two when
+                      // the name has the tile to itself.
+                      maxLines: showId ? 1 : 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: mono(context, size: 13, weight: FontWeight.w800, color: onFill, height: 1.15),
                     ),
+                  ),
                 ],
-              ),
-              Text(
-                a.name,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: mono(context, size: 15, weight: FontWeight.w800, color: onFill, height: 1.1),
               ),
             ],
           ),

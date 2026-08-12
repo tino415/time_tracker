@@ -15,6 +15,17 @@ import '../widgets/block_comment.dart';
 import '../widgets/block_start.dart';
 import '../widgets/neo.dart';
 
+/// Focus for the Now screen's paste/search field.
+///
+/// Held outside the widget so a keyboard shortcut can reach it from any tab —
+/// the field itself is buried in a private state class, and the binding that
+/// jumps to it fires from the app shell.
+final quickSwitchFocusProvider = Provider<FocusNode>((ref) {
+  final node = FocusNode(debugLabel: 'quick switch');
+  ref.onDispose(node.dispose);
+  return node;
+});
+
 /// The live "Now" screen: the current-activity hero, a bookmarked quick-switch
 /// grid, and a paste/search field for switching to (or creating) any activity.
 class NowScreen extends ConsumerWidget {
@@ -476,6 +487,7 @@ class _QuickSwitchFieldState extends ConsumerState<_QuickSwitchField> {
           ],
           DottedField(
             controller: _controller,
+            focusNode: ref.watch(quickSwitchFocusProvider),
             hint: 'paste task id or search…',
             onChanged: (v) => setState(() => _query = v),
             onSubmitted: (_) {
@@ -498,12 +510,14 @@ class DottedField extends StatelessWidget {
     super.key,
     required this.controller,
     required this.hint,
+    this.focusNode,
     this.onChanged,
     this.onSubmitted,
   });
 
   final TextEditingController controller;
   final String hint;
+  final FocusNode? focusNode;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
 
@@ -519,6 +533,7 @@ class DottedField extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: TextField(
           controller: controller,
+          focusNode: focusNode,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
           textInputAction: TextInputAction.go,

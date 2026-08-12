@@ -6,6 +6,7 @@ import 'screens/activities_screen.dart';
 import 'screens/now_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/timeline_screen.dart';
+import 'shortcuts.dart';
 import 'widgets/neo.dart';
 
 /// App-wide theme mode, toggled from the header.
@@ -13,6 +14,13 @@ final themeModeProvider = StateProvider<ThemeMode>((_) => ThemeMode.system);
 
 /// Selected bottom-nav tab.
 final tabProvider = StateProvider<int>((_) => 0);
+
+/// Tab indices, named so shortcuts and tests address a screen rather than a
+/// position in a list that may be reordered.
+const nowTab = 0;
+const timelineTab = 1;
+const reportsTab = 2;
+const activitiesTab = 3;
 
 class PhoneApp extends ConsumerWidget {
   const PhoneApp({super.key});
@@ -25,7 +33,9 @@ class PhoneApp extends ConsumerWidget {
       theme: neoTheme(NeoTokens.light, Brightness.light),
       darkTheme: neoTheme(NeoTokens.dark, Brightness.dark),
       themeMode: ref.watch(themeModeProvider),
-      home: const _Home(),
+      // Inside the home route, not around the Navigator: a dialog or sheet is a
+      // sibling route, so while one is open the bindings are deliberately deaf.
+      home: const AppShortcuts(child: _Home()),
     );
   }
 }

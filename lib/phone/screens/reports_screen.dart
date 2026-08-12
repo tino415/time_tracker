@@ -18,6 +18,23 @@ import '../widgets/activity_picker.dart';
 import '../widgets/neo.dart';
 import '../widgets/sync_setup.dart';
 
+/// Which week the report is showing: 0 = this week, -1 = last week, …
+///
+/// Lifted out of the screen's own state so a keyboard shortcut can move it. The
+/// screen stays alive inside an `IndexedStack` and holds no focus of its own, so
+/// its `State` is not reachable from the app shell where the bindings live.
+final weekOffsetProvider = StateProvider<int>((_) => 0);
+
+/// Step the report week, refusing to walk into the future.
+///
+/// The guard lives here rather than in the button, so the keyboard and the
+/// arrows cannot disagree about where the report ends.
+void shiftReportWeek(WidgetRef ref, int delta) {
+  final next = ref.read(weekOffsetProvider) + delta;
+  if (next > 0) return;
+  ref.read(weekOffsetProvider.notifier).state = next;
+}
+
 /// Weekly report: rolled-up horizontal bars per top-level category that **drill
 /// down into their sub-activities**, and a client-side CSV export (optionally
 /// subtree-filtered).
@@ -39,8 +56,6 @@ class ReportsScreen extends ConsumerStatefulWidget {
 }
 
 class _ReportsScreenState extends ConsumerState<ReportsScreen> {
-  int _weekOffset = 0; // 0 = current week, -1 = last week, …
-
   /// Which rows are drilled open, by activity id. Deliberately kept across week
   /// changes: the question ("how much for Payout?") outlives the week you happen
   /// to be looking at, so stepping back a week should keep the same view open.
@@ -53,7 +68,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final tree = ref.watch(activityTreeProvider);
     final now = DateTime.now();
 
-    final base = DateTime(now.year, now.month, now.day + _weekOffset * 7);
+    final weekOffset = ref.watch(weekOffsetProvider);
+    final base = DateTime(now.year, now.month, now.day + weekOffset * 7);
     final week = localWeekRange(base);
 
     final totals = reportTotals(
@@ -74,8 +90,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       children: [
         _WeekSelector(
           label: _weekLabel(week.start, now),
-          onPrev: () => setState(() => _weekOffset--),
-          onNext: _weekOffset < 0 ? () => setState(() => _weekOffset++) : null,
+          onPrev: () => shiftReportWeek(ref, -1),
+          onNext: weekOffset < 0 ? () => shiftReportWeek(ref, 1) : null,
         ),
         const SizedBox(height: 18),
         NeoSectionHeader(

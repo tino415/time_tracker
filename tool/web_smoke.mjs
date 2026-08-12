@@ -347,6 +347,62 @@ try {
   }
   check('typing still works after tapping a colour swatch', keyboardSurvives, keyboardDetail);
 
+  // --- keyboard shortcuts, on a real keyboard -------------------------------
+  // The widget suite drives these through simulated key events, which prove the
+  // bindings and the layout-independent matching. What only a browser can show
+  // is that the events survive the round trip through the DOM and the Flutter
+  // web engine's own key handling at all.
+  //
+  // Escape leads, because the swatch step above left the editor sheet open and
+  // the bindings are deliberately deaf while a modal route holds focus. That
+  // makes it both the setup for the rest and the check itself: Escape is
+  // Flutter's own, and this is the evidence for not binding a second handler.
+  const sheetOpen = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('flt-semantics')].some((n) =>
+        /CREATE & SWITCH/i.test(n.textContent ?? ''),
+      ),
+    );
+  const seesText = (re) =>
+    page.evaluate(
+      (source) =>
+        [...document.querySelectorAll('flt-semantics')].some((n) =>
+          new RegExp(source, 'i').test(n.textContent ?? ''),
+        ),
+      re.source,
+    );
+  /** Hold the modifier for the whole chord, by physical key name. */
+  const chord = async (code) => {
+    await page.keyboard.down('Control');
+    await page.keyboard.press(code);
+    await page.keyboard.up('Control');
+    await sleep(1200);
+  };
+
+  let escClosed = false;
+  let shortcutsWork = false;
+  let helpListed = false;
+  let keysDetail = 'not reached';
+  try {
+    await page.keyboard.press('Escape');
+    await sleep(1200);
+    escClosed = !(await sheetOpen());
+
+    // Digit3 is the *position*, which is the whole design: Playwright sends a
+    // `code`, so this exercises the same path a non-US layout would.
+    await chord('Digit3');
+    shortcutsWork = await seesText(/PER CATEGORY/);
+
+    await chord('Slash');
+    helpListed = (await seesText(/Keyboard/)) && (await seesText(/Previous week/));
+    keysDetail = `esc=${escClosed} reports=${shortcutsWork} help=${helpListed}`;
+  } catch (e) {
+    keysDetail = (e.message ?? String(e)).split('\n')[0];
+  }
+  check('Escape closes an open sheet', escClosed, keysDetail);
+  check('Ctrl+3 reaches the Reports tab', shortcutsWork, keysDetail);
+  check('Ctrl+/ lists the bindings', helpListed, keysDetail);
+
   const fatal = errors.filter((e) => !/favicon/i.test(e));
   check('no page errors', fatal.length === 0, fatal.slice(0, 3).join(' | '));
 } finally {

@@ -7,6 +7,7 @@ import '../../domain/activity_tree.dart';
 import '../../format.dart';
 import '../../theme/tokens.dart';
 import '../widgets/activity_editor.dart';
+import '../widgets/block_actions.dart';
 import '../widgets/neo.dart';
 
 /// The activity catalogue as an indented tree: colour swatch + name + external
@@ -124,6 +125,27 @@ Future<void> _showRowActions(BuildContext context, WidgetRef ref, Activity a) as
               ref.read(activityRepositoryProvider).setBookmarked(a.syncId, !a.bookmarked);
             },
           ),
+          const SizedBox(height: 10),
+          // A work task's name is usually the thing you need somewhere else —
+          // a commit message, a tracker, a chat — and rows are already tap and
+          // long-press targets, so this is an action rather than selectable text.
+          NeoButton(
+            label: '⧉ copy name',
+            onTap: () {
+              Navigator.pop(sheet);
+              copyToClipboard(context, a.name, 'name');
+            },
+          ),
+          if (a.externalId != null) ...[
+            const SizedBox(height: 10),
+            NeoButton(
+              label: '⧉ copy ${a.externalId}',
+              onTap: () {
+                Navigator.pop(sheet);
+                copyToClipboard(context, a.externalId!, 'id');
+              },
+            ),
+          ],
           const SizedBox(height: 10),
           NeoButton(
             label: 'delete',

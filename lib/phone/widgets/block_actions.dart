@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
@@ -138,6 +139,33 @@ Future<void> showBlockActions(
                 editBlockComment(context, ref, block);
               },
             ),
+            // Getting text back *out*. Names are routinely pasted in — the
+            // paste-to-create flow exists — so being unable to lift one into a
+            // commit message or a work tracker without retyping it is the
+            // asymmetry worth closing.
+            //
+            // An explicit action rather than selectable text: the block cards
+            // this sheet opens from are tap and long-press targets, and the
+            // calendar's are drag-to-retime, so a selection layer would take
+            // exactly the gestures the app already spends.
+            const SizedBox(height: 10),
+            NeoButton(
+              label: '⧉ copy name',
+              onTap: () {
+                Navigator.pop(sheetContext);
+                copyToClipboard(context, block.activities.map((a) => a.name).join(' + '), 'name');
+              },
+            ),
+            if (block.comment != null && block.comment!.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              NeoButton(
+                label: '⧉ copy note',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  copyToClipboard(context, block.comment!, 'note');
+                },
+              ),
+            ],
             if (canMerge) ...[
               const SizedBox(height: 10),
               NeoButton(
@@ -151,6 +179,25 @@ Future<void> showBlockActions(
           ],
         ),
       ),
+    ),
+  );
+}
+
+/// Put [text] on the clipboard and say so.
+///
+/// The confirmation is not decoration: a copy has no visible effect anywhere on
+/// screen, so without it the only way to know whether the tap registered is to
+/// go and paste somewhere.
+void copyToClipboard(BuildContext context, String text, String what) {
+  Clipboard.setData(ClipboardData(text: text));
+  if (!context.mounted) return;
+  final t = neo(context);
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      backgroundColor: t.line,
+      duration: const Duration(seconds: 2),
+      content: Text('$what copied',
+          style: mono(context, weight: FontWeight.w800, color: t.surface)),
     ),
   );
 }

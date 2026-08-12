@@ -60,7 +60,7 @@ void main() {
 
     // ---- Reports: the week rolls the block up ------------------------------
     await openTab(tester, 'REPORTS');
-    expect(inScreen(ReportsScreen, find.text('TRACKED THIS WEEK')), findsOneWidget);
+    expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
     expect(inScreen(ReportsScreen, find.text('This week')), findsOneWidget);
     // Both tagged activities are top-level, so both get an even-split bar.
     expect(inScreen(ReportsScreen, find.text('Deep work')), findsOneWidget);

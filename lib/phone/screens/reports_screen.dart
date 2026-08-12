@@ -18,13 +18,19 @@ import '../widgets/activity_picker.dart';
 import '../widgets/neo.dart';
 import '../widgets/sync_setup.dart';
 
-/// Weekly per-category report: a hero total, rolled-up horizontal bars per
-/// top-level category that **drill down into their sub-activities**, and a
-/// client-side CSV export (optionally subtree-filtered).
+/// Weekly report: rolled-up horizontal bars per top-level category that **drill
+/// down into their sub-activities**, and a client-side CSV export (optionally
+/// subtree-filtered).
 ///
 /// The drill-down is the point of a hierarchical catalogue: `Work > Payout >
 /// CU-1042` means "how much did I work for Payout" is a question about a middle
 /// node, and a roots-only report cannot answer it.
+///
+/// There is deliberately no hero total. Tracking never stops here — every moment
+/// between two boundaries belongs to some block — so "time tracked this week"
+/// only ever reported *how many hours the week has*: 168 for a past week, or
+/// hours-elapsed for the current one. It carried no information and took the
+/// most prominent position on the screen. The bars lead instead.
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
@@ -58,16 +64,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       now: now,
     );
 
-    // Total tracked in-range (independent of activities), for the hero stat.
-    var totalMicros = 0;
-    for (final b in blocks) {
-      final end = b.end ?? now;
-      final s = b.start.isAfter(week.start) ? b.start : week.start;
-      final e = end.isBefore(week.end) ? end : week.end;
-      if (e.isAfter(s)) totalMicros += e.difference(s).inMicroseconds;
-    }
-    final total = Duration(microseconds: totalMicros);
-
     // Sorted largest first, so the widest bar is always the level's first row.
     final roots = _tracked(totals, tree.rootIds);
     final maxRoot = roots.isEmpty ? Duration.zero : totals.subtreeOf(roots.first);
@@ -81,28 +77,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           onPrev: () => setState(() => _weekOffset--),
           onNext: _weekOffset < 0 ? () => setState(() => _weekOffset++) : null,
         ),
-        const SizedBox(height: 14),
-        Container(
-          decoration: BoxDecoration(
-            color: t.brand,
-            border: Border.all(color: t.line, width: 3),
-            boxShadow: t.hardShadow(8),
-          ),
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('TRACKED THIS WEEK',
-                  style: mono(context, size: 11, weight: FontWeight.w800, spacing: 1.2, color: t.brandInk)),
-              const SizedBox(height: 8),
-              Text(formatDurationHm(total),
-                  style: mono(context, size: 34, weight: FontWeight.w800, color: t.brandInk, height: 1)),
-            ],
-          ),
-        ),
         const SizedBox(height: 18),
         NeoSectionHeader(
           'Per category',
+          brand: true,
           trailing: drillable
               ? Text('tap to drill in',
                   style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted))
@@ -110,6 +88,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ),
         const SizedBox(height: 12),
         if (roots.isEmpty)
+          // An empty state, not a zero total: with continuous tracking the only
+          // way to reach it is a week that holds no data at all.
           Text('nothing tracked this week', style: mono(context, color: t.muted))
         else
           ..._rows(tree, totals, roots, max: maxRoot, depth: 0),

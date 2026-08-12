@@ -232,7 +232,11 @@ class _NowHero extends StatelessWidget {
             const SizedBox(width: 6),
             Flexible(
               child: Text(
-                unnamed ? 'unnamed' : block.activities.map((a) => a.name).join(' + '),
+                // The catch-all's row carries its own label, so this prints the
+                // activity name like any other block and the watch cannot drift
+                // to a different word from the phone. Only the colour still
+                // marks it out.
+                block.activities.map((a) => a.name).join(' + '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,

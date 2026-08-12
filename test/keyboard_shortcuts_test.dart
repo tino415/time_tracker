@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/domain/unsorted.dart';
 import 'package:time_tracker/phone/screens/activities_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
@@ -166,7 +167,9 @@ void main() {
 
     final changes = await db.select(db.activityChanges).get();
     expect(changes, hasLength(2), reason: 'a boundary was opened');
-    expect(find.text('unnamed'), findsWidgets);
+    // The catch-all's own name, not a literal typed into this screen — that is
+    // what keeps the hero, the timeline and the watch saying one word.
+    expect(find.text(kUnsortedName), findsWidgets);
 
     await disposeApp(tester);
   });

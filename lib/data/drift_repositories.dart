@@ -128,8 +128,22 @@ class DriftActivityRepository implements ActivityRepository {
       // Un-tombstone rather than insert: deleting the catch-all and then
       // starting an unnamed block again must not fail on the primary key.
       if (existing != null) {
-        if (existing.deletedAt != null) {
-          await _bump(kUnsortedActivityId, const ActivitiesCompanion(deletedAt: Value(null)));
+        // Two corrections, either of which needs the row read back.
+        //
+        // The name one is a rename that shipped after some devices had already
+        // created the row. Only the *exact* superseded default is touched: a
+        // name the user chose themselves is theirs, and self-healing over it
+        // would silently undo a deliberate edit on every app start.
+        final companion = ActivitiesCompanion(
+          deletedAt: existing.deletedAt != null ? const Value(null) : const Value.absent(),
+          name: existing.name == kUnsortedLegacyName
+              ? const Value(kUnsortedName)
+              : const Value.absent(),
+        );
+        if (companion.deletedAt.present || companion.name.present) {
+          // Through _bump, so the version moves and the correction reaches the
+          // other devices instead of each one waiting to notice for itself.
+          await _bump(kUnsortedActivityId, companion);
           return (await (_db.select(_db.activities)
                 ..where((t) => t.syncId.equals(kUnsortedActivityId)))
               .getSingle());

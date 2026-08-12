@@ -48,6 +48,34 @@ void main() {
       expect(revived.syncId, kUnsortedActivityId);
       expect((await activities.loadActivities()).single.deletedAt, isNull);
     });
+
+    test('corrects the superseded name, and bumps the version so peers see it',
+        () async {
+      // A device that created the catch-all before the rename holds the old
+      // label, and it is the *stored* name every screen now reads — so left
+      // alone that device would keep showing a different word from a fresh one.
+      await activities.ensureUnsorted();
+      await activities.renameActivity(kUnsortedActivityId, kUnsortedLegacyName);
+      final stale = (await activities.loadActivities()).single;
+
+      final fixed = await activities.ensureUnsorted();
+
+      expect(fixed.name, kUnsortedName);
+      // Through the version, or the correction would sit on this device only.
+      expect(fixed.version, greaterThan(stale.version));
+    });
+
+    test('never overwrites a name the user chose', () async {
+      // The correction recognises exactly one superseded default. Anything else
+      // is a deliberate edit, and healing over it would undo that edit on every
+      // app start — silently, and for good.
+      await activities.ensureUnsorted();
+      await activities.renameActivity(kUnsortedActivityId, 'Inbox');
+
+      final after = await activities.ensureUnsorted();
+
+      expect(after.name, 'Inbox');
+    });
   });
 
   group('startUnsorted', () {

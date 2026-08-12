@@ -181,7 +181,10 @@ class _HeroCard extends ConsumerWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            unnamed ? 'unnamed' : (multi ? acts.map((a) => a.name).join('  +  ') : acts.first.name),
+            // No special case for the catch-all: its row is named for reading,
+            // so printing the activity's own name keeps this screen and the
+            // timeline saying the same word.
+            multi ? acts.map((a) => a.name).join('  +  ') : acts.first.name,
             style: mono(context, size: 24, weight: FontWeight.w800, color: onFill, height: 1.1),
           ),
           const SizedBox(height: 10),

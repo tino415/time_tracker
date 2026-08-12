@@ -33,29 +33,63 @@ void main() {
     expect((await activities.loadActivities()).single.lastUsedAt, isNotNull);
   });
 
-  test('re-picking the running activity does not open a second boundary', () async {
+  // Inverted deliberately. This used to pin a no-op guard, on the reasoning that
+  // the two halves would be indistinguishable — but a comment lives on the
+  // change, one per block, so splitting is how the second stretch of the same
+  // work gets its own note.
+  test('re-picking the running activity opens a second boundary', () async {
     final a = await activities.createActivity(name: 'Work', color: '#333333');
     await controller.switchTo(a.syncId);
     final first = await changes.currentChange();
 
-    await controller.switchTo(a.syncId);
+    final outcome = await controller.switchTo(a.syncId);
 
-    expect((await changes.watchChanges().first).length, 1);
+    expect((await changes.watchChanges().first).length, 2);
+    expect((await changes.currentChange())!.syncId, isNot(first!.syncId));
+    // Reported, so the screen can offer to take it back — the accidental
+    // double-tap is answered by making the split visible, not by refusing it.
+    expect(outcome.splitSameActivity, isTrue);
+    expect(outcome.changeId, (await changes.currentChange())!.syncId);
+  });
+
+  test('undoing the split restores the single block', () async {
+    final a = await activities.createActivity(name: 'Work', color: '#333333');
+    await controller.switchTo(a.syncId);
+    final first = await changes.currentChange();
+
+    final outcome = await controller.switchTo(a.syncId);
+    await controller.mergeIntoPrevious(outcome.changeId);
+
+    expect(await changes.loadChanges(), hasLength(1));
     expect((await changes.currentChange())!.syncId, first!.syncId);
   });
 
-  test('the guard only covers a single-activity block', () async {
+  test('narrowing a two-activity block is not reported as a same-activity split',
+      () async {
     final a = await activities.createActivity(name: 'A', color: '#333333');
     final b = await activities.createActivity(name: 'B', color: '#444444');
     await controller.switchTo(a.syncId);
     // A tagged ("forgot to switch") block tracks two activities, so switching to
     // one of them is a real change: it narrows the set back down to that one.
+    // Never a fumble, so it must not offer an undo.
     await changes.addActivityToChange((await changes.currentChange())!.syncId, b.syncId);
 
-    await controller.switchTo(a.syncId);
+    final outcome = await controller.switchTo(a.syncId);
 
     expect((await changes.watchChanges().first).length, 2);
     expect(await changes.activityIdsForChange((await changes.currentChange())!.syncId), [a.syncId]);
+    expect(outcome.splitSameActivity, isFalse);
+  });
+
+  test('an explicit timestamp is never reported as a fumble', () async {
+    // A split or a retime passes `at`. It is deliberate by construction, so
+    // offering to undo it would be noise on every calendar edit.
+    final a = await activities.createActivity(name: 'Work', color: '#333333');
+    await controller.switchTo(a.syncId, at: DateTime(2026, 1, 5, 9));
+
+    final outcome = await controller.switchTo(a.syncId, at: DateTime(2026, 1, 5, 10));
+
+    expect(outcome.splitSameActivity, isFalse);
   });
 
   test('an explicit timestamp always makes a boundary', () async {

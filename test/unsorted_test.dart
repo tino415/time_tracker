@@ -61,8 +61,10 @@ void main() {
 
     test('starts a second unnamed block rather than merging into the first', () async {
       // Reported from wearing the watch: two unnamed blocks in a row are two
-      // different things to name later. switchTo's no-op guard would collapse
-      // them, silently merging unrelated work with no way to separate it after.
+      // different things to name later, and merging them loses that with no way
+      // to separate it after. This was once the exception to a no-op guard on
+      // switchTo; the argument turned out to generalise, so the guard went and
+      // both now follow one rule.
       await controller.startUnsorted(at: DateTime(2026, 1, 5, 9));
       await controller.startUnsorted(at: DateTime(2026, 1, 5, 10));
 
@@ -74,14 +76,17 @@ void main() {
       }
     });
 
-    test('a named activity still refuses to re-open what is running', () async {
-      // The guard that startUnsorted bypasses must stay in place elsewhere:
-      // re-tapping a running activity would split its block for nothing.
+    test('a named activity now follows the same rule', () async {
+      // The inverse of what this once asserted. startUnsorted used to be the
+      // lone exception to a guard that refused to re-open a running activity;
+      // both paths now open a boundary, so the unnamed case is no longer
+      // special — it just does not offer the undo, because a second unnamed
+      // block is the intent rather than a slip.
       final work = await activities.createActivity(name: 'Deep work', color: '#4F8FEE');
       await controller.switchTo(work.syncId);
       await controller.switchTo(work.syncId);
 
-      expect(await changes.loadChanges(), hasLength(1));
+      expect(await changes.loadChanges(), hasLength(2));
     });
   });
 

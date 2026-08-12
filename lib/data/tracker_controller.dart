@@ -6,6 +6,24 @@ import 'database.dart';
 import 'providers.dart';
 import 'repositories.dart';
 
+/// What a switch actually did, so the screen can offer to take it back.
+///
+/// Only [switchTo] reports this. The block is written either way — an undo is
+/// an offer, not a confirmation prompt, so nothing waits on the user.
+class SwitchOutcome {
+  const SwitchOutcome({required this.changeId, required this.splitSameActivity});
+
+  /// The boundary that was opened.
+  final String changeId;
+
+  /// The new block tracks exactly what the previous one did, so this switch
+  /// split a block rather than changing what is being tracked. Deliberate when
+  /// the second stretch needs its own note, a fumble when it does not — and only
+  /// the person who tapped can tell which, which is why it is offered rather
+  /// than judged.
+  final bool splitSameActivity;
+}
+
 /// The actions the screens invoke: the ones that span both repositories (a
 /// "switch" also bumps the target activity's recency for the autocomplete), and
 /// the timeline edits that need a boundary's neighbours before they are safe to
@@ -20,19 +38,33 @@ class TrackerController {
   /// The normal live action: open a new block tracking [activityId] and mark it
   /// as just-used (recency drives the paste/search autocomplete).
   ///
-  /// Tapping whatever is *already* tracking is a no-op rather than a new
-  /// boundary — switching replaces the active set, and here the set wouldn't
-  /// change, so splitting the running block in two would only lose information.
-  /// An explicit [at] is always honoured (a deliberate boundary at that time).
-  Future<void> switchTo(String activityId, {DateTime? at}) async {
-    if (at == null && await _isAlreadyTracking(activityId)) return;
+  /// Picking whatever is *already* running opens a new boundary too, splitting
+  /// the block in two. This used to be a no-op, on the reasoning that the two
+  /// halves would be indistinguishable — but a comment lives on the change, one
+  /// per block, so they are distinguished by the thing every block already has.
+  /// Splitting is how a different note gets attached to the second stretch of
+  /// the same work, which is a common thing to want rather than an edge case.
+  ///
+  /// The risk that guard covered was the accidental double-tap. That is handled
+  /// by making the split visible instead of by guessing intent: the returned
+  /// [SwitchOutcome] says when a same-activity split happened, and the caller
+  /// offers to undo it. A time threshold was rejected — it guesses, and puts
+  /// wall-clock timing into a test.
+  Future<SwitchOutcome> switchTo(String activityId, {DateTime? at}) async {
+    // Read before the write, and only for the label: an explicit [at] is a
+    // deliberate boundary (a split, a retime), never a fumbled tap.
+    final splitSameActivity = at == null && await _isTrackingExactly(activityId);
     final now = at ?? DateTime.now();
-    await _changes.switchTo(activityId, at: now);
+    final change = await _changes.switchTo(activityId, at: now);
     await _activities.touchUsed(activityId, now);
+    return SwitchOutcome(changeId: change.syncId, splitSameActivity: splitSameActivity);
   }
 
   /// True when the open block tracks exactly [activityId] and nothing else.
-  Future<bool> _isAlreadyTracking(String activityId) async {
+  ///
+  /// A block tracking two activities is a different case: picking one of them
+  /// narrows the set back down, which is a real change and never a fumble.
+  Future<bool> _isTrackingExactly(String activityId) async {
     final current = await _changes.currentChange();
     if (current == null) return false;
     final ids = await _changes.activityIdsForChange(current.syncId);
@@ -46,13 +78,16 @@ class TrackerController {
   /// block is answered later with [assignBlock]. Deciding first would charge the
   /// deciding to whatever you were doing before.
   ///
-  /// Always opens a boundary, even when an unnamed block is already running.
-  ///
-  /// [switchTo]'s no-op guard is right for a *named* activity — re-tapping what
-  /// is already running would split the block and lose information — but wrong
-  /// here. Two consecutive unnamed blocks are two different things to be named
-  /// later, and collapsing them merges unrelated work with no way to separate it
+  /// Always opens a boundary, even when an unnamed block is already running:
+  /// two consecutive unnamed blocks are two different things to be named later,
+  /// and collapsing them merges unrelated work with no way to separate it
   /// afterwards. That is the common case when only the watch is to hand.
+  ///
+  /// This was once the exception to [switchTo]'s no-op guard. The guard is gone
+  /// and the argument generalised, so the two now follow one rule — but no undo
+  /// is offered here, unlike [switchTo]. There, a same-activity split is
+  /// ambiguous; here it is the whole point, and a prompt would nag the one flow
+  /// whose entire value is costing a single tap and no reading.
   Future<void> startUnsorted({DateTime? at}) async {
     final unsorted = await _activities.ensureUnsorted();
     final now = at ?? DateTime.now();

@@ -7,6 +7,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/phone/screens/activities_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
@@ -66,7 +67,12 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('re-tapping the running activity does not split the block', (tester) async {
+  // The inverse of what this once asserted. Re-tapping used to be a no-op; it
+  // now splits, because a note lives on the block and splitting is how the
+  // second stretch of the same work gets its own. The accidental double-tap is
+  // answered by the undo below rather than by refusing the tap.
+  testWidgets('re-tapping the running activity splits the block, and offers to undo',
+      (tester) async {
     final db = await bootApp(tester, viewport: _phone);
 
     await tester.tap(inScreen(NowScreen, find.text('+ NEW ACTIVITY')));
@@ -83,8 +89,59 @@ void main() {
     await tester.tap(inScreen(NowScreen, find.text('Deep work')).last);
     await settle(tester);
 
-    expect((await db.select(db.activityChanges).get()).length, 1);
+    expect(await _liveChanges(db), 2);
+
+    // Not silent: the split is announced, which is what makes it safe to allow.
+    expect(find.text('new block · same activity'), findsOneWidget);
+
+    await tester.tap(find.text('UNDO'));
+    await settle(tester);
+    expect(await _liveChanges(db), 1);
 
     await disposeApp(tester);
   });
+
+  testWidgets('switching to a different activity says nothing', (tester) async {
+    // The undo is for the ambiguous case only. A real switch is self-evident —
+    // the hero changes — so a prompt there would be noise on the common action.
+    final db = await bootApp(tester, viewport: _phone);
+
+    await tester.tap(inScreen(NowScreen, find.text('+ NEW ACTIVITY')));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField).last, 'Deep work');
+    await tester.pump();
+    await tester.tap(find.text('CREATE & SWITCH'));
+    await settle(tester);
+
+    // The second one from the Activities tab: once anything exists, the Now
+    // screen shows the hero instead of the first-run "+ NEW ACTIVITY".
+    await openTab(tester, 'ACTIVITIES');
+    await tester.tap(inScreen(ActivitiesScreen, find.text('+ NEW ACTIVITY')));
+    await settle(tester);
+    await tester.enterText(find.byType(TextField).last, 'Email');
+    await tester.pump();
+    await tester.tap(find.textContaining('bookmark (quick-switch'));
+    await tester.pump();
+    await tester.tap(find.text('CREATE'));
+    await settle(tester);
+
+    await openTab(tester, 'NOW');
+    await tester.tap(inScreen(NowScreen, find.text('Email')).last);
+    await settle(tester);
+
+    expect(await _liveChanges(db), 2);
+    expect(find.text('new block · same activity'), findsNothing);
+
+    await disposeApp(tester);
+  });
+}
+
+/// Boundaries that still exist.
+///
+/// `deleteChange` is a *soft* delete — it stamps `deletedAt` so the row can
+/// still be pushed as a tombstone — so a raw count of the table includes blocks
+/// that have been merged away, and would report an undo as having done nothing.
+Future<int> _liveChanges(AppDatabase db) async {
+  final rows = await db.select(db.activityChanges).get();
+  return rows.where((c) => c.deletedAt == null).length;
 }

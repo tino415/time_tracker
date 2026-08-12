@@ -14,6 +14,7 @@ import '../widgets/block_actions.dart';
 import '../widgets/block_comment.dart';
 import '../widgets/block_start.dart';
 import '../widgets/neo.dart';
+import '../widgets/switch_undo.dart';
 
 /// Focus for the Now screen's paste/search field.
 ///
@@ -74,13 +75,11 @@ class _StartNowBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
-    final current = ref.watch(currentBlockProvider);
-    // Already running something unnamed — offering to start another would just
-    // split it, and the useful action then is naming this one.
-    if (current != null && isUnsortedSet(current.activities)) {
-      return const SizedBox.shrink();
-    }
-
+    // Offered unconditionally, including while an unnamed block is already
+    // running. It used to hide itself then, on the reasoning that the useful
+    // action was naming the running block instead — but starting a second
+    // unnamed block is exactly what the watch does, and two in a row are two
+    // different things to name later, not one thing tapped twice.
     return Container(
       decoration: BoxDecoration(
         color: t.surface,
@@ -354,7 +353,7 @@ class _SwitchGrid extends ConsumerWidget {
           fill: fill,
           shadowOffset: 4,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          onTap: () => ref.read(trackerControllerProvider).switchTo(a.syncId),
+          onTap: () => switchWithUndo(context, ref, a.syncId),
           // Centred rather than spaceBetween: at this height there is no room to
           // push a header and a name apart, and the external id now shares the
           // name's line instead of claiming one of its own.
@@ -427,7 +426,7 @@ class _QuickSwitchFieldState extends ConsumerState<_QuickSwitchField> {
   }
 
   Future<void> _switch(String id) async {
-    await ref.read(trackerControllerProvider).switchTo(id);
+    await switchWithUndo(context, ref, id);
     _controller.clear();
     setState(() => _query = '');
   }

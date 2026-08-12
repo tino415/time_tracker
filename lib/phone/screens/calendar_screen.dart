@@ -158,7 +158,6 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           ref,
           s.block,
           canMerge: !s.continuesBefore,
-          onSplit: () => _split(s, _midpoint(s, now)),
         ),
         onLongPressAt: (fraction) => _split(s, _timeAtFraction(s, fraction)),
       ),
@@ -175,14 +174,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  DateTime _midpoint(DaySlice s, DateTime now) {
-    final end = s.block.end ?? now;
-    return snapTime(
-      s.block.start.add(Duration(milliseconds: end.difference(s.block.start).inMilliseconds ~/ 2)),
-      _snap,
-    );
-  }
-
+  /// The long-press keeps its direct split; the sheet's "split at…" asks for a
+  /// time instead. A tall block is quicker to cut by pointing at it, and that is
+  /// exactly the case the calendar is good at.
   Future<void> _split(DaySlice s, DateTime at) => promptSplit(context, ref, s.block, at);
 
   static String _dayLabel(DateTime day, DateTime now) {

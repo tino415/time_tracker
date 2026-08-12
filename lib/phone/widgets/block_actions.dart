@@ -9,6 +9,7 @@ import '../../domain/unsorted.dart';
 import 'activity_picker.dart';
 import 'assign_activity.dart';
 import 'block_comment.dart';
+import 'block_split.dart';
 import 'block_start.dart';
 import 'neo.dart';
 
@@ -16,14 +17,17 @@ import 'neo.dart';
 /// the Now hero, so all three offer the same verbs on the same data.
 ///
 /// [canMerge] is false for the earliest block, which has no boundary before it
-/// to delete. [onSplit] is supplied by the calendar, where a split has a
-/// meaningful position; the list view omits it.
+/// to delete.
+///
+/// Split used to be here only when the caller supplied a position, which meant
+/// the calendar only. It is offered everywhere now: the calendar cannot express
+/// a position inside a block a few pixels tall, so on a day of short blocks that
+/// arrangement put the action behind a gesture that could not be made.
 Future<void> showBlockActions(
   BuildContext context,
   WidgetRef ref,
   Block block, {
   bool canMerge = true,
-  VoidCallback? onSplit,
 }) async {
   final t = neo(context);
   await showModalBottomSheet<void>(
@@ -113,13 +117,17 @@ Future<void> showBlockActions(
                 },
               ),
             ],
-            if (onSplit != null) ...[
+            // Hidden only when there is no legal cut: splitting needs a real
+            // half either side, so a block under two minutes has nowhere to go.
+            if (canSplit(block, DateTime.now())) ...[
               const SizedBox(height: 10),
               NeoButton(
-                label: '✂ split in half',
+                // "at…", not "in half": the midpoint is the starting guess, not
+                // the offer.
+                label: '✂ split at…',
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  onSplit();
+                  promptSplit(context, ref, block);
                 },
               ),
             ],
@@ -202,14 +210,25 @@ void copyToClipboard(BuildContext context, String text, String what) {
   );
 }
 
-/// Ask which activity the *second* half of a split should track, then split.
-/// Returns silently if the picker is dismissed or the point is not splittable.
+/// Split [block]: choose where, then what the *second* half tracks.
+///
+/// [at] is supplied by the calendar's long-press, which names a position
+/// directly. Without it the split point is asked for — see [chooseSplitPoint]
+/// for why that is the general case rather than the fallback.
+///
+/// Where before what, because the boundary is the decision: the picker's own
+/// title ("track what from here") only means something once "here" is fixed.
+/// Returns silently if either step is dismissed or the point is not splittable.
 Future<void> promptSplit(
   BuildContext context,
   WidgetRef ref,
-  Block block,
-  DateTime at,
-) async {
+  Block block, [
+  DateTime? at,
+]) async {
+  final point = at ?? await chooseSplitPoint(context, ref, block);
+  if (point == null) return;
+  if (!context.mounted) return;
+
   final id = await showActivityPicker(
     context,
     ref,
@@ -218,7 +237,7 @@ Future<void> promptSplit(
   if (id == null) return;
   await ref.read(trackerControllerProvider).splitBlock(
         block: block,
-        at: at,
+        at: point,
         activityId: id,
       );
 }

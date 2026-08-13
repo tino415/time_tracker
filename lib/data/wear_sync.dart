@@ -7,6 +7,8 @@ import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
 import 'providers.dart';
 import 'repositories.dart';
+import 'sync_service.dart';
+import 'sync_store.dart';
 import 'wear_bridge.dart';
 
 const _uuid = Uuid();
@@ -29,15 +31,22 @@ class WearSyncService {
     required WearBridge bridge,
     required ActivityRepository activities,
     required ChangeRepository changes,
+    required SyncStore syncStore,
     required bool isWatch,
   })  : _bridge = bridge,
         _activities = activities,
         _changes = changes,
+        _syncStore = syncStore,
         _isWatch = isWatch;
 
   final WearBridge _bridge;
   final ActivityRepository _activities;
   final ChangeRepository _changes;
+
+  /// Read on the phone, written on the watch — the relay is how the watch gets
+  /// an account at all.
+  final SyncStore _syncStore;
+
   final bool _isWatch;
 
   final _subscriptions = <StreamSubscription<Object?>>[];
@@ -102,7 +111,22 @@ class WearSyncService {
     return [
       _activities.watchActivities().listen((_) => _pushSnapshot()),
       _changes.watchChanges().listen((_) => _pushSnapshot()),
+      // Joining an account, and leaving one, are both things the watch has to
+      // hear about — and neither touches the catalogue, so neither would reach
+      // it on the streams above.
+      _syncStore.watchToken().listen(_pushCredential),
     ];
+  }
+
+  /// Phone → watch. Sent on every change to the account, and again whenever the
+  /// watch asks for a snapshot.
+  ///
+  /// Unconditional, including the null: a watch that missed the revocation while
+  /// off the wrist would otherwise keep a working token indefinitely, and the
+  /// next thing it does on waking is ask for a snapshot.
+  Future<void> _pushCredential(String? token) async {
+    if (_isWatch) return;
+    await _bridge.send(SyncCredential(token: token));
   }
 
   void _onReachability(WearReachability state) {
@@ -115,13 +139,27 @@ class WearSyncService {
     } else {
       _lastSentSnapshot = null; // force a send even if nothing changed meanwhile
       _pushSnapshot();
+      unawaited(_syncStore.token().then(_pushCredential));
     }
   }
 
   Future<void> _onMessage(WearMessage message) async {
     switch (message) {
       case SnapshotRequest():
-        if (!_isWatch) await _pushSnapshot(force: true);
+        if (_isWatch) return;
+        await _pushSnapshot(force: true);
+        // The watch asks for this on start and on every reconnect, so it is also
+        // the reliable moment to (re)deliver the account — including a null,
+        // which is how a revocation reaches a watch that was away when it
+        // happened.
+        await _pushCredential(await _syncStore.token());
+
+      case SyncCredential(:final token):
+        // Phone → watch only. A watch cannot hand the phone an account, and
+        // honouring it in that direction would let a lost watch dictate which
+        // server the phone talks to.
+        if (!_isWatch) return;
+        await _syncStore.setToken(token);
 
       case BookmarkSnapshot(:final activities, :final current):
         if (!_isWatch) return;
@@ -259,6 +297,7 @@ final wearSyncProvider = Provider<WearSyncService>((ref) {
     bridge: ref.watch(wearBridgeProvider),
     activities: ref.watch(activityRepositoryProvider),
     changes: ref.watch(changeRepositoryProvider),
+    syncStore: ref.watch(syncStoreProvider),
     isWatch: ref.watch(isWatchProvider),
   );
   ref.onDispose(service.dispose);

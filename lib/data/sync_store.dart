@@ -31,6 +31,22 @@ class SyncStore {
     return value.isEmpty ? null : value;
   }
 
+  /// The same value, as a stream.
+  ///
+  /// The token can now arrive from somewhere other than this device's own UI —
+  /// the phone hands it to the watch over the Wear relay — so whether sync is
+  /// configured has to be something the app *observes* rather than reads once at
+  /// startup. Without this the watch would store a token and go on believing it
+  /// had none until the next launch.
+  Stream<String?> watchToken() {
+    return (_db.select(_db.syncMeta)..where((t) => t.key.equals(_tokenKey)))
+        .watchSingleOrNull()
+        .map((row) {
+      final value = row?.value ?? '';
+      return value.isEmpty ? null : value;
+    });
+  }
+
   Future<void> setToken(String? token) async {
     if (token == null || token.isEmpty) {
       await (_db.delete(_db.syncMeta)..where((t) => t.key.equals(_tokenKey))).go();

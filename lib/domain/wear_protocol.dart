@@ -69,8 +69,43 @@ sealed class WearMessage {
       BookmarkSnapshot.kind => BookmarkSnapshot.fromPayload(map),
       SwitchRequest.kind => SwitchRequest.fromPayload(map),
       SnapshotRequest.kind => const SnapshotRequest(),
+      SyncCredential.kind => SyncCredential.fromPayload(map),
       _ => null,
     };
+  }
+}
+
+/// Phone → watch: the sync account's token, or null to revoke it.
+///
+/// The watch cannot realistically be given this any other way — it is 32
+/// generated characters on a 227px screen with no camera — so it inherits the
+/// phone's. That is what lets the watch reach the server on its own instead of
+/// parking every switch in the relay queue until the phone app is next opened.
+///
+/// The token is the entire security boundary, so two things matter. It travels
+/// only over the Wear Data Layer, the same paired, encrypted channel already
+/// carrying the catalogue — nothing new is exposed. And null is a real value,
+/// not an absence: leaving the account on the phone sends a null so the watch
+/// stops being a device holding a working credential for an account you think
+/// you have disconnected.
+class SyncCredential extends WearMessage {
+  const SyncCredential({required this.token});
+
+  static const kind = 'sync_credential';
+
+  final String? token;
+
+  @override
+  String get type => kind;
+
+  @override
+  Map<String, Object?> toPayload() => {'token': token};
+
+  static SyncCredential fromPayload(Map<Object?, Object?> payload) {
+    final token = payload['token'];
+    // Anything that is not a usable token revokes. A malformed message must not
+    // leave a stale credential in place — failing safe here means failing shut.
+    return SyncCredential(token: token is String && token.isNotEmpty ? token : null);
   }
 }
 

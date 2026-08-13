@@ -85,6 +85,10 @@ final syncAccountProvider = Provider<SyncAccountController>((ref) {
 });
 
 /// The token stored on this device, or null when sync has not been set up.
-final syncTokenProvider = FutureProvider<String?>((ref) {
-  return ref.watch(syncStoreProvider).token();
+///
+/// Watched rather than read once: on the watch the token arrives over the Wear
+/// relay after startup, and [syncServiceProvider] has to come to life when it
+/// does rather than at the next launch. Revocation travels the same way.
+final syncTokenProvider = StreamProvider<String?>((ref) {
+  return ref.watch(syncStoreProvider).watchToken();
 });

@@ -238,7 +238,7 @@ phone-apk:
 
 # Fat 32+64: Wear devices are often armeabi-v7a, and an arm64-only APK will not
 # install on them.
-[doc('Debug APK for a watch (fat 32+64) — Wear devices are often armeabi-v7a')]
+[doc('Debug APK for a watch (fat 32+64) — Wear devices are often armeabi-v7a; bakes in SYNC_URL like the phone, so the watch can reach the backend on its own once the phone hands it a token')]
 watch-apk:
     flutter build apk --debug --target-platform android-arm,android-arm64 {{client_defines}}
 

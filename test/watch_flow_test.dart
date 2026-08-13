@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/data/sync_store.dart';
 import 'package:time_tracker/data/providers.dart';
 import 'package:time_tracker/data/wear_bridge.dart';
 import 'package:time_tracker/data/wear_sync.dart';
@@ -108,6 +109,7 @@ void main() {
       bridge: bridge,
       activities: DriftActivityRepository(db),
       changes: DriftChangeRepository(db),
+      syncStore: SyncStore(db),
       isWatch: true,
     );
     addTearDown(sync.dispose);

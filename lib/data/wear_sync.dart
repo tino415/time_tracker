@@ -88,7 +88,12 @@ class WearSyncService {
 
     Future<void> ask() async {
       if (_gotSnapshot) return;
-      final delivered = await _bridge.send(const SnapshotRequest());
+      // The request carries what this device already knows about the account, so
+      // the phone can answer with a credential only when it holds something
+      // newer. That is what makes the token travel once rather than routinely.
+      final delivered = await _bridge.send(
+        SnapshotRequest(credentialVersion: await _syncStore.credentialVersion()),
+      );
       if (delivered || _gotSnapshot) return;
       attempt++;
       // 2s, 4s, 8s … capped. Cheap enough to leave running: an unpaired watch
@@ -113,20 +118,24 @@ class WearSyncService {
       _changes.watchChanges().listen((_) => _pushSnapshot()),
       // Joining an account, and leaving one, are both things the watch has to
       // hear about — and neither touches the catalogue, so neither would reach
-      // it on the streams above.
-      _syncStore.watchToken().listen(_pushCredential),
+      // it on the streams above. Pushed unprompted so a watch that *is* present
+      // hears immediately rather than waiting until it next asks.
+      _syncStore.watchToken().listen((token) async {
+        await _pushCredential(token, await _syncStore.credentialVersion());
+      }),
     ];
   }
 
-  /// Phone → watch. Sent on every change to the account, and again whenever the
-  /// watch asks for a snapshot.
+  /// Phone → watch, when the account changes and when a watch asks for
+  /// something newer than it has.
   ///
-  /// Unconditional, including the null: a watch that missed the revocation while
-  /// off the wrist would otherwise keep a working token indefinitely, and the
-  /// next thing it does on waking is ask for a snapshot.
-  Future<void> _pushCredential(String? token) async {
+  /// Deliberately *not* attached to every snapshot. Snapshots go out on every
+  /// catalogue change and every switch, so riding along would put a bearer token
+  /// on the wire dozens of times a day to deliver a value that needs to arrive
+  /// once. The version is what makes asking sufficient.
+  Future<void> _pushCredential(String? token, int version) async {
     if (_isWatch) return;
-    await _bridge.send(SyncCredential(token: token));
+    await _bridge.send(SyncCredential(token: token, version: version));
   }
 
   void _onReachability(WearReachability state) {
@@ -139,27 +148,43 @@ class WearSyncService {
     } else {
       _lastSentSnapshot = null; // force a send even if nothing changed meanwhile
       _pushSnapshot();
-      unawaited(_syncStore.token().then(_pushCredential));
+      // Reconnected: the watch may have been away while the account changed, and
+      // it will ask anyway — but volunteering saves a round trip.
+      unawaited(() async {
+        await _pushCredential(
+          await _syncStore.token(),
+          await _syncStore.credentialVersion(),
+        );
+      }());
     }
   }
 
   Future<void> _onMessage(WearMessage message) async {
     switch (message) {
-      case SnapshotRequest():
+      case SnapshotRequest(:final credentialVersion):
         if (_isWatch) return;
         await _pushSnapshot(force: true);
-        // The watch asks for this on start and on every reconnect, so it is also
-        // the reliable moment to (re)deliver the account — including a null,
-        // which is how a revocation reaches a watch that was away when it
-        // happened.
-        await _pushCredential(await _syncStore.token());
+        // Answered only when this device holds something the asker does not.
+        //
+        // The watch asks on start and on every reconnect, so this is the moment
+        // a revocation reaches one that was away when it happened — and equally
+        // the moment a watch that is already current is told nothing, which is
+        // why the token is not on the wire during ordinary use.
+        final mine = await _syncStore.credentialVersion();
+        if (mine > credentialVersion) {
+          await _pushCredential(await _syncStore.token(), mine);
+        }
 
-      case SyncCredential(:final token):
+      case SyncCredential(:final token, :final version):
         // Phone → watch only. A watch cannot hand the phone an account, and
         // honouring it in that direction would let a lost watch dictate which
         // server the phone talks to.
         if (!_isWatch) return;
-        await _syncStore.setToken(token);
+        // Newest wins. The listener parks messages while the app is down and
+        // drains them on next start, so a stale grant really can arrive after a
+        // fresh revocation — without this it would quietly re-grant it.
+        if (version <= await _syncStore.credentialVersion()) return;
+        await _syncStore.adoptCredential(token, version);
 
       case BookmarkSnapshot(:final activities, :final current):
         if (!_isWatch) return;

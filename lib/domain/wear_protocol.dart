@@ -68,7 +68,7 @@ sealed class WearMessage {
     return switch (type) {
       BookmarkSnapshot.kind => BookmarkSnapshot.fromPayload(map),
       SwitchRequest.kind => SwitchRequest.fromPayload(map),
-      SnapshotRequest.kind => const SnapshotRequest(),
+      SnapshotRequest.kind => SnapshotRequest.fromPayload(map),
       SyncCredential.kind => SyncCredential.fromPayload(map),
       _ => null,
     };
@@ -89,23 +89,39 @@ sealed class WearMessage {
 /// stops being a device holding a working credential for an account you think
 /// you have disconnected.
 class SyncCredential extends WearMessage {
-  const SyncCredential({required this.token});
+  const SyncCredential({required this.token, required this.version});
 
   static const kind = 'sync_credential';
 
   final String? token;
 
+  /// How many times the account has been granted or revoked. Newest wins, the
+  /// same rule the rest of the data model uses.
+  ///
+  /// Not decoration: the listener service parks messages while the app is down
+  /// and drains them on next start, so a stale grant really can arrive after a
+  /// fresh revocation. Without a version that would silently re-grant a token
+  /// you had taken away.
+  final int version;
+
   @override
   String get type => kind;
 
   @override
-  Map<String, Object?> toPayload() => {'token': token};
+  Map<String, Object?> toPayload() => {'token': token, 'version': version};
 
   static SyncCredential fromPayload(Map<Object?, Object?> payload) {
     final token = payload['token'];
+    final version = payload['version'];
     // Anything that is not a usable token revokes. A malformed message must not
     // leave a stale credential in place — failing safe here means failing shut.
-    return SyncCredential(token: token is String && token.isNotEmpty ? token : null);
+    //
+    // A missing version reads as 0, which loses to everything: a peer too old to
+    // send one cannot overwrite a credential this device already has.
+    return SyncCredential(
+      token: token is String && token.isNotEmpty ? token : null,
+      version: version is int ? version : 0,
+    );
   }
 }
 
@@ -233,16 +249,32 @@ class SwitchRequest extends WearMessage {
 /// Watch → phone: "send me a snapshot". Issued on watch start and whenever the
 /// phone becomes reachable again, so the watch never shows a stale set for
 /// longer than it has to.
+///
+/// It carries [credentialVersion] too, which is what keeps the account in step
+/// without ever putting the token on the wire needlessly. The phone answers with
+/// a [SyncCredential] only when it holds something newer, so a watch that is
+/// current is told nothing — and a watch that missed a revocation while off the
+/// wrist is told about it the moment it asks.
 class SnapshotRequest extends WearMessage {
-  const SnapshotRequest();
+  const SnapshotRequest({this.credentialVersion = 0});
 
   static const kind = 'snapshot_request';
+
+  /// The credential version this device already has. 0 means none.
+  final int credentialVersion;
 
   @override
   String get type => kind;
 
   @override
-  Map<String, Object?> toPayload() => const {};
+  Map<String, Object?> toPayload() => {'credentialVersion': credentialVersion};
+
+  static SnapshotRequest fromPayload(Map<Object?, Object?> payload) {
+    final version = payload['credentialVersion'];
+    // A peer too old to send one reads as 0, so it is offered the credential —
+    // which is the old behaviour, and the safe direction to be wrong in.
+    return SnapshotRequest(credentialVersion: version is int ? version : 0);
+  }
 }
 
 /// How the peer device can be reached, as reported by the capability client.

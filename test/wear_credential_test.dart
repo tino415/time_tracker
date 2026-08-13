@@ -1,14 +1,18 @@
 // Handing the watch a sync account, and taking it away again.
 //
-// The watch already runs the same sync stack as the phone — main() starts
-// auto-sync in the shared root, before the isWatch branch — and syncServiceProvider
-// was null on the watch for exactly one reason: no token on that device. There
-// is no way to enter 32 generated characters on a 227px screen with no camera,
-// so it inherits the phone's over the relay that already carries the catalogue.
+// The credential is the one thing that cannot travel through the sync server,
+// because it is what grants access to it — so it moves over the Wear relay and
+// needs its own ordering rule there. It carries a version, and newest wins: the
+// same rule as the rest of the data model.
 //
-// The revocation half is the security-relevant one: without it, "leave this
-// account" on the phone leaves a working bearer credential on a device you
-// believe you have disconnected.
+// Two properties matter more than the mechanics.
+//
+// The token must not be on the wire routinely. It is offered only to a peer that
+// says it has something older, so a watch that is current is told nothing.
+//
+// And revocation must reach a watch that was away. That is why leaving the
+// account is a *grant of null* at a higher version rather than a deletion —
+// something merely absent can neither travel nor win.
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +23,8 @@ import 'package:time_tracker/data/wear_sync.dart';
 import 'package:time_tracker/domain/wear_protocol.dart';
 
 import 'support/fake_wear_bridge.dart';
+
+const _token = 'a-token-worth-32-chars-or-so';
 
 void main() {
   late AppDatabase db;
@@ -46,85 +52,115 @@ void main() {
 
   List<SyncCredential> credentials() => bridge.sent.whereType<SyncCredential>().toList();
 
+  /// Start the phone side and get past its opening traffic.
+  ///
+  /// The token stream delivers on subscribe, so a bare `clear()` races it and
+  /// the first assertion sees a credential nobody asked for.
+  Future<WearSyncService> startedPhone() async {
+    final service = serviceFor(isWatch: false);
+    await service.start();
+    await pumpEventQueue();
+    bridge.sent.clear();
+    return service;
+  }
+
   group('phone side', () {
-    test('sends the token when the watch asks for a snapshot', () async {
-      await store.setToken('a-token-worth-32-chars-or-so');
-      final service = serviceFor(isWatch: false);
-      await service.start();
-      bridge.sent.clear();
+    test('answers a watch that is behind', () async {
+      await store.grantCredential(_token);
+      final service = await startedPhone();
 
-      await bridge.receive(const SnapshotRequest());
+      await bridge.receive(const SnapshotRequest(credentialVersion: 0));
 
-      // More than one is expected and fine: the token stream also delivers on
-      // subscribe. Re-sending a credential is idempotent, which is what lets
-      // both the stream and the request carry it without coordinating.
-      expect(credentials(), isNotEmpty);
-      expect(
-        credentials().map((c) => c.token).toSet(),
-        {'a-token-worth-32-chars-or-so'},
-      );
+      expect(credentials().last.token, _token);
+      expect(credentials().last.version, 1);
       service.dispose();
     });
 
-    test('sends a revocation when the account is left', () async {
-      await store.setToken('a-token-worth-32-chars-or-so');
-      final service = serviceFor(isWatch: false);
-      await service.start();
-      bridge.sent.clear();
+    test('tells a watch that is current nothing', () async {
+      await store.grantCredential(_token);
+      final service = await startedPhone();
 
-      await store.setToken(null); // what forget() does
+      await bridge.receive(const SnapshotRequest(credentialVersion: 1));
+
+      // The whole point of the version: no bearer token on the wire during
+      // ordinary use, which is many snapshot requests a day.
+      expect(credentials(), isEmpty);
+      // The snapshot itself still goes, so the watch is not left stale.
+      expect(bridge.sent.whereType<BookmarkSnapshot>(), isNotEmpty);
+      service.dispose();
+    });
+
+    test('offers the revocation to a watch still holding the old grant', () async {
+      await store.grantCredential(_token);
+      await store.grantCredential(null); // what forget() does
+      final service = await startedPhone();
+
+      await bridge.receive(const SnapshotRequest(credentialVersion: 1));
+
+      // A watch that was off the wrist when the account was left asks on its
+      // next start, and this is where it finds out.
+      expect(credentials().last.token, isNull);
+      expect(credentials().last.version, 2);
+      service.dispose();
+    });
+
+    test('pushes a change unprompted, so a watch present hears at once', () async {
+      final service = await startedPhone();
+
+      await store.grantCredential(_token);
       await pumpEventQueue();
 
-      // Sent unprompted, rather than waiting to be asked: the point of a
-      // revocation is that it does not wait.
-      expect(credentials().last.token, isNull);
-      service.dispose();
-    });
-
-    test('a snapshot request after leaving carries the revocation too', () async {
-      final service = serviceFor(isWatch: false);
-      await service.start();
-      bridge.sent.clear();
-
-      // The watch was off the wrist when the account was left, so it never saw
-      // the message above. Asking for a snapshot is the first thing it does on
-      // waking, and it must not be told nothing and keep its token.
-      await bridge.receive(const SnapshotRequest());
-
-      expect(credentials(), isNotEmpty);
-      expect(credentials().last.token, isNull);
+      expect(credentials().last.token, _token);
       service.dispose();
     });
   });
 
   group('watch side', () {
-    test('stores a delivered token', () async {
+    test('adopts a newer credential at the version it came with', () async {
       final service = serviceFor(isWatch: true);
       await service.start();
 
-      await bridge.receive(const SyncCredential(token: 'a-token-worth-32-chars-or-so'));
+      await bridge.receive(const SyncCredential(token: _token, version: 4));
 
-      expect(await store.token(), 'a-token-worth-32-chars-or-so');
+      expect(await store.token(), _token);
+      // The peer's version, not a fresh one: adopting is not an edit, so it must
+      // not look newer than what it came from.
+      expect(await store.credentialVersion(), 4);
       service.dispose();
     });
 
-    test('clears the token on a revocation', () async {
-      await store.setToken('a-token-worth-32-chars-or-so');
+    test('a stale grant cannot undo a revocation', () async {
+      // The listener parks messages while the app is down and drains them on
+      // next start, so late delivery is real rather than theoretical. Without a
+      // version this would quietly re-grant a token that had been taken away.
+      await store.adoptCredential(null, 5); // revoked, and we know it
       final service = serviceFor(isWatch: true);
       await service.start();
 
-      await bridge.receive(const SyncCredential(token: null));
+      await bridge.receive(const SyncCredential(token: _token, version: 3));
 
       expect(await store.token(), isNull);
+      expect(await store.credentialVersion(), 5);
       service.dispose();
     });
 
-    test('never sends one back', () async {
+    test('asks with the version it holds', () async {
+      await store.adoptCredential(_token, 7);
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await pumpEventQueue();
+
+      final asked = bridge.sent.whereType<SnapshotRequest>().last;
+      expect(asked.credentialVersion, 7);
+      service.dispose();
+    });
+
+    test('never sends a credential back', () async {
       final service = serviceFor(isWatch: true);
       await service.start();
       bridge.sent.clear();
 
-      await bridge.receive(const SyncCredential(token: 'a-token-worth-32-chars-or-so'));
+      await bridge.receive(const SyncCredential(token: _token, version: 1));
 
       // A watch cannot hand the phone an account. Honouring it in that direction
       // would let a lost watch dictate which server the phone talks to.
@@ -133,22 +169,53 @@ void main() {
     });
   });
 
+  group('the store', () {
+    test('granting moves the version, adopting does not invent one', () async {
+      expect(await store.credentialVersion(), 0);
+      expect(await store.grantCredential(_token), 1);
+      expect(await store.grantCredential(null), 2);
+
+      await store.adoptCredential(_token, 9);
+      expect(await store.credentialVersion(), 9);
+    });
+
+    test('a revocation is a grant of null, not a deletion', () async {
+      await store.grantCredential(_token);
+      await store.grantCredential(null);
+
+      // Both halves matter: the token is gone *and* the version says so, which
+      // is what lets the revocation travel and win.
+      expect(await store.token(), isNull);
+      expect(await store.credentialVersion(), 2);
+    });
+  });
+
   group('wire format', () {
-    test('round-trips a token and a revocation', () {
-      for (final token in [null, 'a-token-worth-32-chars-or-so']) {
-        final encoded = SyncCredential(token: token).toPayload();
-        final decoded = WearMessage.decode(SyncCredential.kind, encoded);
-        expect((decoded as SyncCredential).token, token);
+    test('round-trips a token, a revocation and the version', () {
+      for (final token in [null, _token]) {
+        final encoded = SyncCredential(token: token, version: 3).toPayload();
+        final decoded = WearMessage.decode(SyncCredential.kind, encoded) as SyncCredential;
+        expect(decoded.token, token);
+        expect(decoded.version, 3);
       }
     });
 
-    test('a malformed credential revokes rather than being ignored', () {
-      // Failing safe here means failing shut: a message this build cannot read
-      // must not leave a stale credential in place.
+    test('a malformed credential revokes, and loses to everything', () {
+      // Failing safe means failing shut — but at version 0, so a message this
+      // build cannot read also cannot overwrite a credential already held.
       for (final payload in [<Object?, Object?>{}, {'token': 42}, {'token': ''}]) {
-        final decoded = WearMessage.decode(SyncCredential.kind, payload);
-        expect((decoded as SyncCredential).token, isNull);
+        final decoded = WearMessage.decode(SyncCredential.kind, payload) as SyncCredential;
+        expect(decoded.token, isNull);
+        expect(decoded.version, 0);
       }
+    });
+
+    test('a request without a version reads as 0', () {
+      // A peer too old to send one is offered the credential, which is the old
+      // behaviour and the safe direction to be wrong in.
+      final decoded =
+          WearMessage.decode(SnapshotRequest.kind, <Object?, Object?>{}) as SnapshotRequest;
+      expect(decoded.credentialVersion, 0);
     });
   });
 }

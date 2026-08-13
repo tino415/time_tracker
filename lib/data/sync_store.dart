@@ -18,6 +18,7 @@ class SyncStore {
   static const _cursorKey = 'cursor';
   static const _backendKey = 'backend';
   static const _tokenKey = 'token';
+  static const _tokenVersionKey = 'token_version';
 
   /// The sync token, or null when this device has not joined an account.
   ///
@@ -47,14 +48,59 @@ class SyncStore {
     });
   }
 
-  Future<void> setToken(String? token) async {
-    if (token == null || token.isEmpty) {
-      await (_db.delete(_db.syncMeta)..where((t) => t.key.equals(_tokenKey))).go();
-      return;
-    }
-    await _db.into(_db.syncMeta).insertOnConflictUpdate(
-          SyncMetaCompanion.insert(key: _tokenKey, value: token),
-        );
+  /// How many times this account has been granted or revoked, anywhere.
+  ///
+  /// The credential is the one thing that cannot travel through the sync server,
+  /// because it is what grants access to it — so it moves over the Wear relay
+  /// instead, and needs its own ordering rule there. A version gives it the same
+  /// one the rest of the data model uses: newest wins.
+  ///
+  /// It never reaches the server. [SyncRequest] carries a cursor, activities and
+  /// changes and has no field for anything else, so `sync_meta` is structurally
+  /// local — the isolation is by construction rather than by a rule someone has
+  /// to remember, which is why the token has always lived here too.
+  ///
+  /// 0 means "never set", which is what a device that has never heard of an
+  /// account reports.
+  Future<int> credentialVersion() async {
+    final row = await (_db.select(_db.syncMeta)
+          ..where((t) => t.key.equals(_tokenVersionKey)))
+        .getSingleOrNull();
+    return int.tryParse(row?.value ?? '') ?? 0;
+  }
+
+  /// Take a peer's credential at *its* version, without inventing a new one.
+  ///
+  /// The counterpart to [grantCredential], and the same split as `_applyPeer`
+  /// against `_bump` in the repositories: adopting somebody else's state is not
+  /// an edit, so it must not look newer than what it came from.
+  Future<void> adoptCredential(String? token, int version) =>
+      _writeCredential(token, version);
+
+  /// Set the credential *here*, stamping it a version nothing has used yet.
+  ///
+  /// Revoking is a grant of null rather than an absence — a revocation has to
+  /// travel and win like any other change, and something that is merely missing
+  /// cannot do either.
+  Future<int> grantCredential(String? token) async {
+    final next = await credentialVersion() + 1;
+    await _writeCredential(token, next);
+    return next;
+  }
+
+  Future<void> _writeCredential(String? token, int version) async {
+    await _db.transaction(() async {
+      if (token == null || token.isEmpty) {
+        await (_db.delete(_db.syncMeta)..where((t) => t.key.equals(_tokenKey))).go();
+      } else {
+        await _db.into(_db.syncMeta).insertOnConflictUpdate(
+              SyncMetaCompanion.insert(key: _tokenKey, value: token),
+            );
+      }
+      await _db.into(_db.syncMeta).insertOnConflictUpdate(
+            SyncMetaCompanion.insert(key: _tokenVersionKey, value: '$version'),
+          );
+    });
   }
 
   /// Re-point this device at [backend], clearing sync state if it changed.

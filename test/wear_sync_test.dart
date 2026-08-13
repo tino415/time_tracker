@@ -461,6 +461,10 @@ void main() {
     test('re-asks for a snapshot when the phone becomes reachable', () async {
       final service = serviceFor(isWatch: true);
       await service.start();
+      // The opening request reads the credential version before it sends, so it
+      // lands a turn later — clearing without draining first leaves it in flight
+      // and it arrives after, looking like a second request.
+      await pumpEventQueue();
       bridge.sent.clear();
 
       await bridge.becomes(WearReachability.reachable);

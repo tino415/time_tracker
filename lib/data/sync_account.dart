@@ -65,12 +65,16 @@ class SyncAccountController {
     // Claim first: storing a token the server will not accept would leave the
     // app looking connected while every sync fails.
     await transport.claimAccount();
-    await _store.setToken(token);
+    await _store.grantCredential(token);
   }
 
   /// Stop syncing. The local database is untouched — it is the authoritative
   /// copy, and disconnecting is not deleting.
-  Future<void> forget() => _store.setToken(null);
+  ///
+  /// A version bump, not a deletion: leaving the account has to *reach* the
+  /// watch, and it can only beat a stale grant still queued somewhere if it is
+  /// newer rather than merely absent.
+  Future<void> forget() => _store.grantCredential(null);
 }
 
 final syncAccountProvider = Provider<SyncAccountController>((ref) {

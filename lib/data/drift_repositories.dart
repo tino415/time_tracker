@@ -101,6 +101,9 @@ class DriftActivityRepository implements ActivityRepository {
                 syncId: activity.syncId,
                 name: activity.name,
                 color: activity.color,
+                // `dirty` defaults to true, which is right for a row this device
+                // authored and wrong for one it was told about.
+                dirty: const Value(false),
                 // Deliberately not a bookmark: being tracked is not the same as
                 // being pinned to the watch's switch list.
               ),
@@ -110,7 +113,7 @@ class DriftActivityRepository implements ActivityRepository {
 
       // Only write on a real difference — see applyBookmarkSnapshot.
       if (existing.name != activity.name || existing.color != activity.color) {
-        await _bump(
+        await _applyPeer(
           activity.syncId,
           ActivitiesCompanion(name: Value(activity.name), color: Value(activity.color)),
         );
@@ -182,6 +185,8 @@ class DriftActivityRepository implements ActivityRepository {
                   name: a.name,
                   color: a.color,
                   bookmarked: const Value(true),
+                  // The peer's row, not this device's — see _applyPeer.
+                  dirty: const Value(false),
                 ),
               );
           continue;
@@ -194,7 +199,7 @@ class DriftActivityRepository implements ActivityRepository {
             existing.color != a.color ||
             !existing.bookmarked ||
             existing.deletedAt != null) {
-          await _bump(
+          await _applyPeer(
             a.syncId,
             ActivitiesCompanion(
               name: Value(a.name),
@@ -213,7 +218,7 @@ class DriftActivityRepository implements ActivityRepository {
           .get();
       for (final row in staleBookmarks) {
         if (!incoming.containsKey(row.syncId)) {
-          await _bump(row.syncId, const ActivitiesCompanion(bookmarked: Value(false)));
+          await _applyPeer(row.syncId, const ActivitiesCompanion(bookmarked: Value(false)));
         }
       }
     });
@@ -233,6 +238,21 @@ class DriftActivityRepository implements ActivityRepository {
       patch.copyWith(version: Value(row.version + 1), dirty: const Value(true)),
     );
   }
+
+  /// Apply [patch] as a *peer's* statement rather than this device's edit: no
+  /// version bump, and not marked for pushing.
+  ///
+  /// The counterpart to [_bump], and the rule [applyPeerCurrentBlock] already
+  /// follows — "adopting a peer's state is not a local edit". It matters more
+  /// now that the watch reaches the server itself: without this it would offer
+  /// the server rows that are really the phone's facts, arriving over the relay,
+  /// on the device least able to spare the traffic.
+  ///
+  /// Not a correctness fix. Pushes are version-checked and the content comes
+  /// from the phone either way, so the worst case was a redundant write, never
+  /// divergence.
+  Future<void> _applyPeer(String id, ActivitiesCompanion patch) =>
+      (_db.update(_db.activities)..where((t) => t.syncId.equals(id))).write(patch);
 }
 
 class DriftChangeRepository implements ChangeRepository {

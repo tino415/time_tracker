@@ -22,24 +22,85 @@ class CalendarScreen extends ConsumerStatefulWidget {
   ConsumerState<CalendarScreen> createState() => _CalendarScreenState();
 }
 
-/// Pixels per hour. 56 keeps a whole day (1344px) inside two or three flicks
-/// while leaving a 5-minute step (~4.7px) comfortably draggable.
-const _hourHeight = 56.0;
-const _pxPerMinute = _hourHeight / 60.0;
+/// Pixels per hour at each zoom step, and the drag snap that suits it.
+///
+/// 56 is the original fixed scale: a whole day is 1344px, two or three flicks,
+/// with a 5-minute step at ~4.7px — the comfort threshold the handles were built
+/// against. The other steps are halves and doubles of it.
+///
+/// The snap has to move with the scale or zoom buys nothing for editing. At 56 a
+/// 1-minute step is 0.9px, so no amount of care lands on it; at 224 it is 3.7px,
+/// close enough to the 4.7px that has always been considered draggable. Going
+/// the other way, a zoomed-out axis is for reading a dense day, so it snaps
+/// coarsely rather than pretending to a precision the pixels cannot carry.
+///
+/// Precision is no longer only a drag, either: "split at…" and "edit start time"
+/// both take a typed minute, so the axis does not have to be the fine
+/// instrument. Its job here is legibility.
+const _zoomLevels = <({double hourHeight, Duration snap})>[
+  (hourHeight: 28.0, snap: Duration(minutes: 15)),
+  (hourHeight: 56.0, snap: Duration(minutes: 5)),
+  (hourHeight: 112.0, snap: Duration(minutes: 5)),
+  (hourHeight: 224.0, snap: Duration(minutes: 1)),
+];
+
+/// The scale the view opens at — the one it always had.
+const _defaultZoom = 1;
 
 /// Width of the hour-label gutter on the left.
 const _gutter = 44.0;
 
-/// Drags land on tidy times rather than wherever the finger stopped.
-const _snap = Duration(minutes: 5);
-
 class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   int _dayOffset = 0; // 0 = today, -1 = yesterday, …
+
+  int _zoom = _defaultZoom;
+
+  /// Needed to keep the same time under the eye across a zoom — without it the
+  /// pixel offset means a different hour at the new scale, and zooming in on
+  /// the afternoon lands you in the evening.
+  final _scroll = ScrollController();
 
   /// While a handle is held: the boundary being moved and its live time, so the
   /// view can follow the finger before anything is written.
   String? _draggingId;
   DateTime? _dragAt;
+
+  double get _hourHeight => _zoomLevels[_zoom].hourHeight;
+  double get _pxPerMinute => _hourHeight / 60.0;
+  Duration get _snap => _zoomLevels[_zoom].snap;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Change scale about the middle of what is on screen.
+  ///
+  /// Anchoring to the viewport centre rather than the top: the top of a scrolled
+  /// day is usually empty hours, so holding it still would push whatever you
+  /// were looking at off the bottom on the way in.
+  void _setZoom(int next) {
+    final clamped = next.clamp(0, _zoomLevels.length - 1);
+    if (clamped == _zoom) return;
+
+    final ratio = _zoomLevels[clamped].hourHeight / _hourHeight;
+    final hasViewport = _scroll.hasClients;
+    final centre = hasViewport
+        ? _scroll.offset + _scroll.position.viewportDimension / 2
+        : 0.0;
+
+    setState(() => _zoom = clamped);
+
+    if (!hasViewport) return;
+    // After the frame, or the new extent is not known and the offset is clamped
+    // against the old one.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final target = centre * ratio - _scroll.position.viewportDimension / 2;
+      _scroll.jumpTo(target.clamp(0.0, _scroll.position.maxScrollExtent));
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,19 +122,22 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             label: _dayLabel(day, now),
             onPrev: () => setState(() => _dayOffset--),
             onNext: _dayOffset < 0 ? () => setState(() => _dayOffset++) : null,
+            onZoomOut: _zoom > 0 ? () => _setZoom(_zoom - 1) : null,
+            onZoomIn: _zoom < _zoomLevels.length - 1 ? () => _setZoom(_zoom + 1) : null,
           ),
         ),
         Expanded(
           child: slices.isEmpty
               ? Center(child: Text('nothing tracked this day', style: mono(context, color: t.muted)))
               : SingleChildScrollView(
+                  controller: _scroll,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     child: SizedBox(
                       height: 24 * _hourHeight,
                       child: Stack(
                         children: [
-                          const _HourGrid(),
+                          _HourGrid(hourHeight: _hourHeight),
                           for (final s in slices) _sliceCard(context, s, now),
                           // Handles paint above the cards so a boundary stays
                           // grabbable where two blocks meet.
@@ -153,6 +217,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       child: _SliceCard(
         slice: s,
         now: now,
+        height: height,
         onTap: () => showBlockActions(
           context,
           ref,
@@ -190,10 +255,19 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 }
 
 class _DaySelector extends StatelessWidget {
-  const _DaySelector({required this.label, required this.onPrev, this.onNext});
+  const _DaySelector({
+    required this.label,
+    required this.onPrev,
+    this.onNext,
+    this.onZoomOut,
+    this.onZoomIn,
+  });
+
   final String label;
   final VoidCallback onPrev;
   final VoidCallback? onNext;
+  final VoidCallback? onZoomOut;
+  final VoidCallback? onZoomIn;
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +278,14 @@ class _DaySelector extends StatelessWidget {
           child: Center(child: Text(label, style: mono(context, weight: FontWeight.w800))),
         ),
         NeoButton(label: '›', onTap: onNext, shadowOffset: 3, compact: true),
+        const SizedBox(width: 10),
+        // Buttons rather than a pinch. On the web a pinch arrives as ctrl+wheel,
+        // which the browser also reads as page zoom, so it would have to be
+        // intercepted rather than merely heard — and on the phone the calendar
+        // already spends its drags on boundaries and its long-press on split.
+        // Buttons cost two taps and are visible, which a gesture is not.
+        NeoButton(label: '−', onTap: onZoomOut, shadowOffset: 3, compact: true),
+        NeoButton(label: '+', onTap: onZoomIn, shadowOffset: 3, compact: true),
       ],
     );
   }
@@ -211,7 +293,9 @@ class _DaySelector extends StatelessWidget {
 
 /// Hour lines + labels behind the blocks.
 class _HourGrid extends StatelessWidget {
-  const _HourGrid();
+  const _HourGrid({required this.hourHeight});
+
+  final double hourHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -222,8 +306,8 @@ class _HourGrid extends StatelessWidget {
           Positioned(
             left: 0,
             right: 0,
-            top: h * _hourHeight,
-            height: _hourHeight,
+            top: h * hourHeight,
+            height: hourHeight,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -249,12 +333,19 @@ class _SliceCard extends StatelessWidget {
   const _SliceCard({
     required this.slice,
     required this.now,
+    required this.height,
     required this.onTap,
     required this.onLongPressAt,
   });
 
   final DaySlice slice;
   final DateTime now;
+
+  /// Passed in rather than recomputed: the axis scale lives in the screen's
+  /// state now, and two places deriving it from their own constant is exactly
+  /// how the card and the layout would drift apart at anything but 1×.
+  final double height;
+
   final VoidCallback onTap;
 
   /// Long-press position as a 0..1 fraction down the card.
@@ -266,7 +357,6 @@ class _SliceCard extends StatelessWidget {
     final acts = slice.block.activities;
     final color = acts.isEmpty ? t.muted : parseHexColor(acts.first.color);
     final label = acts.isEmpty ? '(empty)' : acts.map((a) => a.name).join('  +  ');
-    final height = (slice.endMinutes - slice.startMinutes) * _pxPerMinute;
 
     return LayoutBuilder(
       builder: (context, constraints) => GestureDetector(
@@ -297,9 +387,10 @@ class _SliceCard extends StatelessWidget {
           // line over a colour bar, still tappable.
           //
           // Hiding the label below a threshold was the alternative. It needs
-          // ~23px — about 25 minutes at this scale — to fit a line plus padding,
-          // which would leave a lot of ordinary blocks unlabelled, and more
-          // still once the axis can zoom out.
+          // ~23px to fit a line plus padding — 25 minutes at 1×, and a full 50
+          // at the zoomed-out step — which would leave a lot of ordinary blocks
+          // unlabelled exactly when the day is densest. Zooming in is the answer
+          // to a block too short to read, rather than blanking it.
           child: ClipRect(
             child: OverflowBox(
               alignment: Alignment.topLeft,

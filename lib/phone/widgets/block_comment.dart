@@ -17,12 +17,20 @@ Future<void> editBlockComment(BuildContext context, WidgetRef ref, Block block) 
       backgroundColor: t.surface,
       shape: RoundedRectangleBorder(side: BorderSide(color: t.line, width: 3), borderRadius: BorderRadius.zero),
       title: Text('NOTE', style: mono(context, weight: FontWeight.w800)),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLines: 3,
-        style: mono(context, weight: FontWeight.w700),
-        decoration: const InputDecoration(border: OutlineInputBorder()),
+      // An explicit width, not the field's intrinsic one. AlertDialog sizes its
+      // content to what the child asks for, and an unconstrained TextField asks
+      // for however wide its text is — so the dialog grew keystroke by keystroke
+      // instead of wrapping, and only stopped once it hit the screen. Same fix,
+      // same reason as the CSV preview in reports_screen.dart.
+      content: SizedBox(
+        width: double.maxFinite,
+        child: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          style: mono(context, weight: FontWeight.w700),
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: Text('CANCEL', style: mono(context))),

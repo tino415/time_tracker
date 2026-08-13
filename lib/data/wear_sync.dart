@@ -80,8 +80,17 @@ class WearSyncService {
   /// have finished when the app opens, so the request goes to nobody; and if the
   /// phone app is not running it cannot answer at all — its listener service
   /// deliberately drops snapshot requests rather than replaying stale ones. So
-  /// the watch keeps asking, with a widening gap, and stops the moment a
-  /// snapshot lands.
+  /// the watch keeps asking, with a widening gap, until a snapshot lands.
+  ///
+  /// Stopping on *delivery* was the bug that made this feature look broken on
+  /// real devices. `send` reporting true only means the peer device took the
+  /// message — which succeeds even with the phone app closed, because Android
+  /// wakes the listener service to receive it, and that service then drops it.
+  /// The watch asked once into a void, believed it had asked successfully, and
+  /// never asked again; meanwhile Samsung freezes the phone app every couple of
+  /// minutes, so the window where it can answer is narrow and easily missed.
+  ///
+  /// Delivery is not an answer. Only [_gotSnapshot] stops this.
   void _beginRequestingSnapshot() {
     _snapshotRetry?.cancel();
     var attempt = 0;
@@ -91,13 +100,15 @@ class WearSyncService {
       // The request carries what this device already knows about the account, so
       // the phone can answer with a credential only when it holds something
       // newer. That is what makes the token travel once rather than routinely.
-      final delivered = await _bridge.send(
+      await _bridge.send(
         SnapshotRequest(credentialVersion: await _syncStore.credentialVersion()),
       );
-      if (delivered || _gotSnapshot) return;
+      if (_gotSnapshot) return;
       attempt++;
-      // 2s, 4s, 8s … capped. Cheap enough to leave running: an unpaired watch
-      // wakes a few times a minute, not continuously.
+      // 2s, 4s, 8s … capped at 32. Cheap enough to leave running indefinitely:
+      // a watch with nobody to talk to wakes twice a minute, not continuously —
+      // which was already the accepted cost when the peer was unreachable, and
+      // is the same cost when it is merely asleep.
       final seconds = (1 << attempt.clamp(1, 5)).clamp(2, 32);
       _snapshotRetry = Timer(Duration(seconds: seconds), ask);
     }

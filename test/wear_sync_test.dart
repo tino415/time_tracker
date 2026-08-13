@@ -458,6 +458,39 @@ void main() {
       service.dispose();
     });
 
+    test('keeps asking after a successful send — delivery is not an answer', () async {
+      // The bug that made this feature look broken on two device deploys, and
+      // that no test held: the retry stopped when `send` reported true.
+      //
+      // True only means the peer *device* took the message. That succeeds with
+      // the phone app closed, because Android wakes its listener service to
+      // receive it — and that service drops snapshot requests rather than
+      // replaying stale ones. So the watch asked once into a void, believed it
+      // had asked, and never asked again.
+      //
+      // Slow on purpose: the first retry is two seconds, and the point is what
+      // happens *after* a send that succeeded.
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await pumpEventQueue();
+
+      final asked = bridge.sent.whereType<SnapshotRequest>().length;
+      expect(asked, greaterThanOrEqualTo(1));
+      expect(bridge.deliverable, isTrue, reason: 'the sends here are succeeding');
+
+      await Future<void>.delayed(const Duration(seconds: 3));
+      expect(bridge.sent.whereType<SnapshotRequest>().length, greaterThan(asked),
+          reason: 'a delivered but unanswered request must be repeated');
+
+      // A snapshot is an answer, and does stop it.
+      await bridge.receive(const BookmarkSnapshot(activities: []));
+      final settled = bridge.sent.whereType<SnapshotRequest>().length;
+      await Future<void>.delayed(const Duration(seconds: 3));
+      expect(bridge.sent.whereType<SnapshotRequest>().length, settled);
+
+      service.dispose();
+    });
+
     test('re-asks for a snapshot when the phone becomes reachable', () async {
       final service = serviceFor(isWatch: true);
       await service.start();

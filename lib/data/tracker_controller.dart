@@ -95,6 +95,39 @@ class TrackerController {
     await _activities.touchUsed(unsorted.syncId, now);
   }
 
+  /// Start tracking what [block] tracked, as of now.
+  ///
+  /// Deliberately *not* an edit of [block]: every other gesture on a timeline row
+  /// changes the row under the finger, and this one leaves history alone and
+  /// writes at the present instead. Resuming yesterday's work must not silently
+  /// extend yesterday.
+  ///
+  /// A multi-activity block resumes its whole set rather than asking which one.
+  /// The set is what the block *was* — a "forgot to switch" pair is one thing
+  /// that happened, not two — and asking would put a question in front of the
+  /// common case to serve the rare one. Untangling it afterwards is the untag
+  /// action, which already exists.
+  ///
+  /// No special case for "already running": that opens a new block, exactly as
+  /// re-picking on Now does, because a second block is how a different note gets
+  /// attached to the same work.
+  Future<void> resumeBlock(Block block) async {
+    final ids = [for (final a in block.activities) a.syncId];
+    if (ids.isEmpty) return;
+
+    final now = DateTime.now();
+    // The first activity opens the boundary; the rest join it. There is no
+    // "switch to a set" primitive, and inventing one here would duplicate what
+    // tagging already does.
+    final change = await _changes.switchTo(ids.first, at: now);
+    for (final id in ids.skip(1)) {
+      await _changes.addActivityToChange(change.syncId, id);
+    }
+    for (final id in ids) {
+      await _activities.touchUsed(id, now);
+    }
+  }
+
   /// Re-point a block at [activityId], keeping its start and replacing whatever
   /// set it had. This answers an unnamed block, and is also how a named one is
   /// corrected ("that hour was Email, not Deep work").

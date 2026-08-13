@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
+import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
 import '../../format.dart';
 import '../widgets/block_actions.dart';
@@ -164,6 +165,17 @@ class _BlockCard extends ConsumerWidget {
                         const SizedBox(width: 8),
                         Text(formatDurationHm(block.duration(now)),
                             style: mono(context, weight: FontWeight.w800)),
+                        // Resume, one tap, without opening anything. A visible
+                        // control rather than a swipe: there is no swipe on a
+                        // mouse, and a gesture nobody sees is not an affordance.
+                        //
+                        // Nothing to resume on the open block — it is already
+                        // running — so the slot is simply absent there rather
+                        // than disabled.
+                        if (!block.isOpen && acts.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          _ResumeButton(block: block),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -192,6 +204,48 @@ class _BlockCard extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Track this again" on a timeline row.
+///
+/// Its own gesture detector inside the card's, so a tap here resumes instead of
+/// opening the edit sheet the rest of the card opens. `Semantics(button:)` is
+/// what gives it a label a browser test — and a screen reader — can find, since
+/// the glyph carries no text of its own.
+class _ResumeButton extends ConsumerWidget {
+  const _ResumeButton({required this.block});
+
+  final Block block;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = neo(context);
+    return Semantics(
+      button: true,
+      label: 'track again',
+      // Its own node, not an annotation folded into the card's. Without this the
+      // label is absorbed by the surrounding pressable and there is nothing a
+      // screen reader — or a browser test — can point at.
+      container: true,
+      child: GestureDetector(
+        onTap: () => ref.read(trackerControllerProvider).resumeBlock(block),
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: t.line,
+          // Comfortably past a thumb's worth without making the row taller.
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          // The glyph is decoration once the node above is labelled. Left in, it
+          // joins that label — the node reads "track again ▶", which is what a
+          // screen reader would say and what a text-matching browser check
+          // would have to work around.
+          child: ExcludeSemantics(
+            child: Text('▶',
+                style: mono(context, size: 12, weight: FontWeight.w800, color: t.surface)),
+          ),
         ),
       ),
     );

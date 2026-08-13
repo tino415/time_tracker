@@ -83,6 +83,20 @@ Future<void> showBlockActions(
               ),
               const SizedBox(height: 10),
             ],
+            // Resuming, not editing — so it sits apart from the verbs below,
+            // which all change the block you opened this from. Hidden on the
+            // running block: "track this again" for what is already tracking is
+            // a split, and re-picking it on Now is the gesture for that.
+            if (!block.isOpen && block.activities.isNotEmpty) ...[
+              NeoButton(
+                label: '▶ track this again',
+                onTap: () async {
+                  Navigator.pop(sheetContext);
+                  await ref.read(trackerControllerProvider).resumeBlock(block);
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
             NeoButton(
               label: '+ tag another activity',
               onTap: () async {

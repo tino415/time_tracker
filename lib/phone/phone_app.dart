@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -111,6 +112,27 @@ class _Header extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text('[track]', style: mono(context, size: 18, weight: FontWeight.w800, color: t.brand)),
+          const Spacer(),
+          // The keyboard list needs a control that is *seen*. It was reachable
+          // only by Cmd/Ctrl+/ — a keystroke to discover the keystrokes — and
+          // Safari takes that combination for its status bar, so on Safari the
+          // list could not be opened at all.
+          //
+          // Shown on the web only. The bindings themselves stay installed
+          // everywhere (a Bluetooth keyboard on a phone should work), but a
+          // keyboard button on a touch phone is noise, and the platform is the
+          // honest signal here rather than how wide the window happens to be.
+          if (kIsWeb) ...[
+            NeoPressable(
+              fill: t.line,
+              shadowOffset: 3,
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              onTap: () => showShortcutsHelp(context),
+              child: Text('⌨ KEYS',
+                  style: mono(context, size: 11, weight: FontWeight.w700, color: t.surface)),
+            ),
+            const SizedBox(width: 8),
+          ],
           NeoPressable(
             fill: t.line,
             shadowOffset: 3,

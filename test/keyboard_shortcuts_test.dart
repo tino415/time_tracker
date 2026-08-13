@@ -6,6 +6,8 @@
 // "a Slovak layout hits the same keys" is the test that pins that design; it was
 // checked against a logical binding, which it fails.
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +19,7 @@ import 'package:time_tracker/phone/screens/activities_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
+import 'package:time_tracker/phone/shortcuts.dart';
 
 import 'support/flow_harness.dart';
 
@@ -170,6 +173,31 @@ void main() {
     // The catch-all's own name, not a literal typed into this screen — that is
     // what keeps the hero, the timeline and the watch saying one word.
     expect(find.text(kUnsortedName), findsWidgets);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the header button opens the same list', (tester) async {
+    // The keystroke is not enough on its own: it is a shortcut for discovering
+    // shortcuts, and Safari takes Cmd+/ for its status bar, so on Safari the
+    // list has no keyboard route at all.
+    //
+    // The button is web-only, and widget tests run with kIsWeb false — so what
+    // is checked here is the dialog it opens, and that the bindings and the
+    // list it shows come from one table. The button's presence is checked by
+    // the browser suite, which is the only place kIsWeb is true.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    // Not awaited: the future completes when the dialog is *dismissed*, so
+    // awaiting it here waits forever for a tap this test has not made yet.
+    unawaited(showShortcutsHelp(tester.element(find.byType(NowScreen))));
+    await settle(tester);
+
+    expect(find.text('Keyboard'), findsOneWidget);
+    for (final binding in shortcutBindings) {
+      expect(find.textContaining(binding.what), findsWidgets,
+          reason: '${binding.label} is listed');
+    }
 
     await disposeApp(tester);
   });

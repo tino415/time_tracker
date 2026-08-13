@@ -403,6 +403,25 @@ try {
   check('Ctrl+3 reaches the Reports tab', shortcutsWork, keysDetail);
   check('Ctrl+/ lists the bindings', helpListed, keysDetail);
 
+  // --- the cheatsheet has a control you can see ------------------------------
+  // Only checkable here: the button is gated on kIsWeb, which is false in the
+  // widget suite. And it exists because the keystroke is not enough — Safari
+  // takes Cmd+/ for its status bar, so there the list had no keyboard route at
+  // all, and a shortcut for discovering shortcuts is a poor sole route anyway.
+  let keysButton = false;
+  let buttonDetail = 'not reached';
+  try {
+    await page.keyboard.press('Escape'); // close the dialog the chord opened
+    await sleep(1000);
+    await label('⌨ KEYS').click({ timeout: 10000 });
+    await sleep(1500);
+    keysButton = (await seesText(/Keyboard/)) && (await seesText(/Previous week/));
+    buttonDetail = keysButton ? 'opened the list' : 'click had no effect';
+  } catch (e) {
+    buttonDetail = (e.message ?? String(e)).split('\n')[0];
+  }
+  check('the header button opens the cheatsheet', keysButton, buttonDetail);
+
   const fatal = errors.filter((e) => !/favicon/i.test(e));
   check('no page errors', fatal.length === 0, fatal.slice(0, 3).join(' | '));
 } finally {

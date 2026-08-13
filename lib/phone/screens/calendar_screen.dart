@@ -50,9 +50,25 @@ const _defaultZoom = 1;
 /// Width of the hour-label gutter on the left.
 const _gutter = 44.0;
 
-class _CalendarScreenState extends ConsumerState<CalendarScreen> {
-  int _dayOffset = 0; // 0 = today, -1 = yesterday, …
+/// Which day the calendar shows: 0 = today, -1 = yesterday, …
+///
+/// Lifted out of the screen for the same reason the report's week was: the
+/// keyboard steps it, and the screen holds no focus of its own for a binding to
+/// be scoped to. The zoom stays local — it has no keyboard route, by decision:
+/// the calendar is a pointer surface and zoom belongs to the trackpad.
+final calendarDayProvider = StateProvider<int>((_) => 0);
 
+/// Step the day, refusing to walk into the future.
+///
+/// The guard lives here rather than in the button, so the keyboard and the
+/// arrows cannot disagree about where the calendar ends.
+void shiftCalendarDay(WidgetRef ref, int delta) {
+  final next = ref.read(calendarDayProvider) + delta;
+  if (next > 0) return;
+  ref.read(calendarDayProvider.notifier).state = next;
+}
+
+class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   int _zoom = _defaultZoom;
 
   /// Needed to keep the same time under the eye across a zoom — without it the
@@ -107,7 +123,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final t = neo(context);
     final blocks = ref.watch(blocksProvider);
     final now = DateTime.now();
-    final day = DateTime(now.year, now.month, now.day + _dayOffset);
+    final dayOffset = ref.watch(calendarDayProvider);
+    final day = DateTime(now.year, now.month, now.day + dayOffset);
 
     final slices = sliceDay(blocks: blocks, day: day, now: now);
     // Newest-first, so the earliest block — the one with no boundary before it
@@ -120,8 +137,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
           child: _DaySelector(
             label: _dayLabel(day, now),
-            onPrev: () => setState(() => _dayOffset--),
-            onNext: _dayOffset < 0 ? () => setState(() => _dayOffset++) : null,
+            onPrev: () => shiftCalendarDay(ref, -1),
+            onNext: dayOffset < 0 ? () => shiftCalendarDay(ref, 1) : null,
             onZoomOut: _zoom > 0 ? () => _setZoom(_zoom - 1) : null,
             onZoomIn: _zoom < _zoomLevels.length - 1 ? () => _setZoom(_zoom + 1) : null,
           ),

@@ -371,12 +371,11 @@ try {
         ),
       re.source,
     );
-  /** Hold the modifier for the whole chord, by physical key name. */
-  const chord = async (code) => {
-    await page.keyboard.down('Control');
-    await page.keyboard.press(code);
-    await page.keyboard.up('Control');
-    await sleep(1200);
+  /** A key by *position* — Playwright sends a `code`, the same path a non-US
+   * layout takes, which is the whole reason the bindings are physical. */
+  const key = async (code, { shift = false } = {}) => {
+    await page.keyboard.press(shift ? `Shift+${code}` : code);
+    await sleep(1000);
   };
 
   let escClosed = false;
@@ -388,20 +387,21 @@ try {
     await sleep(1200);
     escClosed = !(await sheetOpen());
 
-    // Digit3 is the *position*, which is the whole design: Playwright sends a
-    // `code`, so this exercises the same path a non-US layout would.
-    await chord('Digit3');
+    // `g` then `r`. Bare keys are the point: the modifier scheme this replaced
+    // was eaten by the browser, and only a browser can show that these are not.
+    await key('KeyG');
+    await key('KeyR');
     shortcutsWork = await seesText(/PER CATEGORY/);
 
-    await chord('Slash');
+    await key('Slash', { shift: true });
     helpListed = (await seesText(/Keyboard/)) && (await seesText(/Previous week/));
     keysDetail = `esc=${escClosed} reports=${shortcutsWork} help=${helpListed}`;
   } catch (e) {
     keysDetail = (e.message ?? String(e)).split('\n')[0];
   }
   check('Escape closes an open sheet', escClosed, keysDetail);
-  check('Ctrl+3 reaches the Reports tab', shortcutsWork, keysDetail);
-  check('Ctrl+/ lists the bindings', helpListed, keysDetail);
+  check('g r reaches the Reports tab', shortcutsWork, keysDetail);
+  check('? lists the bindings', helpListed, keysDetail);
 
   // --- the cheatsheet has a control you can see ------------------------------
   // Only checkable here: the button is gated on kIsWeb, which is false in the

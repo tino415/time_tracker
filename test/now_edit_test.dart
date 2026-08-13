@@ -119,7 +119,10 @@ void main() {
 
     await tester.tap(inScreen(NowScreen, find.text('⋯ EDIT BLOCK')));
     await settle(tester);
-    await tester.tap(find.text('CHANGE ACTIVITY'));
+    // The row's own swap, not a "change activity" verb that then asks which —
+    // on a single-activity block those are the same operation, and the row is
+    // the one that does not have to ask.
+    await tester.tap(find.text('SWAP'));
     await settle(tester);
     await tester.tap(find.text('Email').last); // the picker row
     await settle(tester);
@@ -141,7 +144,7 @@ void main() {
 
     await tester.tap(inScreen(NowScreen, find.text('⋯ EDIT BLOCK')));
     await settle(tester);
-    await tester.tap(find.text('+ TAG ANOTHER ACTIVITY'));
+    await tester.tap(find.text('+ ANOTHER ACTIVITY'));
     await settle(tester);
     await tester.tap(find.text('Email').last);
     await settle(tester);
@@ -150,9 +153,14 @@ void main() {
 
     await tester.tap(inScreen(NowScreen, find.text('⋯ EDIT BLOCK')));
     await settle(tester);
-    await tester.tap(find.text('- UNTAG AN ACTIVITY'));
-    await settle(tester);
-    await tester.tap(find.text('Email').last);
+    // The × on Email's own row. No "remove which one?" step: the question the
+    // old flow asked had already been answered by choosing this row.
+    await tester.tap(
+      find.descendant(
+        of: find.ancestor(of: find.text('Email'), matching: find.byType(Row)).first,
+        matching: find.text('×'),
+      ),
+    );
     await settle(tester);
 
     expect(inScreen(NowScreen, find.text('2 activities · even-split')), findsNothing);

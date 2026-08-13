@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/database.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
+import '../../format.dart';
 import '../../domain/unsorted.dart';
 import 'activity_picker.dart';
 import 'assign_activity.dart';
@@ -47,42 +49,50 @@ Future<void> showBlockActions(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            NeoChip('Block · ${block.activities.map((a) => a.name).join(", ")}'),
+            NeoChip('Block'),
+            const SizedBox(height: 12),
+            // The activities as a *list*, each row carrying its own actions.
+            //
+            // This replaced three verbs — change / tag / untag — that each opened
+            // a second sheet to ask which activity they applied to. On a
+            // multi-activity block that asked a question already answered in the
+            // user's head, about a list they could not see while answering.
+            // Acting on the row removes the question instead of improving it.
+            for (final a in block.activities)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _ActivityRow(
+                  block: block,
+                  activity: a,
+                  sheetContext: sheetContext,
+                  host: context,
+                  ref: ref,
+                ),
+              ),
+            const SizedBox(height: 2),
+            NeoButton(
+              // Naming an unnamed block replaces the catch-all rather than
+              // joining it: "Unnamed + Email" would read as the forgot-to-switch
+              // case and halve the attribution.
+              label: isUnsortedSet(block.activities) ? '▸ what was this?' : '+ another activity',
+              primary: isUnsortedSet(block.activities),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                if (isUnsortedSet(block.activities)) {
+                  await assignBlockActivity(context, ref, block);
+                  return;
+                }
+                final id = await pickOrCreateActivity(
+                  context,
+                  ref,
+                  title: 'Tag with',
+                  exclude: block.activities.map((a) => a.syncId).toSet(),
+                );
+                if (id == null) return;
+                await ref.read(changeRepositoryProvider).addActivityToChange(block.change.syncId, id);
+              },
+            ),
             const SizedBox(height: 14),
-            // An unnamed block's only interesting action is naming it, so it leads.
-            if (isUnsortedSet(block.activities)) ...[
-              NeoButton(
-                label: '▸ what was this?',
-                primary: true,
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  assignBlockActivity(context, ref, block);
-                },
-              ),
-              const SizedBox(height: 10),
-            ] else ...[
-              // Swapping *is* naming, for a block that already has one — so an
-              // unnamed block leads with "what was this?" instead of offering
-              // the same write twice under two labels.
-              NeoButton(
-                // Glyph-free, like "merge into previous block": JetBrains Mono
-                // has no swap arrow, and a tofu box is worse than a plain label.
-                label: 'change activity',
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  final id = await showActivityPicker(
-                    context,
-                    ref,
-                    title: block.activities.length > 1 ? 'Replace the set with' : 'Change to',
-                    exclude: block.activities.map((a) => a.syncId).toSet(),
-                  );
-                  if (id != null) {
-                    await ref.read(trackerControllerProvider).assignBlock(block.change.syncId, id);
-                  }
-                },
-              ),
-              const SizedBox(height: 10),
-            ],
             // Resuming, not editing — so it sits apart from the verbs below,
             // which all change the block you opened this from. Hidden on the
             // running block: "track this again" for what is already tracking is
@@ -96,40 +106,6 @@ Future<void> showBlockActions(
                 },
               ),
               const SizedBox(height: 10),
-            ],
-            NeoButton(
-              label: '+ tag another activity',
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                final id = await showActivityPicker(
-                  context,
-                  ref,
-                  title: 'Tag with activity',
-                  exclude: block.activities.map((a) => a.syncId).toSet(),
-                );
-                if (id != null) {
-                  await ref.read(changeRepositoryProvider).addActivityToChange(block.change.syncId, id);
-                }
-              },
-            ),
-            if (block.activities.length > 1) ...[
-              const SizedBox(height: 10),
-              NeoButton(
-                label: '- untag an activity',
-                onTap: () async {
-                  Navigator.pop(sheetContext);
-                  final id = await showActivityPicker(
-                    context,
-                    ref,
-                    title: 'Remove which activity',
-                    // Only this block's own set can be untagged.
-                    only: block.activities.map((a) => a.syncId).toSet(),
-                  );
-                  if (id != null) {
-                    await ref.read(changeRepositoryProvider).removeActivityFromChange(block.change.syncId, id);
-                  }
-                },
-              ),
             ],
             // Hidden only when there is no legal cut: splitting needs a real
             // half either side, so a block under two minutes has nowhere to go.
@@ -203,6 +179,125 @@ Future<void> showBlockActions(
       ),
     ),
   );
+}
+
+/// One activity on the block, with the two things you can do to *it*.
+///
+/// Both actions name the row they sit on, so neither has to ask "which one?".
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({
+    required this.block,
+    required this.activity,
+    required this.sheetContext,
+    required this.host,
+    required this.ref,
+  });
+
+  final Block block;
+  final Activity activity;
+
+  /// The *caller's* ref, not one of this row's own.
+  ///
+  /// A ConsumerWidget inside the sheet would give a ref that dies with the sheet
+  /// — and every action here pops the sheet first, so by the time the write
+  /// runs it would be reading from a disposed element and throwing into an async
+  /// gap where nothing surfaces it. The action would simply not happen.
+  final WidgetRef ref;
+
+  /// The sheet's own context, used only to close it.
+  final BuildContext sheetContext;
+
+  /// The context that *opened* the sheet, and the one the next sheet must be
+  /// pushed from. The row's own context lives inside the sheet being popped, so
+  /// using it afterwards addresses a route that is on its way out — the picker
+  /// then opens against nothing and the action silently does not happen.
+  final BuildContext host;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    final unnamed = isUnsorted(activity);
+
+    return Container(
+      decoration: BoxDecoration(color: t.surface, border: Border.all(color: t.line, width: 2)),
+      padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+      child: Row(
+        children: [
+          NeoSwatch(parseHexColor(activity.color), size: 14),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              activity.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: mono(context, weight: FontWeight.w700),
+            ),
+          ),
+          // The catch-all is answered by the "what was this?" button below, not
+          // swapped like a real tag — offering both would be two labels for one
+          // write.
+          if (!unnamed) ...[
+            _RowAction(
+              label: 'swap',
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final id = await pickOrCreateActivity(
+                  host,
+                  ref,
+                  title: 'Replace ${activity.name} with',
+                  exclude: block.activities.map((a) => a.syncId).toSet(),
+                );
+                if (id == null) return;
+                await ref
+                    .read(trackerControllerProvider)
+                    .retagActivity(block, activity.syncId, id);
+              },
+            ),
+            const SizedBox(width: 6),
+            _RowAction(
+              label: '×',
+              // Always available, including on the last row. Removing the only
+              // activity does not fail: the block becomes an unnamed one, which
+              // is what the catch-all is for. A disabled control here would make
+              // the user carry a rule the data model can express itself.
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await ref.read(trackerControllerProvider).untagActivity(block, activity.syncId);
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RowAction extends StatelessWidget {
+  const _RowAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    return Semantics(
+      button: true,
+      container: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: t.line,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          // Uppercased like every other control here — NeoButton and NeoChip
+          // both do it, and a lowercase row action would read as a label.
+          child: Text(label.toUpperCase(),
+              style: mono(context, size: 11, weight: FontWeight.w800, color: t.surface)),
+        ),
+      ),
+    );
+  }
 }
 
 /// Put [text] on the clipboard and say so.

@@ -102,7 +102,7 @@ void main() {
     // Tag Alpha's block with Beta — the "forgot to switch" case.
     await tester.tap(inScreen(TimelineScreen, find.text('Alpha')));
     await settle(tester);
-    await tester.tap(find.text('+ TAG ANOTHER ACTIVITY'));
+    await tester.tap(find.text('+ ANOTHER ACTIVITY'));
     await settle(tester);
     await tester.tap(find.text('Beta').last);
     await settle(tester);

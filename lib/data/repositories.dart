@@ -112,7 +112,18 @@ abstract class ChangeRepository {
 
   /// Undo a tag: remove an activity from a change's set. The last activity
   /// cannot be removed (a block always tracks something) — call is a no-op then.
+  ///
+  /// Callers wanting "remove whatever this is" for the *last* activity should
+  /// use [TrackerController.untagActivity], which re-points the block at the
+  /// catch-all instead of refusing.
   Future<void> removeActivityFromChange(String changeId, String activityId);
+
+  /// Swap one member of a change's set, leaving the rest alone.
+  ///
+  /// Not remove-then-add: on a single-activity block the remove would be refused
+  /// by the empty-set guard, so the two steps are not interchangeable with the
+  /// one operation. A no-op if [from] is not in the set, or [to] already is.
+  Future<void> replaceActivityInChange(String changeId, String from, String to);
 
   /// Replace a change's whole activity set with exactly `{activityId}`, leaving
   /// its [ActivityChanges.changedAt] alone.

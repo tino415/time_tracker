@@ -128,6 +128,38 @@ class TrackerController {
     }
   }
 
+  /// Take [activityId] off [block], whatever else is on it.
+  ///
+  /// Removing the *last* activity does not fail and is not refused: the block
+  /// becomes an unnamed one. That is what the catch-all is for — a block whose
+  /// activity is not decided — so "a block always tracks something" still holds,
+  /// because Unnamed is something.
+  ///
+  /// The alternative was a disabled remove on the last row, which would have
+  /// made the user carry a rule the data model can express itself. Saying "this
+  /// was not that activity" is a complete thought; being told you may not say it
+  /// until you have decided what it *was* is not.
+  Future<void> untagActivity(Block block, String activityId) async {
+    final ids = [for (final a in block.activities) a.syncId];
+    if (!ids.contains(activityId)) return;
+
+    if (ids.length > 1) {
+      await _changes.removeActivityFromChange(block.change.syncId, activityId);
+      return;
+    }
+
+    // The catch-all has to exist before the block can point at it, exactly as
+    // when the watch starts an unnamed block.
+    final unsorted = await _activities.ensureUnsorted();
+    await _changes.setChangeActivity(block.change.syncId, unsorted.syncId);
+  }
+
+  /// Swap one activity on [block] for another, leaving the rest of the set.
+  Future<void> retagActivity(Block block, String from, String to) async {
+    await _changes.replaceActivityInChange(block.change.syncId, from, to);
+    await _activities.touchUsed(to, DateTime.now());
+  }
+
   /// Re-point a block at [activityId], keeping its start and replacing whatever
   /// set it had. This answers an unnamed block, and is also how a named one is
   /// corrected ("that hour was Email, not Deep work").

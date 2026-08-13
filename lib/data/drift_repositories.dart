@@ -409,13 +409,27 @@ class DriftChangeRepository implements ChangeRepository {
 
   @override
   Future<void> addActivityToChange(String changeId, String activityId) async {
-    await _db.into(_db.activityChangeActivities).insert(
-          ActivityChangeActivitiesCompanion.insert(
-            activityChangeId: changeId,
-            activityId: activityId,
-          ),
-          mode: InsertMode.insertOrIgnore,
-        );
+    await _db.transaction(() async {
+      final already = await (_db.select(_db.activityChangeActivities)
+            ..where((t) =>
+                t.activityChangeId.equals(changeId) & t.activityId.equals(activityId)))
+          .getSingleOrNull();
+      // Already tagged: nothing changed, so nothing to push. Bumping anyway
+      // would re-send an identical block every time the sheet was opened.
+      if (already != null) return;
+
+      await _db.into(_db.activityChangeActivities).insert(
+            ActivityChangeActivitiesCompanion.insert(
+              activityChangeId: changeId,
+              activityId: activityId,
+            ),
+            mode: InsertMode.insertOrIgnore,
+          );
+      // The set travels inside the change and the join row carries no version of
+      // its own, so without this the tag stays on this device — the same reason
+      // setChangeActivity bumps, which this had simply not been given.
+      await _bump(changeId, const ActivityChangesCompanion());
+    });
   }
 
   @override
@@ -427,10 +441,46 @@ class DriftChangeRepository implements ChangeRepository {
           .then((rows) => rows.length);
       // Never strip a block down to an empty set — something is always tracking.
       if (count <= 1) return;
-      await (_db.delete(_db.activityChangeActivities)
+      final removed = await (_db.delete(_db.activityChangeActivities)
             ..where((t) =>
                 t.activityChangeId.equals(changeId) & t.activityId.equals(activityId)))
           .go();
+      // Only when something actually went. A refused or no-op untag must not
+      // dirty the row, or every sync would re-send an unchanged block.
+      if (removed == 0) return;
+      await _bump(changeId, const ActivityChangesCompanion());
+    });
+  }
+
+  @override
+  Future<void> replaceActivityInChange(String changeId, String from, String to) async {
+    await _db.transaction(() async {
+      final links = await (_db.select(_db.activityChangeActivities)
+            ..where((t) => t.activityChangeId.equals(changeId)))
+          .get();
+      final ids = links.map((l) => l.activityId).toSet();
+      // Nothing to swap, or the destination is already here — either way the set
+      // would be unchanged, and an unchanged set must not be marked for pushing.
+      if (!ids.contains(from) || ids.contains(to)) return;
+
+      final activity = await (_db.select(_db.activities)
+            ..where((t) => t.syncId.equals(to)))
+          .getSingleOrNull();
+      if (activity == null) return;
+
+      await (_db.delete(_db.activityChangeActivities)
+            ..where((t) =>
+                t.activityChangeId.equals(changeId) & t.activityId.equals(from)))
+          .go();
+      await _db.into(_db.activityChangeActivities).insert(
+            ActivityChangeActivitiesCompanion.insert(
+              activityChangeId: changeId,
+              activityId: to,
+            ),
+            mode: InsertMode.insertOrIgnore,
+          );
+      // The set is part of the change for sync — same rule as everywhere else.
+      await _bump(changeId, const ActivityChangesCompanion());
     });
   }
 

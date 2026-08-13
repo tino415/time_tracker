@@ -23,17 +23,48 @@ Future<void> assignBlockActivity(
   WidgetRef ref,
   Block block,
 ) async {
-  await showModalBottomSheet<void>(
+  final id = await pickOrCreateActivity(
+    context,
+    ref,
+    title: 'What was this?',
+    trailing: '${formatTimeOfDay(block.start)} · '
+        '${formatDurationHm(block.duration(DateTime.now()))}',
+  );
+  if (id == null) return;
+  await ref.read(trackerControllerProvider).assignBlock(block.change.syncId, id);
+}
+
+/// Pick an activity, or make one on the spot. Returns the id, or null if
+/// dismissed.
+///
+/// Was private to "what was this?", and generalised because tagging needs the
+/// same thing. The plain picker cannot create, so every tag used to mean backing
+/// out to the activity list, making the row, and starting again — which is
+/// exactly the moment you least want to leave what you were doing.
+///
+/// [exclude] drops activities already on the block: offering to tag something
+/// twice is offering a no-op.
+Future<String?> pickOrCreateActivity(
+  BuildContext context,
+  WidgetRef ref, {
+  required String title,
+  String? trailing,
+  Set<String> exclude = const {},
+}) {
+  return showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _AssignSheet(block: block),
+    builder: (_) => _AssignSheet(title: title, trailing: trailing, exclude: exclude),
   );
 }
 
 class _AssignSheet extends ConsumerStatefulWidget {
-  const _AssignSheet({required this.block});
-  final Block block;
+  const _AssignSheet({required this.title, this.trailing, this.exclude = const {}});
+
+  final String title;
+  final String? trailing;
+  final Set<String> exclude;
 
   @override
   ConsumerState<_AssignSheet> createState() => _AssignSheetState();
@@ -54,6 +85,8 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
     final matches = all.where((a) {
       // The catch-all is not something you can answer *with*.
       if (isUnsorted(a)) return false;
+      // Already on the block — tagging it again would do nothing.
+      if (widget.exclude.contains(a.syncId)) return false;
       if (q.isEmpty) return true;
       return a.name.toLowerCase().contains(q) ||
           (a.externalId?.toLowerCase().contains(q) ?? false);
@@ -68,13 +101,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
     return matches.take(6).toList();
   }
 
-  Future<void> _assign(String activityId) async {
-    await ref.read(trackerControllerProvider).assignBlock(
-          widget.block.change.syncId,
-          activityId,
-        );
-    if (mounted) Navigator.pop(context);
-  }
+  void _assign(String activityId) => Navigator.pop(context, activityId);
 
   Future<void> _createAndAssign() async {
     final name = _controller.text.trim();
@@ -84,7 +111,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
       initialName: name.isEmpty ? null : name,
     );
     if (created == null) return;
-    await _assign(created.syncId);
+    if (mounted) _assign(created.syncId);
   }
 
   @override
@@ -107,13 +134,13 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
             children: [
               Row(
                 children: [
-                  NeoChip('What was this?'),
+                  NeoChip(widget.title),
                   const Spacer(),
-                  Text(
-                    '${formatTimeOfDay(widget.block.start)} · '
-                    '${formatDurationHm(widget.block.duration(DateTime.now()))}',
-                    style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
-                  ),
+                  if (widget.trailing != null)
+                    Text(
+                      widget.trailing!,
+                      style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+                    ),
                 ],
               ),
               const SizedBox(height: 12),

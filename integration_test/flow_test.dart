@@ -50,7 +50,7 @@ void main() {
 
     await tester.tap(inScreen(TimelineScreen, find.text('Deep work')));
     await settle(tester);
-    await tester.tap(find.text('+ TAG ANOTHER ACTIVITY'));
+    await tester.tap(find.text('+ ANOTHER ACTIVITY'));
     await settle(tester);
     await tester.tap(find.text('Email').last);
     await settle(tester);
@@ -100,7 +100,9 @@ void main() {
 
     await tester.tap(inScreen(NowScreen, find.text('⋯ EDIT BLOCK')));
     await settle(tester);
-    await tester.tap(find.text('CHANGE ACTIVITY'));
+    // The row's own swap. On a single-activity block this is what "change
+    // activity" used to mean, minus the sheet that asked which one.
+    await tester.tap(find.text('SWAP'));
     await settle(tester);
     await tester.tap(find.text('Review').last);
     await settle(tester);

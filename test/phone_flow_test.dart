@@ -56,7 +56,7 @@ void main() {
     // Tag the open block with the second activity (the forgot-to-switch case).
     await tester.tap(inScreen(TimelineScreen, find.text('Deep work')));
     await settle(tester);
-    await tester.tap(find.text('+ TAG ANOTHER ACTIVITY'));
+    await tester.tap(find.text('+ ANOTHER ACTIVITY'));
     await settle(tester);
     await tester.tap(find.text('Email').last); // the picker row
     await settle(tester);

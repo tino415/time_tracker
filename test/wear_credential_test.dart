@@ -169,6 +169,91 @@ void main() {
     });
   });
 
+  /// Start the watch side and get past its opening snapshot request.
+  ///
+  /// It asks as soon as it starts, so a bare `clear()` races that and the first
+  /// assertion counts a request nobody prompted.
+  Future<WearSyncService> startedWatch() async {
+    final service = serviceFor(isWatch: true);
+    await service.start();
+    await pumpEventQueue();
+    bridge.sent.clear();
+    return service;
+  }
+
+  group('advertise and fetch', () {
+    test('a watch with no account and a phone with none asks nothing', () async {
+      // The case that ruled out polling. Sync is opt-in, so most watches have
+      // nothing coming, and one asking every half minute forever on the chance
+      // that it might is a battery cost for nothing. Both at 0: silence.
+      final service = await startedWatch();
+
+      await bridge.receive(const BookmarkSnapshot(activities: []));
+
+      expect(bridge.sent, isEmpty);
+      expect(await store.token(), isNull);
+      service.dispose();
+    });
+
+    test('a snapshot advertising something newer prompts one request', () async {
+      final service = await startedWatch();
+
+      await bridge.receive(const BookmarkSnapshot(activities: [], credentialVersion: 3));
+
+      // Evidence, not hope: it asks because the phone said there is something.
+      final asked = bridge.sent.whereType<SnapshotRequest>();
+      expect(asked, hasLength(1));
+      expect(asked.single.credentialVersion, 0);
+      service.dispose();
+    });
+
+    test('an answered watch stops asking', () async {
+      final service = serviceFor(isWatch: true);
+      await service.start();
+
+      await bridge.receive(const BookmarkSnapshot(activities: [], credentialVersion: 3));
+      await bridge.receive(const SyncCredential(token: _token, version: 3));
+      bridge.sent.clear();
+
+      // The next snapshot advertises the same version it now holds, so there is
+      // nothing to fetch and nothing is sent.
+      await bridge.receive(const BookmarkSnapshot(activities: [], credentialVersion: 3));
+
+      expect(bridge.sent, isEmpty);
+      expect(await store.token(), _token);
+      service.dispose();
+    });
+
+    test('a lost credential does not become a ping-pong', () async {
+      // The request makes the phone re-send its snapshot. If the credential half
+      // is lost while the snapshot half arrives, the answer would prompt the
+      // question it answers, as fast as the two can talk.
+      final service = await startedWatch();
+
+      for (var i = 0; i < 5; i++) {
+        await bridge.receive(const BookmarkSnapshot(activities: [], credentialVersion: 3));
+      }
+
+      expect(bridge.sent.whereType<SnapshotRequest>(), hasLength(1),
+          reason: 'the cooldown bounds it to one exchange, not a spin');
+      service.dispose();
+    });
+
+    test('the phone advertises its version on every snapshot', () async {
+      await store.grantCredential(_token);
+      final service = await startedPhone();
+
+      await bridge.receive(const SnapshotRequest(credentialVersion: 1));
+
+      final snapshot = bridge.sent.whereType<BookmarkSnapshot>().last;
+      // The number, so a watch can tell there is something to fetch — never the
+      // token, which only goes to a peer that says it is behind.
+      expect(snapshot.credentialVersion, 1);
+      expect(bridge.sent.whereType<SyncCredential>(), isEmpty);
+      service.dispose();
+    });
+  });
+
   group('the store', () {
     test('granting moves the version, adopting does not invent one', () async {
       expect(await store.credentialVersion(), 0);

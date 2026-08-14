@@ -171,7 +171,11 @@ class CurrentBlock {
 /// that missed messages while off the wrist recovers completely from the next
 /// one instead of accumulating drift.
 class BookmarkSnapshot extends WearMessage {
-  const BookmarkSnapshot({required this.activities, this.current});
+  const BookmarkSnapshot({
+    required this.activities,
+    this.current,
+    this.credentialVersion = 0,
+  });
 
   static const kind = 'bookmarks';
 
@@ -181,6 +185,23 @@ class BookmarkSnapshot extends WearMessage {
   /// multi-activity ("forgot to switch") block, which the watch cannot show.
   final CurrentBlock? current;
 
+  /// How many times the sender's account has been granted or revoked — the
+  /// number only, never the token.
+  ///
+  /// This is how the watch learns there is a credential to fetch without ever
+  /// guessing. Polling for one is not an option: sync is opt-in, so most watches
+  /// have nothing coming, and a device asking every half minute forever on the
+  /// chance that it might is a battery cost for nothing. Advertised here instead,
+  /// on a message the phone already sends whenever the catalogue changes or the
+  /// peer reconnects, so it costs no extra traffic at all.
+  ///
+  /// When both sides sit at 0 — no account anywhere — nothing is ever asked and
+  /// nothing is ever sent. That is the common case, and it is silent.
+  ///
+  /// The number is not a secret. It says how often the account changed and
+  /// nothing else: no token, and no hint of one.
+  final int credentialVersion;
+
   @override
   String get type => kind;
 
@@ -188,16 +209,22 @@ class BookmarkSnapshot extends WearMessage {
   Map<String, Object?> toPayload() => {
         'activities': [for (final a in activities) a.toPayload()],
         'current': current?.toPayload(),
+        'credentialVersion': credentialVersion,
       };
 
   static BookmarkSnapshot fromPayload(Map<Object?, Object?> payload) {
     final raw = payload['activities'];
     final list = raw is List ? raw : const [];
+    final version = payload['credentialVersion'];
     return BookmarkSnapshot(
       // Unparseable entries are skipped rather than failing the whole snapshot:
       // a peer on a newer build may send fields this one does not know.
       activities: [for (final entry in list) ?WearActivity.fromPayload(entry)],
       current: CurrentBlock.fromPayload(payload['current']),
+      // A peer too old to advertise one reads as 0, which is never newer than
+      // anything — so an older phone simply never prompts a fetch, rather than
+      // prompting one that cannot be answered.
+      credentialVersion: version is int ? version : 0,
     );
   }
 }

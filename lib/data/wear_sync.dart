@@ -137,6 +137,37 @@ class WearSyncService {
     ];
   }
 
+  /// Watch → phone: "you have something I do not".
+  ///
+  /// Re-uses the snapshot request, which already carries this device's
+  /// credential version, rather than adding a message that would say the same
+  /// thing. The phone answers with the credential because its version is newer,
+  /// and re-sends the snapshot, which is cheap and idempotent.
+  ///
+  /// Sent once per snapshot that advertises something newer. If it fails to
+  /// deliver, the next snapshot advertises the same gap and prompts it again —
+  /// so the retry is driven by traffic that already exists rather than a timer,
+  /// and a device with nothing to fetch never sends anything at all.
+  ///
+  /// The cooldown stops that becoming a ping-pong. The request makes the phone
+  /// re-send its snapshot, and if the credential half is lost while the snapshot
+  /// half arrives, the answer would prompt the very question it answers — as
+  /// fast as the two devices can talk. Bounded here, so a persistent failure
+  /// costs one exchange a minute rather than a spin.
+  static const _credentialCooldown = Duration(minutes: 1);
+  DateTime? _askedForCredentialAt;
+
+  Future<void> _requestCredential() async {
+    final now = DateTime.now();
+    final last = _askedForCredentialAt;
+    if (last != null && now.difference(last) < _credentialCooldown) return;
+    _askedForCredentialAt = now;
+
+    await _bridge.send(
+      SnapshotRequest(credentialVersion: await _syncStore.credentialVersion()),
+    );
+  }
+
   /// Phone → watch, when the account changes and when a watch asks for
   /// something newer than it has.
   ///
@@ -197,10 +228,20 @@ class WearSyncService {
         if (version <= await _syncStore.credentialVersion()) return;
         await _syncStore.adoptCredential(token, version);
 
-      case BookmarkSnapshot(:final activities, :final current):
+      case BookmarkSnapshot(:final activities, :final current, :final credentialVersion):
         if (!_isWatch) return;
         _gotSnapshot = true;
         _snapshotRetry?.cancel();
+        // The phone has an account this device has not heard about, so ask for
+        // it — once, on evidence, rather than polling on the chance.
+        //
+        // Waiting for a snapshot and waiting for a credential are separate
+        // conditions, and conflating them is what stranded a watch that took a
+        // snapshot while the credential push was failing: it had what it was
+        // waiting for and went quiet still holding no account.
+        if (credentialVersion > await _syncStore.credentialVersion()) {
+          await _requestCredential();
+        }
         await _activities.applyBookmarkSnapshot(activities);
         if (current != null) {
           // The tracked activity may not be bookmarked, so it needs a row of its
@@ -271,7 +312,13 @@ class WearSyncService {
       }
     }
 
-    final snapshot = BookmarkSnapshot(activities: bookmarked, current: current);
+    final snapshot = BookmarkSnapshot(
+      activities: bookmarked,
+      current: current,
+      // The number only. It is what lets the watch fetch a credential when there
+      // is one to fetch, and stay silent when there is not.
+      credentialVersion: await _syncStore.credentialVersion(),
+    );
 
     final fingerprint = snapshot.toPayload().toString();
     if (!force && fingerprint == _lastSentSnapshot) return;

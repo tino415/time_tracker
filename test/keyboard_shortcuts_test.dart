@@ -24,12 +24,15 @@ import 'package:time_tracker/phone/screens/calendar_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
+import 'package:time_tracker/phone/breakpoints.dart';
 import 'package:time_tracker/phone/shortcuts.dart';
 import 'package:time_tracker/phone/widgets/neo.dart';
 
 import 'support/flow_harness.dart';
 
-/// Wide enough for the report's week selector to lay out unclipped.
+/// Wide enough for the report's week selector to lay out unclipped — and, past
+/// [sidebarBreakpoint], the shape these bindings are named for: the shell here is
+/// the desktop one, navigation down the side.
 const _desktop = Size(900, 800);
 
 /// A control that is always on the Now screen and does something checkable —
@@ -107,6 +110,22 @@ Future<bool> _tabTo(WidgetTester tester, String label) async {
     if (_focusedReads(label)) return true;
   }
   return false;
+}
+
+/// Which screen the focused control belongs to, or null for the shell's own
+/// chrome. The tabs are an [IndexedStack], so the screens you are not looking at
+/// are still built — and a Tab stop on one of those is worse than no stop.
+Type? _focusedScreen() {
+  final focused = FocusManager.instance.primaryFocus?.context;
+  if (focused == null) return null;
+  const screens = {NowScreen, TimelineScreen, ReportsScreen, ActivitiesScreen};
+  Type? found;
+  focused.visitAncestorElements((e) {
+    if (!screens.contains(e.widget.runtimeType)) return true;
+    found = e.widget.runtimeType;
+    return false;
+  });
+  return found;
 }
 
 Future<void> _seed(AppDatabase db) async {
@@ -403,6 +422,24 @@ void main() {
     await _go(tester, PhysicalKeyboardKey.keyN, LogicalKeyboardKey.keyN);
     expect(inScreen(NowScreen, find.text(_startNow)), findsOneWidget);
     expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('Tab does not stop on a screen you cannot see', (tester) async {
+    // The tabs stay built behind the one on show. If their controls are in the
+    // traversal ring, Tab walks through dozens of invisible buttons — which is a
+    // worse failure than the one this fixed.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    final visited = <Type?>{};
+    for (var i = 0; i < 40; i++) {
+      await _tab(tester);
+      visited.add(_focusedScreen());
+    }
+
+    expect(visited.difference({null, NowScreen}), isEmpty,
+        reason: 'focus left the visible screen');
 
     await disposeApp(tester);
   });

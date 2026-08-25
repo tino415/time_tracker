@@ -6,7 +6,7 @@
     "background_color": "#E7E8EA",
     "theme_color": "#2E5D3A",
     "description": "Offline-first time-activity tracker. Hierarchical activities, one-tap switching, an editable calendar, per-category reports and CSV export — stored locally, works without a network.",
-    "orientation": "portrait-primary",
+    "orientation": "any",
     "prefer_related_applications": false,
     "categories": ["productivity", "utilities"],
     "icons": [

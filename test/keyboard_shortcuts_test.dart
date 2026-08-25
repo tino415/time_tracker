@@ -25,11 +25,16 @@ import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
 import 'package:time_tracker/phone/shortcuts.dart';
+import 'package:time_tracker/phone/widgets/neo.dart';
 
 import 'support/flow_harness.dart';
 
 /// Wide enough for the report's week selector to lay out unclipped.
 const _desktop = Size(900, 800);
+
+/// A control that is always on the Now screen and does something checkable —
+/// the target the focus tests tab towards. `NeoButton` uppercases its label.
+const _startNow = '▶ START NOW · NAME IT LATER';
 
 /// Press a key by *position*, spelling out what the layout would produce.
 ///
@@ -69,6 +74,40 @@ Finder _searchField() => find.descendant(
       of: find.byType(DottedField, skipOffstage: false),
       matching: find.byType(TextField, skipOffstage: false),
     );
+
+Future<void> _tab(WidgetTester tester, {bool shift = false}) async {
+  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft, platform: 'web');
+  await tester.sendKeyEvent(LogicalKeyboardKey.tab, platform: 'web');
+  if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft, platform: 'web');
+  await tester.pump();
+}
+
+/// Whether the control that currently holds focus is the one reading [label].
+///
+/// The focused node must sit *inside* that control. Asking the other way round —
+/// does the focused element contain the label — answers true for any ancestor,
+/// and [AppShortcuts] is an ancestor of the entire app.
+bool _focusedReads(String label) {
+  final focused = FocusManager.instance.primaryFocus?.context;
+  if (focused == null) return false;
+  return find
+      .descendant(
+        of: find.ancestor(of: find.text(label), matching: find.byType(NeoPressable)),
+        matching: find.byElementPredicate((e) => identical(e, focused)),
+      )
+      .evaluate()
+      .isNotEmpty;
+}
+
+/// Tab until [label] holds focus. Bounded, so a tree with no stop on it fails
+/// the test rather than hanging it.
+Future<bool> _tabTo(WidgetTester tester, String label) async {
+  for (var i = 0; i < 40; i++) {
+    await _tab(tester);
+    if (_focusedReads(label)) return true;
+  }
+  return false;
+}
 
 Future<void> _seed(AppDatabase db) async {
   final activities = DriftActivityRepository(db);
@@ -313,6 +352,71 @@ void main() {
 
     expect(find.text('Keyboard'), findsOneWidget);
     expect(find.textContaining('Previous week'), findsWidgets);
+
+    await disposeApp(tester);
+  });
+
+  // Tab is not a binding of ours — it is the one key the framework already
+  // handles, and it did nothing because the app gave it nowhere to go. Every
+  // control was a GestureDetector, which cannot hold focus, so the only stops in
+  // the whole tree were the text fields.
+  testWidgets('Tab reaches a button, Shift+Tab leaves it', (tester) async {
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    expect(await _tabTo(tester, _startNow), isTrue,
+        reason: 'Tab never reached the start button');
+
+    await _tab(tester, shift: true);
+    expect(_focusedReads(_startNow), isFalse);
+
+    await _tab(tester);
+    expect(_focusedReads(_startNow), isTrue);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('Enter presses the focused button', (tester) async {
+    // Reaching a control is only half of it: a focus ring over something that
+    // cannot be pressed from the keyboard is decoration.
+    final db = await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    expect(await _tabTo(tester, _startNow), isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'web');
+    await settle(tester);
+
+    expect(await db.select(db.activityChanges).get(), hasLength(2));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('Tab on a screen with no field does not go deaf', (tester) async {
+    // Traversal and the bindings share one node: the shell's handler only hears
+    // keys while it is in the focus chain. Moving focus off it with Tab must not
+    // cost the keyboard, whichever screen is showing — this held before the
+    // controls became focusable too, and the point is that adding stops to the
+    // ring did not change it.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+    await _go(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    await _tab(tester);
+
+    await _go(tester, PhysicalKeyboardKey.keyN, LogicalKeyboardKey.keyN);
+    expect(inScreen(NowScreen, find.text(_startNow)), findsOneWidget);
+    expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a focused button does not silence the bare keys', (tester) async {
+    // The typing guard asks whether an EditableText has focus. A button is not
+    // one, so holding focus on it must leave the bindings alone — otherwise
+    // tabbing anywhere would switch the keyboard off.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    expect(await _tabTo(tester, _startNow), isTrue);
+    await _go(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
 
     await disposeApp(tester);
   });

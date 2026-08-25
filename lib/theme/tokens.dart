@@ -54,8 +54,17 @@ class NeoTokens extends ThemeExtension<NeoTokens> {
 
   /// Hard, zero-blur offset shadow — the signature neobrutalist device. Press
   /// interactions collapse this to `[]` and translate by [offset].
-  List<BoxShadow> hardShadow([double offset = 6]) => [
-    BoxShadow(color: shadow, offset: Offset(offset, offset), blurRadius: 0),
+  List<BoxShadow> hardShadow([double offset = 6]) => _hardShadow(shadow, offset);
+
+  /// The same shadow in [brand]: the keyboard focus ring.
+  ///
+  /// Drawn in the shadow rather than the border because it then costs no layout —
+  /// focus never nudges what it lands on — and because it still reads on a
+  /// brand-filled button, where a brand border would disappear into the fill.
+  List<BoxShadow> focusShadow([double offset = 6]) => _hardShadow(brand, offset);
+
+  static List<BoxShadow> _hardShadow(Color color, double offset) => [
+    BoxShadow(color: color, offset: Offset(offset, offset), blurRadius: 0),
   ];
 
   /// A bordered, hard-shadowed card decoration. Pass an activity [fill] to make

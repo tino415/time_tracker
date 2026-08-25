@@ -377,6 +377,9 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
       // they travel up from whatever holds primary focus, and the route's own
       // scope sits beside this tree rather than under it.
       autofocus: true,
+      // It holds the keyboard, not a control. Tab stopping on it would spend a
+      // press on nothing the eye can find.
+      skipTraversal: true,
       onKeyEvent: _onKey,
       child: Stack(
         children: [

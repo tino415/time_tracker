@@ -76,6 +76,11 @@ class NeoSectionHeader extends StatelessWidget {
 
 /// Hard-shadow pressable. On press it translates by the shadow offset and
 /// collapses the shadow to zero (physical-button feel), ~120ms.
+///
+/// Every control in the app is one of these, so it is also where the app gets
+/// keyboard reach: it takes focus, answers Enter and Space, and shows a mouse
+/// cursor. A tap deliberately does *not* take focus — the activity editor
+/// restores the caret after a tap by asking whether the name field still had it.
 class NeoPressable extends StatefulWidget {
   const NeoPressable({
     super.key,
@@ -104,11 +109,20 @@ class NeoPressable extends StatefulWidget {
 
 class _NeoPressableState extends State<NeoPressable> {
   bool _pressed = false;
+  bool _focused = false;
 
   void _set(bool v) {
     if (widget.onTap == null && widget.onLongPress == null) return;
     if (_pressed != v) setState(() => _pressed = v);
   }
+
+  /// Enter and Space arrive as an intent rather than a key event, so the button
+  /// answers them the same way whichever of the two the platform sends.
+  Map<Type, Action<Intent>> get _activate => {
+    ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) => widget.onTap?.call()),
+    ButtonActivateIntent:
+        CallbackAction<ButtonActivateIntent>(onInvoke: (_) => widget.onTap?.call()),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -116,27 +130,39 @@ class _NeoPressableState extends State<NeoPressable> {
     final o = widget.shadowOffset;
     final enabled = widget.onTap != null || widget.onLongPress != null;
 
-    return GestureDetector(
-      onTapDown: enabled ? (_) => _set(true) : null,
-      onTapUp: enabled ? (_) => _set(false) : null,
-      onTapCancel: enabled ? () => _set(false) : null,
-      onTap: widget.onTap,
-      onLongPress: widget.onLongPress,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 110),
-        curve: Curves.easeOut,
-        transform: Matrix4.translationValues(
-          _pressed ? o : 0,
-          _pressed ? o : 0,
-          0,
+    return FocusableActionDetector(
+      enabled: enabled,
+      mouseCursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+      actions: _activate,
+      // Only when the focus came from a keyboard: a ring drawn after a tap is
+      // noise on a touch screen, which is what the highlight mode is for.
+      onShowFocusHighlight: (v) => setState(() => _focused = v),
+      child: GestureDetector(
+        onTapDown: enabled ? (_) => _set(true) : null,
+        onTapUp: enabled ? (_) => _set(false) : null,
+        onTapCancel: enabled ? () => _set(false) : null,
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 110),
+          curve: Curves.easeOut,
+          transform: Matrix4.translationValues(
+            _pressed ? o : 0,
+            _pressed ? o : 0,
+            0,
+          ),
+          decoration: BoxDecoration(
+            color: widget.fill ?? t.surface,
+            border: Border.all(color: t.line, width: widget.borderWidth),
+            boxShadow: _pressed
+                ? const []
+                : _focused
+                    ? t.focusShadow(o)
+                    : t.hardShadow(o),
+          ),
+          padding: widget.padding,
+          child: widget.child,
         ),
-        decoration: BoxDecoration(
-          color: widget.fill ?? t.surface,
-          border: Border.all(color: t.line, width: widget.borderWidth),
-          boxShadow: _pressed ? const [] : t.hardShadow(o),
-        ),
-        padding: widget.padding,
-        child: widget.child,
       ),
     );
   }

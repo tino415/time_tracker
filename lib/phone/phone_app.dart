@@ -151,7 +151,11 @@ class _Header extends ConsumerWidget {
   }
 }
 
-class _TabButton extends StatelessWidget {
+/// A tab in the bottom bar. Focus is drawn as an inset brand outline rather than
+/// [NeoPressable]'s brand shadow: the bar's cells carry no shadow to recolour,
+/// and a *foreground* decoration paints over the cell without insetting its
+/// label the way a real border would.
+class _TabButton extends StatefulWidget {
   const _TabButton({required this.label, required this.active, required this.onTap});
 
   final String label;
@@ -159,23 +163,42 @@ class _TabButton extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_TabButton> createState() => _TabButtonState();
+}
+
+class _TabButtonState extends State<_TabButton> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
     final t = neo(context);
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        color: active ? t.line : t.surface,
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        alignment: Alignment.center,
-        child: Text(
-          label.toUpperCase(),
-          style: mono(
-            context,
-            size: 11,
-            weight: FontWeight.w800,
-            spacing: .6,
-            color: active ? t.surface : t.muted,
+    return FocusableActionDetector(
+      mouseCursor: SystemMouseCursors.click,
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) => widget.onTap()),
+        ButtonActivateIntent:
+            CallbackAction<ButtonActivateIntent>(onInvoke: (_) => widget.onTap()),
+      },
+      onShowFocusHighlight: (v) => setState(() => _focused = v),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: widget.active ? t.line : t.surface,
+          foregroundDecoration: _focused
+              ? BoxDecoration(border: Border.all(color: t.brand, width: 3))
+              : null,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          alignment: Alignment.center,
+          child: Text(
+            widget.label.toUpperCase(),
+            style: mono(
+              context,
+              size: 11,
+              weight: FontWeight.w800,
+              spacing: .6,
+              color: widget.active ? t.surface : t.muted,
+            ),
           ),
         ),
       ),

@@ -422,6 +422,35 @@ try {
   }
   check('the header button opens the cheatsheet', keysButton, buttonDetail);
 
+  // --- Tab reaches the controls ---------------------------------------------
+  // The widget suite can prove Flutter's own focus tree moves. Whether the
+  // *browser* agrees is a separate question and the one that matters: the app
+  // paints into a canvas, so a control is only reachable by keyboard if the
+  // engine gives it a real DOM node to focus. That is what ensureSemantics()
+  // buys, and this is the check that it is still buying it.
+  let tabFocuses = false;
+  let tabDetail = 'not reached';
+  try {
+    await page.keyboard.press('Escape'); // leave the cheatsheet
+    await sleep(1000);
+    const landed = [];
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Tab');
+      await sleep(250);
+      const on = await page.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) return null;
+        return (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 40);
+      });
+      if (on) landed.push(on);
+    }
+    tabFocuses = landed.length > 0;
+    tabDetail = landed.slice(0, 3).join(' | ') || 'focus never left the document body';
+  } catch (e) {
+    tabDetail = (e.message ?? String(e)).split('\n')[0];
+  }
+  check('Tab moves focus onto the controls', tabFocuses, tabDetail);
+
   const fatal = errors.filter((e) => !/favicon/i.test(e));
   check('no page errors', fatal.length === 0, fatal.slice(0, 3).join(' | '));
 } finally {

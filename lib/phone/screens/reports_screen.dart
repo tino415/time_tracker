@@ -25,6 +25,12 @@ import '../widgets/sync_setup.dart';
 /// its `State` is not reachable from the app shell where the bindings live.
 final weekOffsetProvider = StateProvider<int>((_) => 0);
 
+/// Which day inside the shown week the report is scoped to; null = the week.
+///
+/// A day only means anything inside the week it belongs to, so stepping the week
+/// clears it.
+final reportDayProvider = StateProvider<DateTime?>((_) => null);
+
 /// Step the report week, refusing to walk into the future.
 ///
 /// The guard lives here rather than in the button, so the keyboard and the
@@ -33,11 +39,16 @@ void shiftReportWeek(WidgetRef ref, int delta) {
   final next = ref.read(weekOffsetProvider) + delta;
   if (next > 0) return;
   ref.read(weekOffsetProvider.notifier).state = next;
+  ref.read(reportDayProvider.notifier).state = null;
 }
 
-/// Weekly report: rolled-up horizontal bars per top-level category that **drill
-/// down into their sub-activities**, and a client-side CSV export (optionally
-/// subtree-filtered).
+/// Weekly report: a stacked bar per day of the week, rolled-up horizontal bars
+/// per top-level category that **drill down into their sub-activities**, and a
+/// client-side CSV export (optionally subtree-filtered).
+///
+/// The two sections are linked: tapping a day scopes the category bars to it,
+/// which is the question a day row provokes ("what was Tuesday made of?") and,
+/// on today's row, gives a day report without a second range control.
 ///
 /// The drill-down is the point of a hierarchical catalogue: `Work > Payout >
 /// CU-1042` means "how much did I work for Payout" is a question about a middle
@@ -71,12 +82,25 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final weekOffset = ref.watch(weekOffsetProvider);
     final base = DateTime(now.year, now.month, now.day + weekOffset * 7);
     final week = localWeekRange(base);
+    final day = ref.watch(reportDayProvider);
 
-    final totals = reportTotals(
+    final days = dailyTotals(
       blocks: blocks,
       tree: tree,
       rangeStart: week.start,
       rangeEnd: week.end,
+      now: now,
+    );
+
+    // The category section follows the day selection; the day bars keep
+    // describing the whole week, so the row you tapped does not resize under
+    // your finger.
+    final scope = day == null ? week : localDayRange(day);
+    final totals = reportTotals(
+      blocks: blocks,
+      tree: tree,
+      rangeStart: scope.start,
+      rangeEnd: scope.end,
       now: now,
     );
 
@@ -94,8 +118,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           onNext: weekOffset < 0 ? () => shiftReportWeek(ref, 1) : null,
         ),
         const SizedBox(height: 18),
+        ..._dayRows(tree, days, selected: day),
         NeoSectionHeader(
-          'Per category',
+          day == null ? 'Per category' : 'Per category · ${formatWeekdayDay(day)}',
           brand: true,
           trailing: drillable
               ? Text('tap to drill in',
@@ -105,8 +130,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         const SizedBox(height: 12),
         if (roots.isEmpty)
           // An empty state, not a zero total: with continuous tracking the only
-          // way to reach it is a week that holds no data at all.
-          Text('nothing tracked this week', style: mono(context, color: t.muted))
+          // way to reach it is a range that holds no data at all.
+          Text(
+            day == null ? 'nothing tracked this week' : 'nothing tracked on ${formatWeekdayDay(day)}',
+            style: mono(context, color: t.muted),
+          )
         else
           ..._rows(tree, totals, roots, max: maxRoot, depth: 0),
         const SizedBox(height: 18),
@@ -122,6 +150,50 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         const _StorageLine(),
       ],
     );
+  }
+
+  /// The per-day section: one stacked bar per day the week has reached, tappable
+  /// to scope the rest of the screen to that day.
+  ///
+  /// Segments are ordered and coloured by the **week's** category ranking, not
+  /// each day's own, so a category keeps its place in every bar and the seven
+  /// rows can be compared down the column instead of row by row.
+  List<Widget> _dayRows(ActivityTree tree, List<DayTotals> days, {required DateTime? selected}) {
+    final byRoot = <String, Duration>{};
+    var busiest = Duration.zero;
+    for (final day in days) {
+      day.byRoot.forEach((id, d) => byRoot[id] = (byRoot[id] ?? Duration.zero) + d);
+      if (day.total > busiest) busiest = day.total;
+    }
+    if (byRoot.isEmpty) return const [];
+
+    final ranked = byRoot.keys.toList()..sort((a, b) => byRoot[b]!.compareTo(byRoot[a]!));
+
+    return [
+      NeoSectionHeader(
+        'Per day',
+        trailing: Text(
+          selected == null ? 'tap to scope' : 'tap again to clear',
+          style: mono(context, size: 10, weight: FontWeight.w700, color: neo(context).muted),
+        ),
+      ),
+      const SizedBox(height: 12),
+      for (final day in days)
+        _DayBar(
+          label: formatWeekdayDay(day.day),
+          segments: [
+            for (final id in ranked)
+              if (day.of(id) > Duration.zero)
+                (color: parseHexColor(tree[id]?.color ?? ''), duration: day.of(id)),
+          ],
+          total: day.total,
+          max: busiest,
+          selected: day.day == selected,
+          onTap: () => ref.read(reportDayProvider.notifier).state =
+              day.day == selected ? null : day.day,
+        ),
+      const SizedBox(height: 18),
+    ];
   }
 
   /// One level of the drill-down: a bar per id in [ids], and — under any that is
@@ -384,6 +456,97 @@ class _WeekSelector extends StatelessWidget {
 List<String> _tracked(ReportTotals totals, List<String> ids) {
   return ids.where((id) => totals.subtreeOf(id) > Duration.zero).toList()
     ..sort((a, b) => totals.subtreeOf(b).compareTo(totals.subtreeOf(a)));
+}
+
+/// One day of the week, as a bar segmented by top-level category.
+///
+/// Stacked rather than a bare total because "what was Tuesday" is the question a
+/// day row raises, and answering it in the row itself beats a second screen. It
+/// stays legible on a phone only because the days run down the page — seven bars
+/// side by side would each be a sliver.
+///
+/// [max] is the week's busiest day, so bar lengths compare across the section;
+/// the unfilled tail is the difference from that day.
+class _DayBar extends StatelessWidget {
+  const _DayBar({
+    required this.label,
+    required this.segments,
+    required this.total,
+    required this.max,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final List<({Color color, Duration duration})> segments;
+  final Duration total;
+  final Duration max;
+
+  /// This day is what the rest of the screen is scoped to.
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    // Flex weights in seconds, not microseconds: the ratio is the same and the
+    // numbers stay in a range that reads in a debugger.
+    final weights = [for (final s in segments) s.duration.inSeconds < 1 ? 1 : s.duration.inSeconds];
+    final rest = max.inSeconds - weights.fold<int>(0, (a, b) => a + b);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // The same fixed slot the category rows use, so both sections'
+                // labels start on one line.
+                SizedBox(
+                  width: 16,
+                  child: Text(selected ? '▾' : '▸',
+                      style: mono(context, size: 14, weight: FontWeight.w800, color: t.muted)),
+                ),
+                Expanded(
+                  child: Text(label,
+                      style: mono(
+                        context,
+                        size: 14,
+                        weight: FontWeight.w700,
+                        color: selected ? t.brand : t.ink,
+                      )),
+                ),
+                Text(formatDurationHm(total),
+                    style: mono(context, size: 14, weight: FontWeight.w800, color: t.ink)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Container(
+              height: 20,
+              decoration: BoxDecoration(
+                color: t.surface2,
+                border: Border.all(color: selected ? t.brand : t.line, width: 3),
+              ),
+              child: Row(
+                // Childless colour boxes measure zero high; stretching them fills
+                // the bar.
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < segments.length; i++)
+                    Expanded(flex: weights[i], child: ColoredBox(color: segments[i].color)),
+                  if (rest > 0) Expanded(flex: rest, child: const SizedBox.shrink()),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// One labelled bar in the drill-down. Deeper rows are indented and rendered a

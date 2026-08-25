@@ -71,6 +71,72 @@ ReportTotals reportTotals({
   );
 }
 
+/// One local day of a report range, split across the top-level categories.
+class DayTotals {
+  const DayTotals({required this.day, required this.byRoot});
+
+  /// Local midnight the day starts at.
+  final DateTime day;
+
+  /// Top-level activity id -> time booked anywhere in that root's subtree.
+  final Map<String, Duration> byRoot;
+
+  Duration get total => byRoot.values.fold(Duration.zero, (a, b) => a + b);
+
+  Duration of(String rootId) => byRoot[rootId] ?? Duration.zero;
+}
+
+/// Day-resolution breakdown of [rangeStart, rangeEnd), oldest day first.
+///
+/// Same rules as [reportTotals] — even split across a block's activities, time
+/// rolled up the tree — but only as far as the root, because a day is read as a
+/// stacked bar of top-level categories rather than drilled into. So each day's
+/// [DayTotals.total] equals what the per-category bars for that day add up to.
+///
+/// A block crossing midnight is cut at the boundary ([splitByLocalDay]) and each
+/// side lands on its own day. Days that have not happened yet are left out, so
+/// the current week ends at today rather than trailing empty rows.
+List<DayTotals> dailyTotals({
+  required List<Block> blocks,
+  required ActivityTree tree,
+  required DateTime rangeStart,
+  required DateTime rangeEnd,
+  required DateTime now,
+}) {
+  final micros = <DateTime, Map<String, int>>{};
+
+  for (final block in blocks) {
+    final blockEnd = block.end ?? now;
+    final start = block.start.isAfter(rangeStart) ? block.start : rangeStart;
+    final end = blockEnd.isBefore(rangeEnd) ? blockEnd : rangeEnd;
+    if (!end.isAfter(start)) continue;
+
+    final acts = block.activities;
+    if (acts.isEmpty) continue;
+
+    for (final seg in splitByLocalDay(start, end)) {
+      final share = seg.end.difference(seg.start).inMicroseconds ~/ acts.length;
+      if (share <= 0) continue;
+
+      final buckets = micros[seg.day] ??= {};
+      for (final a in acts) {
+        final root = tree.ancestorIdsInclusive(a.syncId).lastOrNull;
+        if (root == null) continue; // not in the catalogue: no bar to land on
+        buckets[root] = (buckets[root] ?? 0) + share;
+      }
+    }
+  }
+
+  final lastDay = rangeEnd.isBefore(now) ? rangeEnd : now;
+  final out = <DayTotals>[];
+  for (var day = rangeStart;
+      day.isBefore(rangeEnd) && !day.isAfter(lastDay);
+      day = DateTime(day.year, day.month, day.day + 1)) {
+    out.add(DayTotals(day: day, byRoot: _asDurations(micros[day] ?? const {})));
+  }
+  return out;
+}
+
 Map<String, Duration> _asDurations(Map<String, int> micros) =>
     micros.map((k, v) => MapEntry(k, Duration(microseconds: v)));
 
@@ -100,4 +166,11 @@ Iterable<({DateTime day, DateTime start, DateTime end})> splitByLocalDay(
   final start = DateTime(day.year, day.month, day.day - offset);
   final end = DateTime(start.year, start.month, start.day + 7);
   return (start: start, end: end);
+}
+
+/// The local day `[midnight, next midnight)` containing [day] — the week range's
+/// counterpart, for a report scoped to a single day.
+({DateTime start, DateTime end}) localDayRange(DateTime day) {
+  final start = DateTime(day.year, day.month, day.day);
+  return (start: start, end: DateTime(start.year, start.month, start.day + 1));
 }

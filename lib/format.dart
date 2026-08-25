@@ -68,10 +68,16 @@ DateTime? parseTimeOfDay(String input, {required DateTime onDay}) {
   return DateTime(onDay.year, onDay.month, onDay.day, hour, minute);
 }
 
+const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/// `MON 18` — weekday plus day of month, for report rows whose month is already
+/// fixed by the week being shown.
+String formatWeekdayDay(DateTime d) =>
+    '${_weekdays[d.weekday - 1].toUpperCase()} ${d.day}';
+
 /// Readable local timestamp, e.g. `14:05` today or `Mon 14:05` otherwise.
 String formatTimestamp(DateTime t, DateTime now) {
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   final sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
   final hm = formatTimeOfDay(t);
-  return sameDay ? hm : '${days[t.weekday - 1]} $hm';
+  return sameDay ? hm : '${_weekdays[t.weekday - 1]} $hm';
 }

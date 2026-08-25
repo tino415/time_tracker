@@ -6,29 +6,17 @@
 // a deep path" the whole assertion — but only with the real mono face loaded,
 // since the harness fallback has different metrics.
 
-import 'dart:io';
-
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
-import 'package:time_tracker/theme/tokens.dart';
 
 import 'support/flow_harness.dart';
 
 /// Narrower than any phone this ships to — the point is to leave the breadcrumb
 /// no room at all, so a chip that cannot shrink is guaranteed to overflow.
 const _narrow = Size(320, 720);
-
-Future<void> _loadMonoFont() async {
-  final loader = FontLoader(kMonoFont);
-  for (final weight in ['Regular', 'Bold', 'ExtraBold']) {
-    final bytes = File('assets/fonts/JetBrainsMono-$weight.ttf').readAsBytesSync();
-    loader.addFont(Future.value(ByteData.sublistView(bytes)));
-  }
-  await loader.load();
-}
 
 /// A five-level path, tracking the leaf: the shape that overflowed.
 Future<void> _seedDeepPath(AppDatabase db) async {
@@ -50,7 +38,7 @@ Future<void> _seedDeepPath(AppDatabase db) async {
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
-    await _loadMonoFont();
+    await loadMonoFont();
   });
 
   testWidgets('a deep activity path does not overflow the hero', (tester) async {

@@ -7,19 +7,19 @@
 // past week is always fully in the past and never straddles a week boundary, so
 // the expected totals do not depend on when the suite runs.
 
-import 'dart:io';
-
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
 import 'package:time_tracker/domain/reporting.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
-import 'package:time_tracker/theme/tokens.dart';
 
 import 'support/flow_harness.dart';
 
-const _phone = Size(400, 880);
+/// Phone-width but taller than any phone: the day section sits above these bars,
+/// and a `ListView` never builds a row that scrolled out of the viewport — the
+/// drilled-open rows have to fit on screen to be findable at all.
+const _phone = Size(400, 1400);
 
 /// Last Sunday at [hour]:[minute] — `DateTime` normalises the negative day.
 DateTime _at(int hour, [int minute = 0]) {
@@ -58,26 +58,10 @@ Future<void> _seedLastWeek(AppDatabase db) async {
   await changes.switchTo(tracker.syncId, at: _at(23)); // runs to the week's end
 }
 
-/// Register the app's own mono face.
-///
-/// These rows are laid out from text widths, and the harness's fallback face is
-/// wide enough that a realistic task name overflows one by a pixel or two — an
-/// artefact of the stand-in font that says nothing about the screen. Read off
-/// disk rather than through `rootBundle`: `flutter test` runs from the package
-/// root.
-Future<void> _loadMonoFont() async {
-  final loader = FontLoader(kMonoFont);
-  for (final weight in ['Regular', 'Bold', 'ExtraBold']) {
-    final bytes = File('assets/fonts/JetBrainsMono-$weight.ttf').readAsBytesSync();
-    loader.addFont(Future.value(ByteData.sublistView(bytes)));
-  }
-  await loader.load();
-}
-
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
-    await _loadMonoFont();
+    await loadMonoFont();
   });
 
   testWidgets('a category drills down into its sub-activities', (tester) async {

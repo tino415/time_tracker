@@ -2,13 +2,33 @@
 // and the on-device one under integration_test/. Both drive the same screens,
 // so the finders and the pumping strategy live here.
 
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/providers.dart';
 import 'package:time_tracker/phone/phone_app.dart';
+import 'package:time_tracker/theme/tokens.dart';
+
+/// Register the app's own mono face, for widget tests whose rows are laid out
+/// from text widths: the fallback face `flutter test` supplies is wide enough
+/// that a realistic activity name overflows one by a pixel or two — an artefact
+/// of the stand-in font that says nothing about the screen.
+///
+/// Read off disk rather than through `rootBundle`, so it only works where the
+/// package root is the working directory — `flutter test`, not a device.
+Future<void> loadMonoFont() async {
+  final loader = FontLoader(kMonoFont);
+  for (final weight in ['Regular', 'Bold', 'ExtraBold']) {
+    final bytes = File('assets/fonts/JetBrainsMono-$weight.ttf').readAsBytesSync();
+    loader.addFont(Future.value(ByteData.sublistView(bytes)));
+  }
+  await loader.load();
+}
 
 /// A bounded stand-in for `pumpAndSettle`, which would never return here: the
 /// Now hero animates forever (live dot + second ticker). Route and sheet

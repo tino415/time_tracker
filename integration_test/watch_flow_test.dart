@@ -40,6 +40,25 @@ Future<void> tapTile(WidgetTester tester, Finder finder) async {
   await settle(tester);
 }
 
+/// Pump until [ready], or give up and let the assertion that follows report it.
+///
+/// Needed because a real device has a real database. The watch's first snapshot
+/// request is sent from a fire-and-forget retry loop that reads the stored
+/// credential version on its way out, so "has it asked yet" is a question about
+/// elapsed time rather than about `start()` having returned. Waiting on the
+/// condition rather than on a fixed number of frames keeps that explicit — and
+/// keeps the test fast when the answer arrives immediately.
+Future<void> pumpUntil(
+  WidgetTester tester,
+  bool Function() ready, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!ready() && DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -76,6 +95,7 @@ void main() {
     addTearDown(sync.dispose);
     await sync.start();
 
+    await pumpUntil(tester, () => bridge.sent.whereType<SnapshotRequest>().isNotEmpty);
     expect(bridge.sent.whereType<SnapshotRequest>(), isNotEmpty,
         reason: 'the watch asks the phone for the bookmark set on start');
 

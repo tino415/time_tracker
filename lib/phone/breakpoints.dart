@@ -28,3 +28,7 @@ const double twoPaneBreakpoint = 1000.0;
 /// as a monitor and sixteen pixels tall is not a report — past about this width
 /// a row's duration has flown away from the label it belongs to.
 const double contentMaxWidth = 800.0;
+
+/// The pair is capped as one rather than a pane at a time, so a very wide
+/// monitor does not open a channel of background down the middle of it.
+const double twoPaneMaxWidth = contentMaxWidth * 2;

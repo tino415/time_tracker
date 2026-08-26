@@ -12,11 +12,19 @@ import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
 import 'package:time_tracker/phone/breakpoints.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
+import 'package:time_tracker/phone/screens/reports_screen.dart';
+import 'package:time_tracker/phone/screens/timeline_screen.dart';
+import 'package:time_tracker/phone/widgets/neo.dart';
 
 import 'support/flow_harness.dart';
 
 const _phone = Size(400, 880);
-const _desktop = Size(1200, 900);
+
+/// A sidebar, but not room for two panes.
+const _desktop = Size(900, 900);
+
+/// Wide enough to pair Now with the timeline.
+const _wide = Size(1280, 900);
 
 /// On the Now screen and always present once anything is tracked — a fixed point
 /// to measure the navigation against.
@@ -26,6 +34,36 @@ Future<void> _seed(AppDatabase db) async {
   final activities = DriftActivityRepository(db);
   final a = await activities.createActivity(name: 'Deep work', color: '#4F8FEE');
   await DriftChangeRepository(db).switchTo(a.syncId);
+}
+
+/// Four bookmarks, so how many fit on a row is visible in where the third one
+/// lands.
+Future<void> _seedBookmarks(AppDatabase db) async {
+  final activities = DriftActivityRepository(db);
+  for (final name in ['One', 'Two', 'Three', 'Four']) {
+    final a = await activities.createActivity(name: name, color: '#4F8FEE');
+    await activities.setBookmarked(a.syncId, true);
+  }
+}
+
+NeoChip _chip(String label) => find
+    .byWidgetPredicate((w) => w is NeoChip && w.text == label)
+    .evaluate()
+    .single
+    .widget as NeoChip;
+
+/// Tap a navigation destination by name.
+///
+/// Scoped by position rather than by text: once the panes are labelled, the
+/// sidebar's "TIMELINE" and the pane's chip read the same, and only one of them
+/// is a control.
+Future<void> _tapDestination(WidgetTester tester, String label) async {
+  final target = find.text(label).evaluate().firstWhere((e) {
+    final box = e.renderObject! as RenderBox;
+    return box.localToGlobal(Offset.zero).dx < sidebarWidth;
+  });
+  await tester.tap(find.byElementPredicate((e) => identical(e, target)));
+  await settle(tester);
 }
 
 Offset _at(WidgetTester tester, Finder finder) => tester.getCenter(finder);
@@ -109,6 +147,78 @@ void main() {
 
     expect(find.text('+ NEW ACTIVITY'), findsOneWidget);
     expect(inScreen(NowScreen, find.text(_startNow)), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a window with room for two shows Now beside the timeline', (tester) async {
+    await bootApp(tester, viewport: _wide, seed: _seed);
+
+    final now = tester.getTopLeft(find.byType(NowScreen));
+    final timeline = tester.getTopLeft(find.byType(TimelineScreen));
+    expect(timeline.dx, greaterThan(now.dx), reason: 'the timeline is not beside Now');
+    expect(timeline.dy, now.dy, reason: 'the panes do not start at the same height');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a window without the room does not pair them', (tester) async {
+    // 900 has the sidebar but not two panes: the panes would each be narrower
+    // than the phone these screens were laid out for.
+    await bootApp(tester, viewport: const Size(900, 900), seed: _seed);
+
+    expect(inScreen(NowScreen, find.text(_startNow)), findsOneWidget);
+    expect(find.text('≣ LIST'), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('choosing between the paired screens marks one of them', (tester) async {
+    // Both are on show, so a destination click changes nothing in the body. The
+    // chip is what answers it — and what says which screen a scoped key means.
+    await bootApp(tester, viewport: _wide, seed: _seed);
+
+    expect(_chip('Now').brand, isTrue);
+    expect(_chip('Timeline').brand, isFalse);
+
+    await _tapDestination(tester, 'TIMELINE');
+
+    expect(_chip('Now').brand, isFalse);
+    expect(_chip('Timeline').brand, isTrue);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a single column stops widening long before the window does',
+      (tester) async {
+    await bootApp(tester, viewport: const Size(2560, 1200), seed: _seed);
+    await tester.tap(find.text('REPORTS'));
+    await settle(tester);
+
+    final width = tester.getSize(find.byType(ReportsScreen)).width;
+    expect(width, contentMaxWidth);
+    // An absolute bound alone would still pass if the cap were raised to
+    // something silly.
+    expect(width, lessThan(2560 * 0.5));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a phone keeps the bookmark grid two tiles wide', (tester) async {
+    await bootApp(tester, viewport: _phone, seed: _seedBookmarks);
+
+    expect(tester.getCenter(find.text('Three')).dy,
+        greaterThan(tester.getCenter(find.text('One')).dy));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a wide pane fits more bookmarks per row', (tester) async {
+    // The tiles reflow rather than stretching: two very wide tiles say no more
+    // than two narrow ones, and the fixed tile height stays fixed either way.
+    await bootApp(tester, viewport: const Size(1600, 1000), seed: _seedBookmarks);
+
+    expect(tester.getCenter(find.text('Three')).dy, tester.getCenter(find.text('One')).dy);
 
     await disposeApp(tester);
   });

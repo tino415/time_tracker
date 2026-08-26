@@ -60,12 +60,9 @@ class _Home extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tab = ref.watch(tabProvider);
-    final screens = IndexedStack(
-      index: tab,
-      children: [for (final tt in _tabs) tt.screen],
-    );
+    final width = MediaQuery.sizeOf(context).width;
 
-    if (MediaQuery.sizeOf(context).width >= sidebarBreakpoint) {
+    if (width >= sidebarBreakpoint) {
       return Scaffold(
         body: SafeArea(
           // Grouped, or Tab zig-zags between the two. Reading order sorts by
@@ -74,7 +71,7 @@ class _Home extends ConsumerWidget {
           child: Row(
             children: [
               FocusTraversalGroup(child: const _Sidebar()),
-              Expanded(child: FocusTraversalGroup(child: screens)),
+              Expanded(child: FocusTraversalGroup(child: _wideBody(tab, width))),
             ],
           ),
         ),
@@ -84,9 +81,119 @@ class _Home extends ConsumerWidget {
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: Column(children: [const _Header(), Expanded(child: screens)]),
+        child: Column(
+          children: [
+            const _Header(),
+            Expanded(
+              child: IndexedStack(index: tab, children: [for (final tt in _tabs) tt.screen]),
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: const _TabBar(),
+    );
+  }
+
+  /// One screen per destination until there is room for two, at which point Now
+  /// and Timeline become one view: what is running and what led to it are read
+  /// together. The four destinations then address three views, and which of the
+  /// paired two is selected still decides what a scoped key acts on.
+  ///
+  /// Either way each screen is mounted exactly once — a second copy would carry
+  /// its own state and its own database subscriptions.
+  Widget _wideBody(int tab, double width) {
+    if (width < twoPaneBreakpoint) {
+      return IndexedStack(
+        index: tab,
+        children: [for (final tt in _tabs) _ReadableWidth(child: tt.screen)],
+      );
+    }
+
+    return IndexedStack(
+      index: tab <= timelineTab ? 0 : tab - 1,
+      children: [
+        _NowBesideTimeline(tab: tab),
+        _ReadableWidth(child: _tabs[reportsTab].screen),
+        _ReadableWidth(child: _tabs[activitiesTab].screen),
+      ],
+    );
+  }
+}
+
+/// Caps and centres a column of content. The screens keep owning their gutters;
+/// how wide any of them is *allowed* to get is the shell's business, so the
+/// number lives in one place instead of in each screen.
+class _ReadableWidth extends StatelessWidget {
+  const _ReadableWidth({required this.child, this.maxWidth = contentMaxWidth});
+
+  final Widget child;
+  final double maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: child),
+    );
+  }
+}
+
+class _NowBesideTimeline extends StatelessWidget {
+  const _NowBesideTimeline({required this.tab});
+
+  final int tab;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ReadableWidth(
+      maxWidth: twoPaneMaxWidth,
+      // A group each, or reading order walks the two columns row by row instead
+      // of down one and then down the other.
+      child: Row(
+        children: [
+          Expanded(
+            child: FocusTraversalGroup(child: _Pane(index: nowTab, selected: tab == nowTab)),
+          ),
+          Expanded(
+            child: FocusTraversalGroup(
+              child: _Pane(index: timelineTab, selected: tab == timelineTab, bordered: true),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One screen of the pair, under a chip naming it.
+///
+/// The chip is what keeps the sidebar honest: with both screens on show,
+/// choosing between them changes nothing in the body, and a destination that
+/// visibly does nothing reads as broken. Brand-filled is this app's "the live
+/// one" already, so the click has an answer and the keys have a visible scope.
+class _Pane extends StatelessWidget {
+  const _Pane({required this.index, required this.selected, this.bordered = false});
+
+  final int index;
+  final bool selected;
+  final bool bordered;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    return Container(
+      decoration: bordered
+          ? BoxDecoration(border: Border(left: BorderSide(color: t.line, width: 3)))
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+            child: NeoChip(_tabs[index].label, brand: selected),
+          ),
+          Expanded(child: _tabs[index].screen),
+        ],
+      ),
     );
   }
 }

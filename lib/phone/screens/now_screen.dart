@@ -336,8 +336,13 @@ class _SwitchGrid extends ConsumerWidget {
       // bookmarks pushed the paste field out of thumb reach. A fixed height
       // keeps a tile two lines of text tall on every device — which is all it
       // has ever needed to be.
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      //
+      // A maximum width rather than a fixed count, so a desktop pane holds three
+      // or four tiles instead of two very wide ones. 220 is chosen to leave every
+      // phone at two: a 400pt screen less its gutters is 368, and 368/230 rounds
+      // up to 2.
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
         mainAxisExtent: _tileHeight,

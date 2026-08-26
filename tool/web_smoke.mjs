@@ -451,6 +451,62 @@ try {
   }
   check('Tab moves focus onto the controls', tabFocuses, tabDetail);
 
+  // --- the window gets wider --------------------------------------------------
+  // Resizing the page we already have rather than opening a second context: it
+  // costs no extra boot, and it tests the better thing. A desktop window is
+  // resized while the app is running, and re-laying-out on that is what no
+  // widget test can convincingly cover — they each pick a size and stay there.
+  let paired = false;
+  let widened = false;
+  let wideDetail = 'not reached';
+  try {
+    // The timeline is a separate tab at phone width, so its view toggle is not
+    // in the tree at all — which is what makes it evidence of a second pane.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await sleep(2000);
+
+    // The run left us on Reports, which is a single column at any width.
+    // Clicked rather than keyed: the Tab loop above left focus on whatever it
+    // stopped on, and if that is a field the bare keys are deliberately deaf.
+    await label('NOW').click({ timeout: 10000 });
+    await sleep(1500);
+
+    // Measured, not looked up. An IndexedStack keeps the tabs you cannot see in
+    // the semantics tree, so asking whether a label is *present* answers yes at
+    // any width; where it is drawn is the question. Leaves only — the ancestor
+    // nodes carry the whole page's text and span the whole window.
+    const geometry = await page.evaluate((sidebar) => {
+      const leaves = [...document.querySelectorAll('flt-semantics')]
+        .filter((n) => !n.querySelector('flt-semantics'))
+        .map((n) => ({
+          text: (n.getAttribute('aria-label') || n.textContent || '').replace(/\s+/g, ' '),
+          box: n.getBoundingClientRect(),
+        }));
+      const first = (re) => leaves.find((n) => re.test(n.text))?.box ?? null;
+      return {
+        navInSidebar: ['NOW', 'TIMELINE', 'REPORTS', 'ACTIVITIES'].filter((l) =>
+          leaves.some((n) => n.text.trim() === l && n.box.right <= sidebar + 4),
+        ).length,
+        now: first(/START NOW/i),
+        timeline: first(/≣ LIST/),
+      };
+    }, 180);
+
+    widened = geometry.navInSidebar === 4;
+    paired = !!geometry.now &&
+      !!geometry.timeline &&
+      geometry.timeline.width > 0 &&
+      geometry.timeline.left >= geometry.now.right;
+    wideDetail = `${geometry.navInSidebar}/4 destinations in the sidebar` +
+      (geometry.now && geometry.timeline
+        ? `, now ends ${Math.round(geometry.now.right)}, timeline starts ${Math.round(geometry.timeline.left)}`
+        : ', a pane was not in the tree');
+  } catch (e) {
+    wideDetail = (e.message ?? String(e)).split('\n')[0];
+  }
+  check('the navigation survives a resize', widened, wideDetail);
+  check('a wide window pairs Now with the timeline', paired, wideDetail);
+
   const fatal = errors.filter((e) => !/favicon/i.test(e));
   check('no page errors', fatal.length === 0, fatal.slice(0, 3).join(' | '));
 } finally {

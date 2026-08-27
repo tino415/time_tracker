@@ -32,14 +32,12 @@ Future<void> showBlockActions(
   bool canMerge = true,
 }) async {
   final t = neo(context);
-  await showModalBottomSheet<void>(
-    context: context,
-    // A multi-activity block on a short screen can fill this: change, tag,
-    // untag, split, retime, note and merge is seven rows, past the 9/16 of the
-    // screen an unscrolled sheet is capped at.
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (sheetContext) => Container(
+  // This is the sheet that most needs the scroll control showNeoSheet gives
+  // every one of them: change, tag, untag, split, retime, note and merge is
+  // seven rows, past the 9/16 an unscrolled sheet is capped at.
+  await showNeoSheet<void>(
+    context,
+    (sheetContext) => Container(
       margin: const EdgeInsets.all(10),
       constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.85),
       decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),

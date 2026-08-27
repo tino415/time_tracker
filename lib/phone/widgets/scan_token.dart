@@ -13,12 +13,7 @@ import 'neo.dart';
 /// CDN on web, which the PWA's cross-origin-isolation headers refuse, and
 /// bundling a wasm decoder is a lot of payload for a field you can paste into.
 Future<String?> scanSyncToken(BuildContext context) {
-  return showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const _ScanSheet(),
-  );
+  return showNeoSheet<String>(context, (_) => const _ScanSheet());
 }
 
 class _ScanSheet extends StatefulWidget {

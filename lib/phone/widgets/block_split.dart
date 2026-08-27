@@ -31,12 +31,7 @@ Future<DateTime?> chooseSplitPoint(
   WidgetRef ref,
   Block block,
 ) {
-  return showModalBottomSheet<DateTime>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _SplitSheet(block: block),
-  );
+  return showNeoSheet<DateTime>(context, (_) => _SplitSheet(block: block));
 }
 
 class _SplitSheet extends ConsumerStatefulWidget {

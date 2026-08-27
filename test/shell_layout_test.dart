@@ -204,6 +204,25 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('a sheet stays a sheet on a wide window', (tester) async {
+    // Not our doing — Material bounds a modal sheet and centres it, so nothing
+    // here sets a width. This is the test that says so, and that would notice a
+    // sheet given constraints of its own that undid it.
+    await bootApp(tester, viewport: const Size(1600, 1000), seed: _seed);
+    await tester.tap(inScreen(NowScreen, find.text('⋯ EDIT BLOCK')));
+    await settle(tester);
+
+    // The widest control the sheet contains: the `BottomSheet` widget itself
+    // spans the window, and the bound is applied inside it.
+    final widest = tester.getRect(
+      find.descendant(of: find.byType(BottomSheet), matching: find.byType(NeoButton)).first,
+    );
+    expect(widest.width, lessThan(1600 * 0.5));
+    expect(widest.center.dx, 800, reason: 'a sheet pinned to one edge reads wrong however narrow');
+
+    await disposeApp(tester);
+  });
+
   testWidgets('a phone keeps the bookmark grid two tiles wide', (tester) async {
     await bootApp(tester, viewport: _phone, seed: _seedBookmarks);
 

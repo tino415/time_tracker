@@ -22,11 +22,9 @@ Future<Activity?> showActivityEditor(
   String? presetParentId,
   bool switchToOnCreate = false,
 }) {
-  return showModalBottomSheet<Activity>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _EditorSheet(
+  return showNeoSheet<Activity>(
+    context,
+    (_) => _EditorSheet(
       existing: existing,
       initialName: initialName,
       presetParentId: presetParentId,

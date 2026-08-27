@@ -51,11 +51,9 @@ Future<String?> pickOrCreateActivity(
   String? trailing,
   Set<String> exclude = const {},
 }) {
-  return showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _AssignSheet(title: title, trailing: trailing, exclude: exclude),
+  return showNeoSheet<String>(
+    context,
+    (_) => _AssignSheet(title: title, trailing: trailing, exclude: exclude),
   );
 }
 

@@ -18,12 +18,7 @@ import 'scan_token.dart';
 /// the token is the only thing to keep, which is why this screen's real job is
 /// making it easy to copy and hard to lose.
 Future<void> showSyncSetup(BuildContext context, WidgetRef ref) {
-  return showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => const _SyncSetupSheet(),
-  );
+  return showNeoSheet<void>(context, (_) => const _SyncSetupSheet());
 }
 
 class _SyncSetupSheet extends ConsumerStatefulWidget {

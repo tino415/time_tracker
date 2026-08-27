@@ -16,12 +16,7 @@ import 'neo.dart';
 /// you are looking at: nudges for the usual "a few minutes ago", typing for a
 /// correction big enough that nudging would be silly.
 Future<void> editBlockStart(BuildContext context, WidgetRef ref, Block block) async {
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _StartSheet(block: block),
-  );
+  await showNeoSheet<void>(context, (_) => _StartSheet(block: block));
 }
 
 class _StartSheet extends ConsumerStatefulWidget {

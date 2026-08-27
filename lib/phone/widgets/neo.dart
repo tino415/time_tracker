@@ -26,6 +26,26 @@ TextStyle mono(
   );
 }
 
+/// Open a sheet in this app's own frame.
+///
+/// Every sheet was repeating the same three arguments. The fill and the corners
+/// are Material's, and both are turned off because the sheet draws its own
+/// bordered box; scroll-controlled is unconditional because several sheets are
+/// taller than the 9/16 an unscrolled one is capped at, and the short ones size
+/// to their content either way, so it costs them nothing.
+///
+/// Width is deliberately left alone: Material already bounds a modal sheet and
+/// centres it, so a wide window gets a sheet rather than a strip without this
+/// having an opinion. Somewhere to put one, if it ever needs one.
+Future<T?> showNeoSheet<T>(BuildContext context, WidgetBuilder builder) {
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: builder,
+  );
+}
+
 /// Inverse label chip — the otin.dev section-header device: a solid [line] box
 /// with bold uppercase [surface] text. Green variant fills [brand].
 class NeoChip extends StatelessWidget {

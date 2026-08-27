@@ -97,10 +97,9 @@ class _ActivityRow extends ConsumerWidget {
 
 Future<void> _showRowActions(BuildContext context, WidgetRef ref, Activity a) async {
   final t = neo(context);
-  await showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (sheet) => Container(
+  await showNeoSheet<void>(
+    context,
+    (sheet) => Container(
       margin: const EdgeInsets.all(10),
       decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
       padding: const EdgeInsets.all(14),

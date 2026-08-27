@@ -643,10 +643,9 @@ Future<void> _exportCsv(
   // Optional subtree filter: null scope = everything.
   String? scope = '__all__';
   if (tree.rootIds.isNotEmpty) {
-    scope = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheet) {
+    scope = await showNeoSheet<String>(
+      context,
+      (sheet) {
         final t = neo(sheet);
         return Container(
           margin: const EdgeInsets.all(10),

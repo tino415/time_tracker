@@ -23,11 +23,9 @@ Future<String?> showActivityPicker(
   bool excludeSubtrees = false,
   Set<String>? only,
 }) {
-  return showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (_) => _PickerSheet(
+  return showNeoSheet<String>(
+    context,
+    (_) => _PickerSheet(
       title: title,
       exclude: exclude,
       excludeSubtrees: excludeSubtrees,

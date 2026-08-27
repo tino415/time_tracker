@@ -11,8 +11,8 @@ import '../screens/now_screen.dart' show DottedField;
 import 'activity_editor.dart';
 import 'neo.dart';
 
-/// "What was that?" — answer an unnamed block by re-pointing it at a real
-/// activity, keeping the block's original start.
+/// Re-point a block at a real activity, keeping its original start — answering
+/// an unnamed one, or correcting a named one.
 ///
 /// Recency-ordered rather than alphabetical: naming an unnamed block almost
 /// always means naming something tracked recently, and the whole feature exists
@@ -26,7 +26,9 @@ Future<void> assignBlockActivity(
   final id = await pickOrCreateActivity(
     context,
     ref,
-    title: 'What was this?',
+    // A named block reaching this sheet is being corrected, not answered, and
+    // "What was this?" would be asking about something already on screen.
+    title: isUnsortedSet(block.activities) ? 'What was this?' : 'Change to',
     trailing: '${formatTimeOfDay(block.start)} · '
         '${formatDurationHm(block.duration(DateTime.now()))}',
   );

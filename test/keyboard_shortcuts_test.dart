@@ -39,6 +39,11 @@ const _desktop = Size(900, 800);
 /// the target the focus tests tab towards. `NeoButton` uppercases its label.
 const _startNow = '▶ START NOW · NAME IT LATER';
 
+/// The activity seeded beside "Deep work", for the cases that need something to
+/// change *to*. Not bookmarked, so it stays off the Now screen until a sheet
+/// offers it.
+const _other = 'Reading';
+
 /// Press a key by *position*, spelling out what the layout would produce.
 ///
 /// [logical] defaults to the US legend. Passing something else is how a non-US
@@ -66,6 +71,12 @@ Future<void> _press(
 /// `g` then a letter.
 Future<void> _go(WidgetTester tester, PhysicalKeyboardKey physical, LogicalKeyboardKey legend) async {
   await _press(tester, PhysicalKeyboardKey.keyG, LogicalKeyboardKey.keyG);
+  await _press(tester, physical, legend);
+}
+
+/// `e` then a letter.
+Future<void> _edit(WidgetTester tester, PhysicalKeyboardKey physical, LogicalKeyboardKey legend) async {
+  await _press(tester, PhysicalKeyboardKey.keyE, LogicalKeyboardKey.keyE);
   await _press(tester, physical, legend);
 }
 
@@ -133,6 +144,16 @@ Future<void> _seed(AppDatabase db) async {
   final changes = DriftChangeRepository(db);
   final a = await activities.createActivity(name: 'Deep work', color: '#4F8FEE');
   await changes.switchTo(a.syncId);
+}
+
+/// [_seed] plus a second activity to change to.
+///
+/// A separate function rather than another row in [_seed]: several tests below
+/// assert on finders that a second name in the catalogue would make ambiguous,
+/// and only the `e a` case needs an alternative to pick.
+Future<void> _seedPair(AppDatabase db) async {
+  await _seed(db);
+  await DriftActivityRepository(db).createActivity(name: _other, color: '#E4572E');
 }
 
 void main() {
@@ -227,6 +248,107 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('e a re-points the running block, opening no boundary', (tester) async {
+    // The row count is the whole distinction. Re-pointing and switching leave
+    // the hero reading exactly the same thing, and only the boundary tells them
+    // apart: a correction says the last hour was mislabelled, a switch says the
+    // last hour was right and something new starts now.
+    final db = await bootApp(tester, viewport: _desktop, seed: _seedPair);
+    final before = await db.select(db.activityChanges).get();
+
+    await _edit(tester, PhysicalKeyboardKey.keyA, LogicalKeyboardKey.keyA);
+    // "What was this?" is the unnamed block's question; this one has an answer
+    // already and is being corrected.
+    expect(find.text('CHANGE TO'), findsOneWidget);
+
+    // The sheet is the last thing pushed; the other tabs keep their own rows
+    // built but off-stage.
+    await tester.tap(find.text(_other).last);
+    await settle(tester);
+
+    expect(inScreen(NowScreen, find.text(_other)), findsWidgets);
+    expect(await db.select(db.activityChanges).get(), hasLength(before.length),
+        reason: 'a correction must not write a boundary');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('e n writes the note on the running block', (tester) async {
+    // The note is the thing you reach for without looking away from what you
+    // are doing, and every other way to it starts by finding the hero.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    await _edit(tester, PhysicalKeyboardKey.keyN, LogicalKeyboardKey.keyN);
+    expect(find.text('NOTE'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).last, 'chasing the sync bug');
+    await tester.pump();
+    await tester.tap(find.text('SAVE'));
+    await settle(tester);
+
+    expect(inScreen(NowScreen, find.text('chasing the sync bug')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('e alone is inert, and visible while it waits', (tester) async {
+    // The same contract `g` has, asserted separately rather than assumed: a
+    // second prefix is where machinery written for one shows that it was.
+    await bootApp(tester, viewport: _desktop, seed: _seedPair);
+
+    await _press(tester, PhysicalKeyboardKey.keyE, LogicalKeyboardKey.keyE);
+    expect(find.text('e …'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('e …'), findsNothing);
+
+    // And the letter that follows is then just a letter.
+    await _press(tester, PhysicalKeyboardKey.keyA, LogicalKeyboardKey.keyA);
+    expect(find.text('CHANGE TO'), findsNothing);
+
+    await _press(tester, PhysicalKeyboardKey.keyE, LogicalKeyboardKey.keyE);
+    expect(find.text('e …'), findsOneWidget);
+    await _press(tester, PhysicalKeyboardKey.escape, LogicalKeyboardKey.escape);
+    expect(find.text('e …'), findsNothing);
+    await _press(tester, PhysicalKeyboardKey.keyA, LogicalKeyboardKey.keyA);
+    expect(find.text('CHANGE TO'), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a and n do nothing without the prefix', (tester) async {
+    // Both letters rewrite something already recorded, which is the case the
+    // prefix exists for — a stray key must not reach either.
+    await bootApp(tester, viewport: _desktop, seed: _seedPair);
+
+    await _press(tester, PhysicalKeyboardKey.keyA, LogicalKeyboardKey.keyA);
+    await _press(tester, PhysicalKeyboardKey.keyN, LogicalKeyboardKey.keyN);
+
+    expect(find.text('CHANGE TO'), findsNothing);
+    expect(find.text('NOTE'), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the keyboard comes back after a shortcut opens a route', (tester) async {
+    // The bindings only hear keys while the shell's own node is in the focus
+    // chain, and a dialog is a sibling route that takes focus out of it. Flutter
+    // should hand it back on pop — but if it does not, the app goes deaf after
+    // every shortcut that opens something, and nothing else here would catch it.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    await _edit(tester, PhysicalKeyboardKey.keyN, LogicalKeyboardKey.keyN);
+    expect(find.text('NOTE'), findsOneWidget);
+
+    await _press(tester, PhysicalKeyboardKey.escape, LogicalKeyboardKey.escape);
+    expect(find.text('NOTE'), findsNothing);
+
+    await _go(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+    expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('nothing fires while a field has focus', (tester) async {
     // The load-bearing guard. Bare keys are only possible because of it: every
     // binding is a character someone might legitimately be typing.
@@ -237,13 +359,15 @@ void main() {
     await tester.enterText(_searchField(), 'st');
     await settle(tester);
 
-    // "s" would start a block, "g" would arm the prefix.
+    // "s" would start a block, "g" and "e" would arm a prefix.
     await _press(tester, PhysicalKeyboardKey.keyS, LogicalKeyboardKey.keyS);
     await _press(tester, PhysicalKeyboardKey.keyG, LogicalKeyboardKey.keyG);
+    await _press(tester, PhysicalKeyboardKey.keyE, LogicalKeyboardKey.keyE);
 
     expect(await db.select(db.activityChanges).get(), hasLength(1),
         reason: 's must not start a block while typing');
     expect(find.text('g …'), findsNothing, reason: 'g must not arm while typing');
+    expect(find.text('e …'), findsNothing, reason: 'e must not arm while typing');
 
     await disposeApp(tester);
   });

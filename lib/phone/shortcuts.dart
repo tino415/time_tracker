@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/providers.dart';
 import '../data/tracker_controller.dart';
 import 'phone_app.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/now_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/timeline_screen.dart';
+import 'widgets/assign_activity.dart';
+import 'widgets/block_comment.dart';
 import 'widgets/neo.dart';
 
 /// Keyboard shortcuts for the desktop PWA — bare keys, vim-style.
@@ -28,18 +31,31 @@ import 'widgets/neo.dart';
 ///
 /// `g` then a letter for the tabs, rather than four more single keys: the prefix
 /// is self-limiting, and it leaves the single-key space for actions instead of
-/// spending it on navigation.
+/// spending it on navigation. `e` is the same device turned on corrections to
+/// the running block: `a` and `n` on their own would be verbs that rewrite what
+/// is already recorded on a stray press, which is the case a prefix exists for.
 ///
 /// Deliberately absent: calendar zoom. The calendar is a direct-manipulation
 /// surface — boundaries are dragged, splits are long-pressed — so zoom belongs
 /// to the trackpad rather than to a key.
 
-/// How long a pending `g` waits for its second key.
+/// How long a pending prefix waits for its second key.
 ///
-/// Long enough not to lose a deliberate two-key press, short enough that a `g`
-/// pressed by accident cannot swallow something typed a moment later. The
+/// Long enough not to lose a deliberate two-key press, short enough that a
+/// prefix pressed by accident cannot swallow something typed a moment later. The
 /// pending state is shown on screen too, so it is never armed invisibly.
 const _prefixTimeout = Duration(milliseconds: 1500);
+
+/// A key that opens a two-key sequence.
+class ShortcutPrefix {
+  const ShortcutPrefix({required this.key, required this.label});
+  final PhysicalKeyboardKey key;
+  final String label;
+}
+
+const goPrefix = ShortcutPrefix(key: PhysicalKeyboardKey.keyG, label: 'g');
+const editPrefix = ShortcutPrefix(key: PhysicalKeyboardKey.keyE, label: 'e');
+const shortcutPrefixes = [goPrefix, editPrefix];
 
 enum ShortcutAction {
   goNow,
@@ -51,6 +67,8 @@ enum ShortcutAction {
   showHelp,
   prevPeriod,
   nextPeriod,
+  editActivity,
+  editNote,
 }
 
 /// One binding, carrying everything the help overlay needs — so adding a
@@ -61,7 +79,7 @@ class ShortcutBinding {
     required this.label,
     required this.what,
     required this.action,
-    this.prefixed = false,
+    this.prefix,
     this.shift = false,
     this.only,
   });
@@ -73,8 +91,8 @@ class ShortcutBinding {
   /// the legend on the keycap differs.
   final PhysicalKeyboardKey key;
 
-  /// Preceded by `g`.
-  final bool prefixed;
+  /// The prefix this key follows, or null for a key that stands alone.
+  final ShortcutPrefix? prefix;
 
   /// Requires Shift. Significant because `s` and `S` differ. It was deliberately
   /// ignored under the earlier digit scheme, where shifting is how some layouts
@@ -96,28 +114,40 @@ class ShortcutBinding {
 const shortcutBindings = <ShortcutBinding>[
   ShortcutBinding(
       key: PhysicalKeyboardKey.keyN,
-      prefixed: true,
+      prefix: goPrefix,
       label: 'g n',
       what: 'Now',
       action: ShortcutAction.goNow),
   ShortcutBinding(
       key: PhysicalKeyboardKey.keyT,
-      prefixed: true,
+      prefix: goPrefix,
       label: 'g t',
       what: 'Timeline',
       action: ShortcutAction.goTimeline),
   ShortcutBinding(
       key: PhysicalKeyboardKey.keyR,
-      prefixed: true,
+      prefix: goPrefix,
       label: 'g r',
       what: 'Reports',
       action: ShortcutAction.goReports),
   ShortcutBinding(
       key: PhysicalKeyboardKey.keyA,
-      prefixed: true,
+      prefix: goPrefix,
       label: 'g a',
       what: 'Activities',
       action: ShortcutAction.goActivities),
+  ShortcutBinding(
+      key: PhysicalKeyboardKey.keyA,
+      prefix: editPrefix,
+      label: 'e a',
+      what: 'Change what the running block tracks',
+      action: ShortcutAction.editActivity),
+  ShortcutBinding(
+      key: PhysicalKeyboardKey.keyN,
+      prefix: editPrefix,
+      label: 'e n',
+      what: 'Note on the running block',
+      action: ShortcutAction.editNote),
   ShortcutBinding(
       key: PhysicalKeyboardKey.keyS,
       label: 's',
@@ -204,8 +234,8 @@ class AppShortcuts extends ConsumerStatefulWidget {
 class _AppShortcutsState extends ConsumerState<AppShortcuts> {
   final _node = FocusNode(debugLabel: 'app shortcuts');
 
-  /// Set while `g` waits for its second key.
-  bool _pending = false;
+  /// Set while a prefix waits for its second key.
+  ShortcutPrefix? _pending;
   Timer? _pendingTimer;
 
   @override
@@ -215,16 +245,16 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
     super.dispose();
   }
 
-  void _arm() {
+  void _arm(ShortcutPrefix prefix) {
     _pendingTimer?.cancel();
-    setState(() => _pending = true);
+    setState(() => _pending = prefix);
     _pendingTimer = Timer(_prefixTimeout, _disarm);
   }
 
   void _disarm() {
     _pendingTimer?.cancel();
     _pendingTimer = null;
-    if (_pending && mounted) setState(() => _pending = false);
+    if (_pending != null && mounted) setState(() => _pending = null);
   }
 
   /// Which screen a scoped binding is judged against.
@@ -247,16 +277,16 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
     }
     // Cancelling an armed prefix comes first, and does nothing else.
     //
-    // Without it the only way out of `g` is to wait for the timeout or to spend
-    // a real binding — so a prefix pressed by accident leaves the next keystroke
-    // meaning something you did not ask for. Escape is the obvious key; Ctrl+G
-    // is emacs's own cancel, which is the one anybody reaching for a g-prefix
-    // already has in their fingers.
+    // Without it the only way out of an armed prefix is to wait for the timeout
+    // or to spend a real binding — so a prefix pressed by accident leaves the
+    // next keystroke meaning something you did not ask for. Escape is the
+    // obvious key; Ctrl+G is emacs's own cancel, which is the one anybody
+    // reaching for a key-sequence already has in their fingers.
     //
     // Ahead of both the field guard and the held-modifier check, because those
     // would otherwise swallow it: Escape is claimed below for leaving a field,
     // and Ctrl+G is rejected as somebody else's shortcut.
-    if (_pending &&
+    if (_pending != null &&
         (event.physicalKey == PhysicalKeyboardKey.escape ||
             (event.physicalKey == PhysicalKeyboardKey.keyG &&
                 HardwareKeyboard.instance.isControlPressed))) {
@@ -291,22 +321,25 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
     final shift = keyboard.isShiftPressed;
 
     final wasPending = _pending;
-    if (wasPending) _disarm();
+    if (wasPending != null) _disarm();
 
     final screen = _screen();
     for (final b in shortcutBindings) {
-      if (b.prefixed != wasPending) continue;
+      if (b.prefix?.key != wasPending?.key) continue;
       if (b.key != event.physicalKey || b.shift != shift) continue;
       if (b.only != null && b.only != screen) continue;
       _run(b.action);
       return KeyEventResult.handled;
     }
 
-    // `g` arms the prefix — but not while already armed, so "g g" falls through
+    // A prefix key arms — but not while already armed, so "g g" falls through
     // rather than re-arming forever.
-    if (!wasPending && !shift && event.physicalKey == PhysicalKeyboardKey.keyG) {
-      _arm();
-      return KeyEventResult.handled;
+    if (wasPending == null && !shift) {
+      for (final p in shortcutPrefixes) {
+        if (p.key != event.physicalKey) continue;
+        _arm(p);
+        return KeyEventResult.handled;
+      }
     }
 
     return KeyEventResult.ignored;
@@ -350,6 +383,21 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
       case ShortcutAction.showHelp:
         showShortcutsHelp(context);
 
+      // Both edit the block the clock is running against, so both are silent on
+      // an empty timeline rather than opening a sheet over nothing.
+      case ShortcutAction.editActivity:
+        {
+          final block = ref.read(currentBlockProvider);
+          if (block == null) return;
+          assignBlockActivity(context, ref, block);
+        }
+      case ShortcutAction.editNote:
+        {
+          final block = ref.read(currentBlockProvider);
+          if (block == null) return;
+          editBlockComment(context, ref, block);
+        }
+
       // One action for both screens: the binding table says which unit, and the
       // scope decides which of the two entries matched.
       case ShortcutAction.prevPeriod:
@@ -387,7 +435,7 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
           // A pending prefix is a mode, and an invisible mode is a trap. Shown
           // rather than merely timed out, so it is never a mystery why the next
           // key did something unexpected.
-          if (_pending)
+          if (_pending != null)
             Positioned(
               left: 16,
               bottom: 16,
@@ -395,7 +443,7 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
                 child: Container(
                   color: t.line,
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  child: Text('g …',
+                  child: Text('${_pending!.label} …',
                       style: mono(context, size: 12, weight: FontWeight.w800, color: t.surface)),
                 ),
               ),
@@ -437,8 +485,12 @@ Future<void> showShortcutsHelp(BuildContext context) {
               const _HelpRow(keys: 'Esc', what: 'Close a sheet, or leave the field'),
               // Written as a sequence, like the rows above it: "g Esc" is press
               // g, then Escape. "Esc ^g" read as a chord and said nothing about
-              // when it applies — the cancel only exists while g is waiting.
-              const _HelpRow(keys: 'g Esc', what: 'Cancel a pending g — Ctrl+G also'),
+              // when it applies — the cancel only exists while a prefix is
+              // waiting. The prefixes are listed from the table so a new one
+              // cannot leave this row naming only some of them.
+              _HelpRow(
+                  keys: '${shortcutPrefixes.map((p) => p.label).join('/')} Esc',
+                  what: 'Cancel a pending prefix — Ctrl+G also'),
               const SizedBox(height: 14),
               Text(
                 'Keys are matched by position, so a non-US layout uses the same '
@@ -473,8 +525,8 @@ class _HelpRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            // Sized for the longest chip, "g Esc".
-            width: 52,
+            // Sized for the longest chip, "g/e Esc".
+            width: 62,
             child: Container(
               color: t.line,
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),

@@ -111,6 +111,18 @@ status:
 analyze:
     flutter analyze
 
+# The exclusion is the whole reason this is a recipe rather than `dart format .`.
+# Drift writes lib/data/database.g.dart at the formatter's default 80 columns, so
+# formatting it to ours would be undone by the next `just gen` and churn back on
+# every regeneration. That file's formatting belongs to the generator.
+#
+# The width itself is in analysis_options.yaml, so plain `dart format` picks it
+# up and nothing here passes it.
+[doc('Format every hand-written Dart file — skips generated code, whose formatting drift owns')]
+fmt:
+    find lib test integration_test tool -name '*.dart' ! -name '*.g.dart' -print0 \
+        | xargs -0 dart format
+
 # Needed after changing pubspec.yaml: the test and build recipes pass --no-pub so
 # an ordinary run does not stop to re-resolve.
 [doc('Resolve Dart dependencies — needed after a pubspec change; every other recipe passes --no-pub')]

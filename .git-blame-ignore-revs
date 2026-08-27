@@ -1,0 +1,13 @@
+# Commits that changed formatting and nothing else. `git blame` skips them and
+# reports the line's real author instead.
+#
+# This matters more here than in most repos: design decisions live in the commit
+# messages, so blame is how they are reached. A mechanical commit sitting in
+# front of them hides every one it touched.
+#
+# Turn it on once, per clone:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format the repo, mechanically
+33414a473e8f6c3d890a0e6f7cc995319ac07723

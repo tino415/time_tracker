@@ -57,6 +57,8 @@ sealed class WearMessage {
     return switch (type) {
       BookmarkSnapshot.kind => BookmarkSnapshot.fromPayload(map),
       SwitchRequest.kind => SwitchRequest.fromPayload(map),
+      AssignRequest.kind => AssignRequest.fromPayload(map),
+      RetimeRequest.kind => RetimeRequest.fromPayload(map),
       SnapshotRequest.kind => SnapshotRequest.fromPayload(map),
       SyncCredential.kind => SyncCredential.fromPayload(map),
       _ => null,
@@ -247,6 +249,68 @@ class SwitchRequest extends WearMessage {
       activityId: activityId,
       at: DateTime.fromMillisecondsSinceEpoch(at),
     );
+  }
+}
+
+/// Watch → phone: "the block I'm already running is actually [activityId]".
+///
+/// [changeSyncId] names the boundary already open, not a new one — this is the
+/// re-point `TrackerController.assignBlock` does, relayed, so it answers an
+/// unnamed block or corrects a mis-pointed one without touching its start.
+class AssignRequest extends WearMessage {
+  const AssignRequest({required this.changeSyncId, required this.activityId});
+
+  static const kind = 'assign';
+
+  final String changeSyncId;
+  final String activityId;
+
+  @override
+  String get type => kind;
+
+  @override
+  Map<String, Object?> toPayload() => {'changeSyncId': changeSyncId, 'activityId': activityId};
+
+  static AssignRequest? fromPayload(Map<Object?, Object?> payload) {
+    final changeSyncId = payload['changeSyncId'];
+    final activityId = payload['activityId'];
+    if (changeSyncId is! String || changeSyncId.isEmpty) return null;
+    if (activityId is! String || activityId.isEmpty) return null;
+    return AssignRequest(changeSyncId: changeSyncId, activityId: activityId);
+  }
+}
+
+/// Watch → phone: "the block I'm already running actually started at [at]".
+///
+/// [at] is the desired instant, not the final one — both sides clamp it against
+/// the block's neighbours via `TrackerController.moveBoundary`, so what lands
+/// may differ from what was sent. [changeSyncId] is the boundary being retimed,
+/// the same idempotency [SwitchRequest] relies on: a relay delivered twice
+/// retimes the same row rather than drifting it twice.
+class RetimeRequest extends WearMessage {
+  const RetimeRequest({required this.changeSyncId, required this.at});
+
+  static const kind = 'retime';
+
+  final String changeSyncId;
+  final DateTime at;
+
+  @override
+  String get type => kind;
+
+  @override
+  Map<String, Object?> toPayload() => {
+    'changeSyncId': changeSyncId,
+    // Epoch millis, matching how the boundary is stored.
+    'at': at.millisecondsSinceEpoch,
+  };
+
+  static RetimeRequest? fromPayload(Map<Object?, Object?> payload) {
+    final changeSyncId = payload['changeSyncId'];
+    final at = payload['at'];
+    if (changeSyncId is! String || changeSyncId.isEmpty) return null;
+    if (at is! int) return null;
+    return RetimeRequest(changeSyncId: changeSyncId, at: DateTime.fromMillisecondsSinceEpoch(at));
   }
 }
 

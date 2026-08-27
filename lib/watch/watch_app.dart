@@ -57,6 +57,15 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
   String? _armed;
   Timer? _disarm;
 
+  /// Whether the hero has been tapped open into the start-time / re-point
+  /// panel. Only meaningful while a block is running — [build] treats it as
+  /// false once [currentBlockProvider] goes null, since there is nothing left
+  /// to edit.
+  bool _editing = false;
+
+  /// Nudges run one at a time. See [_nudge] for why concurrent ones collapse.
+  Future<void> _nudges = Future.value();
+
   @override
   void dispose() {
     _disarm?.cancel();
@@ -92,6 +101,17 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
 
     final unnamedRunning = current != null && isUnsortedSet(current.activities);
 
+    // A block that stopped running while the panel was open (a switch relayed
+    // from the phone, say) leaves nothing to edit. Corrected after the frame,
+    // not inline: this is a build method, and current is still needed below to
+    // decide which body to lay out this same pass.
+    if (_editing && current == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _editing = false);
+      });
+    }
+    final editing = _editing && current != null;
+
     // The display is a circle, so the usable area narrows towards the top and
     // bottom and the corners are cut entirely. Insets are a fraction of the
     // screen rather than fixed pixels, because that is what the geometry is:
@@ -108,10 +128,20 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
             // Fixed, not scrolled. The elapsed clock is the reason to look at
             // the watch at all, so it must not be something you can scroll away
             // from — and at the top of a scroll view it sat exactly where a
-            // round screen cuts.
-            _NowHero(current: current),
+            // round screen cuts. Tapping it opens the correction panel below in
+            // its place; there is nothing to correct when nothing is running.
+            GestureDetector(
+              key: const ValueKey('hero'),
+              behavior: HitTestBehavior.opaque,
+              onTap: current == null ? null : () => setState(() => _editing = true),
+              child: _NowHero(current: current),
+            ),
             const SizedBox(height: 8),
-            Expanded(child: _switchList(unnamedRunning, bookmarked, currentId)),
+            Expanded(
+              child: editing
+                  ? _editPanel(current, bookmarked, currentId)
+                  : _switchList(unnamedRunning, bookmarked, currentId),
+            ),
           ],
         ),
       ),
@@ -173,6 +203,134 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
         ),
       ],
     );
+  }
+
+  /// Replaces [_switchList] while the hero is tapped open: nudge the running
+  /// block's start, or re-point what it tracks. Same list, same screen — this
+  /// is a mode of the one shell, not a route or a sheet.
+  Widget _editPanel(Block current, List<Activity> bookmarked, String? currentId) {
+    final t = neo(context);
+    // Re-pointing to what is already running would be a no-op the tap would
+    // have to be told is a no-op — simpler to just not offer it, as the switch
+    // list already does for the same reason.
+    final repointable = [
+      for (final a in bookmarked)
+        if (a.syncId != currentId) a,
+    ];
+
+    return ListView(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14),
+      children: [
+        Text(
+          'started ${formatTimeOfDay(current.start)}',
+          textAlign: TextAlign.center,
+          style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+        ),
+        const SizedBox(height: 8),
+        // Two rows of three, not one of six: the usable width after the
+        // shell's side insets is ~207px, so three across lands at ~65px each,
+        // above the 44px thumb target the tiles below use. Six across would put
+        // the outer two under the curve.
+        _nudgeRow(current, const [-15, -5, -1]),
+        const SizedBox(height: 6),
+        _nudgeRow(current, const [1, 5, 15]),
+        const SizedBox(height: 12),
+        Text(
+          'this is actually',
+          textAlign: TextAlign.center,
+          style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted, spacing: 1),
+        ),
+        const SizedBox(height: 6),
+        for (final a in repointable) ...[
+          _ActivityTile(
+            key: ValueKey('repoint-${a.syncId}'),
+            name: a.name,
+            color: parseHexColor(a.color),
+            selected: false,
+            armed: _armed == 'repoint-${a.syncId}',
+            // Unlike the nudges, this rewrites what is already recorded rather
+            // than adjusting it — the arm-then-tap-again gesture the switch
+            // list uses for the same reason applies here too.
+            onTap: () {
+              if (!_confirm('repoint-${a.syncId}')) return;
+              ref
+                  .read(wearSyncProvider)
+                  .requestAssign(changeSyncId: current.change.syncId, activityId: a.syncId);
+            },
+          ),
+          const SizedBox(height: 6),
+        ],
+        if (repointable.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'nothing else bookmarked',
+              textAlign: TextAlign.center,
+              style: mono(context, size: 9, weight: FontWeight.w700, color: t.muted),
+            ),
+          ),
+        const SizedBox(height: 6),
+        NeoButton(
+          key: const ValueKey('edit-done'),
+          label: '← done',
+          shadowOffset: 3,
+          onTap: () => setState(() => _editing = false),
+        ),
+      ],
+    );
+  }
+
+  /// One row of three start-time nudges.
+  ///
+  /// No confirm step, unlike the tiles: a nudge adjusts what is recorded rather
+  /// than rewriting it, and the hero above shows the result immediately. Nor is
+  /// there a save — the phone's sheet batches nudges into one write, but each
+  /// tap here commits, so the database is what the hero and the "started" line
+  /// are reading. That is also why the taps have to be queued rather than
+  /// fired: see [_nudge].
+  Widget _nudgeRow(Block current, List<int> deltas) {
+    return Row(
+      children: [
+        for (final m in deltas)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: NeoPressable(
+                key: ValueKey('nudge-$m'),
+                shadowOffset: 3,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                onTap: () => _nudge(current, m),
+                child: Center(
+                  child: Text(
+                    m > 0 ? '+$m' : '$m',
+                    style: mono(context, size: 12, weight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// Queue a nudge behind the ones already running.
+  ///
+  /// Nudging is done in runs — a minute at a time until the clock reads right —
+  /// so the taps arrive faster than a write commits. Fired concurrently they
+  /// each read the boundary before any of them has moved it, so all of them
+  /// write the same instant and a run of five lands as one minute. Chaining is
+  /// what makes each tap see the one before it.
+  void _nudge(Block current, int minutes) {
+    final sync = ref.read(wearSyncProvider);
+    _nudges = _nudges
+        .then(
+          (_) => sync.requestNudge(
+            changeSyncId: current.change.syncId,
+            by: Duration(minutes: minutes),
+          ),
+        )
+        // One failed nudge must not wedge the rest of the row behind it.
+        .catchError((Object _) {});
   }
 }
 

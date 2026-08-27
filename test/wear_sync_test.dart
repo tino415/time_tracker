@@ -136,6 +136,131 @@ void main() {
       service.dispose();
     });
 
+    test('applies a relayed assign', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final b = await activities.createActivity(name: 'B', color: '#222222', bookmarked: true);
+      final change = await changes.switchTo(a.syncId);
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      await bridge.receive(AssignRequest(changeSyncId: change.syncId, activityId: b.syncId));
+
+      expect(await changes.activityIdsForChange(change.syncId), [b.syncId]);
+      service.dispose();
+    });
+
+    test('applies a relayed retime', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(
+        a.syncId,
+        at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+      );
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      final at = DateTime.fromMillisecondsSinceEpoch(1770000300000);
+      await bridge.receive(RetimeRequest(changeSyncId: change.syncId, at: at));
+
+      expect((await changes.loadChanges()).single.changedAt, at);
+      service.dispose();
+    });
+
+    test('a retime that would cross the previous boundary is clamped, not applied raw', () async {
+      // The watch can be working from a stale snapshot, so trusting its math
+      // could reorder two blocks that are already on the record. Clamping has
+      // to happen again here, on receipt, not just on the watch that sent it.
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final b = await activities.createActivity(name: 'B', color: '#222222', bookmarked: true);
+      await changes.switchTo(a.syncId, at: DateTime.fromMillisecondsSinceEpoch(1770000000000));
+      final second = await changes.switchTo(
+        b.syncId,
+        at: DateTime.fromMillisecondsSinceEpoch(1770000600000), // 10 minutes later
+      );
+
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      // Ask to drag the second boundary to well before the first one.
+      await bridge.receive(
+        RetimeRequest(
+          changeSyncId: second.syncId,
+          at: DateTime.fromMillisecondsSinceEpoch(1769999000000),
+        ),
+      );
+
+      final rows = {for (final c in await changes.loadChanges()) c.syncId: c};
+      // Clamped to just after the earlier boundary, not the raw requested
+      // instant, and never crossing it into the earlier block.
+      expect(rows[second.syncId]!.changedAt, DateTime.fromMillisecondsSinceEpoch(1770000060000));
+      service.dispose();
+    });
+
+    test('an assign delivered twice re-points once', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final b = await activities.createActivity(name: 'B', color: '#222222', bookmarked: true);
+      final change = await changes.switchTo(a.syncId);
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      final request = AssignRequest(changeSyncId: change.syncId, activityId: b.syncId);
+      await bridge.receive(request);
+      await bridge.receive(request);
+
+      expect(await changes.activityIdsForChange(change.syncId), [b.syncId]);
+      service.dispose();
+    });
+
+    test('a retime delivered twice lands once, not drifting further each time', () async {
+      // The absolute timestamp is what makes a queue replay safe — this proves
+      // that property rather than trusting the idea behind it.
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(
+        a.syncId,
+        at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+      );
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      final request = RetimeRequest(
+        changeSyncId: change.syncId,
+        at: DateTime.fromMillisecondsSinceEpoch(1770000300000),
+      );
+      await bridge.receive(request);
+      await bridge.receive(request);
+
+      expect(
+        (await changes.loadChanges()).single.changedAt,
+        DateTime.fromMillisecondsSinceEpoch(1770000300000),
+      );
+      service.dispose();
+    });
+
+    test('an assign naming an unknown change is a no-op, not a crash', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      await bridge.receive(AssignRequest(changeSyncId: 'missing', activityId: a.syncId));
+
+      expect(await changes.loadChanges(), isEmpty);
+      service.dispose();
+    });
+
+    test('a retime naming an unknown change is a no-op, not a crash', () async {
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      await bridge.receive(
+        RetimeRequest(
+          changeSyncId: 'missing',
+          at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+        ),
+      );
+
+      expect(await changes.loadChanges(), isEmpty);
+      service.dispose();
+    });
+
     test('a change that failed to send is re-sent by the next change', () async {
       // The reported bug: a rename never reached the watch. The push happened
       // while nothing was reachable, the phone recorded that state as sent, and
@@ -459,6 +584,57 @@ void main() {
       expect(relayed.changeSyncId, local.single.syncId);
       expect(relayed.activityId, 'a');
       expect(relayed.at, local.single.changedAt);
+
+      service.dispose();
+    });
+
+    test('requestAssign re-points the local block and relays an AssignRequest', () async {
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [
+            WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+            WearActivity(syncId: 'b', name: 'Email', color: '#EE7C4F'),
+          ],
+        ),
+      );
+      await service.requestSwitch('a', at: DateTime.fromMillisecondsSinceEpoch(1770000000000));
+      final changeId = (await changes.loadChanges()).single.syncId;
+      bridge.sent.clear();
+
+      await service.requestAssign(changeSyncId: changeId, activityId: 'b');
+
+      expect(await changes.activityIdsForChange(changeId), ['b']);
+      final relayed = bridge.sent.whereType<AssignRequest>().single;
+      // Same id as the local row, the same reason SwitchRequest's does: it is
+      // what lets the phone's apply land on this row rather than a new one.
+      expect(relayed.changeSyncId, changeId);
+      expect(relayed.activityId, 'b');
+
+      service.dispose();
+    });
+
+    test('requestRetime moves the local start and relays a RetimeRequest', () async {
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+        ),
+      );
+      final start = DateTime.fromMillisecondsSinceEpoch(1770000000000);
+      await service.requestSwitch('a', at: start);
+      final changeId = (await changes.loadChanges()).single.syncId;
+      bridge.sent.clear();
+
+      final retimed = start.subtract(const Duration(minutes: 5));
+      await service.requestRetime(changeSyncId: changeId, at: retimed);
+
+      expect((await changes.loadChanges()).single.changedAt, retimed);
+      final relayed = bridge.sent.whereType<RetimeRequest>().single;
+      expect(relayed.changeSyncId, changeId);
+      expect(relayed.at, retimed);
 
       service.dispose();
     });

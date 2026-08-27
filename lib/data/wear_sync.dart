@@ -9,6 +9,7 @@ import 'providers.dart';
 import 'repositories.dart';
 import 'sync_service.dart';
 import 'sync_store.dart';
+import 'tracker_controller.dart';
 import 'wear_bridge.dart';
 
 const _uuid = Uuid();
@@ -37,11 +38,17 @@ class WearSyncService {
        _activities = activities,
        _changes = changes,
        _syncStore = syncStore,
-       _isWatch = isWatch;
+       _isWatch = isWatch,
+       // Built from the same two repositories rather than passed in: assign and
+       // retime are edits of an existing boundary, exactly what TrackerController
+       // exists to make safely, and there is no reason for this class to
+       // reimplement the clamping it already does for moveBoundary.
+       _controller = TrackerController(activities, changes);
 
   final WearBridge _bridge;
   final ActivityRepository _activities;
   final ChangeRepository _changes;
+  final TrackerController _controller;
 
   /// Read on the phone, written on the watch — the relay is how the watch gets
   /// an account at all.
@@ -268,6 +275,22 @@ class WearSyncService {
           // The peer's view of "what is tracking" just changed.
           if (!_isWatch) await _pushSnapshot(force: true);
         }
+
+      case AssignRequest(:final changeSyncId, :final activityId):
+        await _controller.assignBlock(changeSyncId, activityId);
+        // Mirrors SwitchRequest: the peer's view of "what is tracking" just
+        // changed, so tell it — this is also how a watch that sent the request
+        // finds out its own name for the activity was accepted.
+        if (!_isWatch) await _pushSnapshot(force: true);
+
+      case RetimeRequest(:final changeSyncId, :final at):
+        await _controller.moveBoundary(changeSyncId, at);
+        // Not a courtesy push: the phone clamps against its own authoritative
+        // neighbours, so its moveBoundary result can differ from the watch's.
+        // CurrentBlock carries startedAt, and applyPeerCurrentBlock re-points and
+        // retimes the same change id, so this snapshot is what converges the
+        // watch onto the phone's answer rather than leaving the two disagreeing.
+        if (!_isWatch) await _pushSnapshot(force: true);
     }
   }
 
@@ -348,6 +371,48 @@ class WearSyncService {
     await _activities.touchUsed(activityId, when);
 
     await _bridge.send(SwitchRequest(changeSyncId: changeSyncId, activityId: activityId, at: when));
+  }
+
+  /// Watch side: re-point the running block at [activityId] without opening a
+  /// new boundary — answering an unnamed block, or correcting a mis-pointed one.
+  ///
+  /// Written locally first, same write-then-relay shape as [requestSwitch].
+  Future<void> requestAssign({required String changeSyncId, required String activityId}) async {
+    await _controller.assignBlock(changeSyncId, activityId);
+    await _bridge.send(AssignRequest(changeSyncId: changeSyncId, activityId: activityId));
+  }
+
+  /// Watch side: correct when the running block started.
+  ///
+  /// [at] is only ever a request. `moveBoundary` clamps it against the block's
+  /// neighbours, so the value this device actually lands on can differ from
+  /// what is sent here — and, since the phone's neighbours are the authoritative
+  /// ones, from what the phone lands on too. That gap is closed on the receiving
+  /// end, not here: the phone's next [BookmarkSnapshot] carries its own answer,
+  /// and applying it re-points the watch's copy of this same change onto it.
+  Future<void> requestRetime({required String changeSyncId, required DateTime at}) async {
+    await _controller.moveBoundary(changeSyncId, at);
+    await _bridge.send(RetimeRequest(changeSyncId: changeSyncId, at: at));
+  }
+
+  /// Move the boundary by [by], reading where it currently is rather than being
+  /// told — the shape a nudge button wants.
+  ///
+  /// The caller cannot do this arithmetic itself. Whatever start it is holding
+  /// came from a frame, and a run of quick taps all read the same one, compute
+  /// the same instant and land as a single minute. Reading here means each call
+  /// sees what the one before it committed, including any clamping, so the taps
+  /// add up. Callers still have to run these one at a time — two overlapping
+  /// reads are the same bug a frame away.
+  ///
+  /// What goes on the wire is still the absolute instant [requestRetime] sends,
+  /// not [by]: a delta replayed from the queue would move the boundary twice.
+  Future<void> requestNudge({required String changeSyncId, required Duration by}) async {
+    for (final change in await _changes.loadChanges()) {
+      if (change.syncId != changeSyncId) continue;
+      await requestRetime(changeSyncId: changeSyncId, at: change.changedAt.add(by));
+      return;
+    }
   }
 
   void dispose() {

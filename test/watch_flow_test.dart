@@ -324,4 +324,177 @@ void main() {
 
     await disposeApp(tester);
   });
+
+  testWidgets('tapping the hero with a block running enters edit mode', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await tester.tap(find.byKey(const ValueKey('hero')));
+    await settle(tester);
+
+    for (final m in [-15, -5, -1, 1, 5, 15]) {
+      expect(find.byKey(ValueKey('nudge-$m')), findsOneWidget, reason: 'nudge $m missing');
+    }
+    // Deep work is running, so Email is what there is to re-point onto.
+    expect(find.byKey(ValueKey('repoint-$emailId')), findsOneWidget);
+
+    // The done control sits below the fold on a 227px screen, and far enough
+    // down that the sliver has not even built it yet — ensureVisible needs the
+    // element to exist first, so this drags the list the way a thumb would.
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('edit-done')));
+    await settle(tester);
+
+    expect(find.byKey(const ValueKey('nudge--5')), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a nudge writes the new start locally and relays a RetimeRequest', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+    final changes = DriftChangeRepository(db);
+    final before = (await changes.loadChanges()).single;
+
+    await tester.tap(find.byKey(const ValueKey('hero')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('nudge--5')));
+    await settle(tester);
+
+    final after = (await changes.loadChanges()).single;
+    expect(after.syncId, before.syncId);
+    expect(after.changedAt, before.changedAt.subtract(const Duration(minutes: 5)));
+
+    // Assert both halves, the way the tile-tap test does for a switch.
+    final relayed = bridge.sent.whereType<RetimeRequest>().single;
+    expect(relayed.changeSyncId, after.syncId);
+    expect(relayed.at, after.changedAt);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the hero follows the nudge, which is what makes no local preview state safe', (
+    tester,
+  ) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await tester.tap(find.byKey(const ValueKey('hero')));
+    await settle(tester);
+    final before = (tester.widget<Text>(find.textContaining(':').first)).data;
+
+    await tester.tap(find.byKey(const ValueKey('nudge--5')));
+    await settle(tester);
+    final after = (tester.widget<Text>(find.textContaining(':').first)).data;
+
+    // If the hero were reading a locally-held preview instead of the database,
+    // a tap that only writes and relays would leave the displayed clock alone.
+    expect(after, isNot(before));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('nudges accumulate when tapped faster than the write lands', (tester) async {
+    // The case a wrist actually produces: -1 tapped several times in a couple of
+    // seconds, because that is what a nudge is for. Each tap reads the running
+    // block from the frame it was built in, so unless the intent is carried
+    // forward, taps two onward all add their minute to the same stale start,
+    // compute the same instant, and five taps land as one.
+    //
+    // Tapped with no settle between them, which is the deterministic form of
+    // what a fast thumb does to a write that has not committed yet. On a device
+    // there are frames in between, but nothing guarantees the write, the drift
+    // stream and the provider rebuild have all been round-tripped by the next
+    // tap — so the timing decides the arithmetic, which is the bug.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+    final changes = DriftChangeRepository(db);
+    final before = (await changes.loadChanges()).single;
+
+    await tester.tap(find.byKey(const ValueKey('hero')));
+    await settle(tester);
+
+    final nudge = find.byKey(const ValueKey('nudge--1'));
+    for (var i = 0; i < 5; i++) {
+      await tester.tap(nudge);
+    }
+    await settle(tester);
+
+    final after = (await changes.loadChanges()).single;
+    expect(
+      after.changedAt,
+      before.changedAt.subtract(const Duration(minutes: 5)),
+      reason: 'five taps of -1 must move the start five minutes, not one',
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a re-point needs the confirm gesture', (tester) async {
+    // Same arm-then-tap-again gesture as the switch list, and for the same
+    // reason: a watch is operated by feel, and a misfire re-pointing a block
+    // is neither visible nor easy to undo.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+    final changes = DriftChangeRepository(db);
+    final changeId = (await changes.loadChanges()).single.syncId;
+
+    await tester.tap(find.byKey(const ValueKey('hero')));
+    await settle(tester);
+    final repoint = find.byKey(ValueKey('repoint-$emailId'));
+    // Below the fold on a 227px screen, the same as the done control.
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await settle(tester);
+
+    await tester.tap(repoint);
+    await settle(tester);
+
+    expect(await changes.activityIdsForChange(changeId), [deepWorkId]);
+    expect(bridge.sent.whereType<AssignRequest>(), isEmpty);
+
+    await tester.tap(repoint);
+    await settle(tester);
+
+    expect(await changes.activityIdsForChange(changeId), [emailId]);
+    final relayed = bridge.sent.whereType<AssignRequest>().single;
+    expect(relayed.changeSyncId, changeId);
+    expect(relayed.activityId, emailId);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('nothing overflows or gets clipped on the round screen in edit mode', (tester) async {
+    // Six nudge buttons in two rows is the tightest thing this screen has had
+    // to fit — the same curve that clipped the clock is where this fails too.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await tester.tap(find.byKey(const ValueKey('hero')));
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+
+    const margin = 227 * 0.07;
+    for (final m in [-15, -5, -1, 1, 5, 15]) {
+      final rect = tester.getRect(find.byKey(ValueKey('nudge-$m')));
+      expect(rect.top, greaterThan(margin), reason: 'nudge $m clipped by the top curve');
+      expect(rect.left, greaterThan(0), reason: 'nudge $m clipped by the left curve');
+      expect(rect.right, lessThan(227), reason: 'nudge $m clipped by the right curve');
+      expect(rect.bottom, lessThan(227 - margin), reason: 'nudge $m clipped by the bottom curve');
+    }
+
+    await disposeApp(tester);
+  });
 }

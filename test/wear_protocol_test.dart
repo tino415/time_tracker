@@ -119,6 +119,46 @@ void main() {
     });
   });
 
+  group('AssignRequest', () {
+    test('round-trips the change and the activity', () {
+      final decoded =
+          roundTrip(const AssignRequest(changeSyncId: 'change-1', activityId: 'a'))
+              as AssignRequest;
+
+      expect(decoded.changeSyncId, 'change-1');
+      expect(decoded.activityId, 'a');
+    });
+
+    test('is rejected when any field is missing or empty', () {
+      expect(AssignRequest.fromPayload({'activityId': 'a'}), isNull);
+      expect(AssignRequest.fromPayload({'changeSyncId': 'c'}), isNull);
+      expect(AssignRequest.fromPayload({'changeSyncId': '', 'activityId': 'a'}), isNull);
+      expect(AssignRequest.fromPayload({'changeSyncId': 'c', 'activityId': ''}), isNull);
+    });
+  });
+
+  group('RetimeRequest', () {
+    test('round-trips, keeping the instant exact', () {
+      final at = DateTime.fromMillisecondsSinceEpoch(1770000000123);
+      final decoded = roundTrip(RetimeRequest(changeSyncId: 'change-1', at: at)) as RetimeRequest;
+
+      expect(decoded.changeSyncId, 'change-1');
+      // Millisecond precision matters for the same reason SwitchRequest's does:
+      // it is the boundary's identity on the timeline.
+      expect(decoded.at, at);
+      expect(decoded.at.millisecondsSinceEpoch, 1770000000123);
+    });
+
+    test('is rejected when any field is missing or the wrong type', () {
+      expect(RetimeRequest.fromPayload({'at': 1}), isNull);
+      expect(RetimeRequest.fromPayload({'changeSyncId': 'c'}), isNull);
+      expect(RetimeRequest.fromPayload({'changeSyncId': '', 'at': 1}), isNull);
+      // A String where an int belongs: a peer on an older or newer build must
+      // not be able to crash this one by sending the wrong shape.
+      expect(RetimeRequest.fromPayload({'changeSyncId': 'c', 'at': '1'}), isNull);
+    });
+  });
+
   group('decode', () {
     test('SnapshotRequest needs no payload', () {
       expect(WearMessage.decode('snapshot_request', null), isA<SnapshotRequest>());
@@ -133,6 +173,14 @@ void main() {
 
     test('a malformed switch is dropped rather than half-decoded', () {
       expect(WearMessage.decode('switch', {'activityId': 'a'}), isNull);
+    });
+
+    test('a malformed assign is dropped rather than half-decoded', () {
+      expect(WearMessage.decode('assign', {'activityId': 'a'}), isNull);
+    });
+
+    test('a malformed retime is dropped rather than half-decoded', () {
+      expect(WearMessage.decode('retime', {'changeSyncId': 'c'}), isNull);
     });
   });
 

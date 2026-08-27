@@ -100,14 +100,23 @@ void main() {
 
     await tester.tap(inScreen(NowScreen, find.text('⋯ EDIT BLOCK')));
     await settle(tester);
-    // The row's own swap. On a single-activity block this is what "change
-    // activity" used to mean, minus the sheet that asked which one.
-    await tester.tap(find.text('SWAP'));
+    // The row's own swap — and this block was tagged with Email above, so there
+    // are two rows and two of them. Taking the first and then reading the
+    // picker's title is what makes the choice a stated one: the title names the
+    // row it came from, so a change in that order fails here loudly rather than
+    // silently swapping the other activity.
+    await tester.tap(find.text('SWAP').first);
     await settle(tester);
+    expect(find.textContaining('REPLACE DEEP WORK WITH'), findsOneWidget);
+
     await tester.tap(find.text('Review').last);
     await settle(tester);
 
-    expect(inScreen(NowScreen, find.text('Review')), findsWidgets);
+    // Re-pointed rather than added to: Review stands where Deep work did, and
+    // Email is untouched beside it.
+    expect(inScreen(NowScreen, find.textContaining('Review')), findsWidgets);
+    expect(inScreen(NowScreen, find.textContaining('Deep work')), findsNothing);
+    expect(inScreen(NowScreen, find.textContaining('Email')), findsWidgets);
     expect((await DriftChangeRepository(db).loadChanges()), hasLength(1),
         reason: 'a correction re-points the block; it must not open a boundary');
 

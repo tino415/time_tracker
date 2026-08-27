@@ -56,20 +56,25 @@ class _ScanSheetState extends State<_ScanSheet> {
     final t = neo(context);
     return Container(
       margin: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+      decoration: BoxDecoration(
+        color: t.bg,
+        border: Border.all(color: t.line, width: 3),
+      ),
       padding: const EdgeInsets.all(14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(children: [
-            NeoChip('Scan token'),
-            const Spacer(),
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Text('✕', style: mono(context, size: 18, weight: FontWeight.w800)),
-            ),
-          ]),
+          Row(
+            children: [
+              NeoChip('Scan token'),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Text('✕', style: mono(context, size: 18, weight: FontWeight.w800)),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           AspectRatio(
             aspectRatio: 1,

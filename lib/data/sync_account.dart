@@ -20,8 +20,8 @@ class SyncAccountController {
   SyncAccountController({
     required SyncStore store,
     required SyncTransport? Function(String token) transportFor,
-  })  : _store = store,
-        _transportFor = transportFor;
+  }) : _store = store,
+       _transportFor = transportFor;
 
   final SyncStore _store;
   final SyncTransport? Function(String token) _transportFor;

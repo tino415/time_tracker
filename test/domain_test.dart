@@ -12,22 +12,17 @@ import 'package:time_tracker/domain/reporting.dart';
 import 'package:time_tracker/domain/task_paste.dart';
 
 Activity act(String id, String name, {String? parent, String color = '#4F8FEE'}) => Activity(
-      syncId: id,
-      parentId: parent,
-      name: name,
-      color: color,
-      bookmarked: false,
-      version: 1,
-      dirty: false,
-    );
+  syncId: id,
+  parentId: parent,
+  name: name,
+  color: color,
+  bookmarked: false,
+  version: 1,
+  dirty: false,
+);
 
-ActivityChange chg(String id, DateTime at, {String? comment}) => ActivityChange(
-      syncId: id,
-      changedAt: at,
-      comment: comment,
-      version: 1,
-      dirty: false,
-    );
+ActivityChange chg(String id, DateTime at, {String? comment}) =>
+    ActivityChange(syncId: id, changedAt: at, comment: comment, version: 1, dirty: false);
 
 DateTime d(int hour, [int minute = 0]) => DateTime(2026, 1, 5, hour, minute); // Mon
 
@@ -62,7 +57,9 @@ void main() {
     test('open block measures up to now', () {
       final blocks = deriveBlocks(
         changes: [chg('c1', d(9))],
-        activityIdsByChange: {'c1': ['a']},
+        activityIdsByChange: {
+          'c1': ['a'],
+        },
         activitiesById: byId,
       );
       expect(blocks.single.duration(d(9, 30)), const Duration(minutes: 30));
@@ -84,7 +81,9 @@ void main() {
     test('missing / deleted activity ids are dropped from the set', () {
       final blocks = deriveBlocks(
         changes: [chg('c1', d(9))],
-        activityIdsByChange: {'c1': ['a', 'ghost']},
+        activityIdsByChange: {
+          'c1': ['a', 'ghost'],
+        },
         activitiesById: byId,
       );
       expect(blocks.single.activities.map((x) => x.syncId), ['a']);
@@ -102,12 +101,17 @@ void main() {
     final task = act('task', 'CU-1 Task', parent: 'client');
     final brk = act('break', 'Break');
     final tree = ActivityTree.build([work, client, task, brk]);
-    final byId = {for (final x in [work, client, task, brk]) x.syncId: x};
+    final byId = {
+      for (final x in [work, client, task, brk]) x.syncId: x,
+    };
 
     test('a leaf rolls up to every ancestor', () {
       final blocks = deriveBlocks(
         changes: [chg('c1', d(9)), chg('c2', d(10))],
-        activityIdsByChange: {'c1': ['task'], 'c2': ['break']},
+        activityIdsByChange: {
+          'c1': ['task'],
+          'c2': ['break'],
+        },
         activitiesById: byId,
       );
       final totals = reportTotals(
@@ -178,7 +182,9 @@ void main() {
     test('blocks are clipped to the range', () {
       final blocks = deriveBlocks(
         changes: [chg('c1', d(8))],
-        activityIdsByChange: {'c1': ['task']},
+        activityIdsByChange: {
+          'c1': ['task'],
+        },
         activitiesById: byId,
       );
       // Range covers only 09:00–09:30 of the open block.
@@ -198,7 +204,9 @@ void main() {
     final task = act('task', 'CU-1 Task', parent: 'work');
     final brk = act('break', 'Break');
     final tree = ActivityTree.build([work, task, brk]);
-    final byId = {for (final x in [work, task, brk]) x.syncId: x};
+    final byId = {
+      for (final x in [work, task, brk]) x.syncId: x,
+    };
 
     final week = localWeekRange(d(12)); // Mon 2026-01-05 .. Mon 2026-01-12
     final mon = week.start;
@@ -208,7 +216,10 @@ void main() {
       // 23:00 Mon → 01:00 Tue, then Break for the rest of Tuesday.
       final blocks = deriveBlocks(
         changes: [chg('c1', d(23)), chg('c2', DateTime(2026, 1, 6, 1))],
-        activityIdsByChange: {'c1': ['task'], 'c2': ['break']},
+        activityIdsByChange: {
+          'c1': ['task'],
+          'c2': ['break'],
+        },
         activitiesById: byId,
       );
       final days = dailyTotals(
@@ -255,7 +266,9 @@ void main() {
     test('the current week stops at today, a past week runs the full seven', () {
       final blocks = deriveBlocks(
         changes: [chg('c1', d(9))],
-        activityIdsByChange: {'c1': ['task']},
+        activityIdsByChange: {
+          'c1': ['task'],
+        },
         activitiesById: byId,
       );
 
@@ -343,16 +356,21 @@ void main() {
     final task = act('task', 'CU-1 Task', parent: 'work');
     final brk = act('break', 'Break');
     final tree = ActivityTree.build([work, task, brk]);
-    final byId = {for (final x in [work, task, brk]) x.syncId: x};
+    final byId = {
+      for (final x in [work, task, brk]) x.syncId: x,
+    };
 
     List<Block> blocks() => deriveBlocks(
-          changes: [chg('c1', d(9), comment: 'deep work'), chg('c2', d(10))],
-          activityIdsByChange: {
-            'c1': ['task'],
-            'c2': ['break'],
-          },
-          activitiesById: byId,
-        );
+      changes: [
+        chg('c1', d(9), comment: 'deep work'),
+        chg('c2', d(10)),
+      ],
+      activityIdsByChange: {
+        'c1': ['task'],
+        'c2': ['break'],
+      },
+      activitiesById: byId,
+    );
 
     test('one row per (block, activity) with the full block duration', () {
       final csv = buildCsv(blocks: blocks(), tree: tree, now: d(11));
@@ -383,7 +401,9 @@ void main() {
       final t2 = ActivityTree.build([a]);
       final bs = deriveBlocks(
         changes: [chg('c1', d(9))],
-        activityIdsByChange: {'c1': ['a']},
+        activityIdsByChange: {
+          'c1': ['a'],
+        },
         activitiesById: {'a': a},
       );
       final csv = buildCsv(blocks: bs, tree: t2, now: d(10));
@@ -415,8 +435,10 @@ void main() {
     });
 
     test('subtree name is slugged into the file name', () {
-      expect(csvFileName(DateTime(2026, 7, 30), scopeName: 'Work / Client'),
-          'track-work-client-2026-07-30.csv');
+      expect(
+        csvFileName(DateTime(2026, 7, 30), scopeName: 'Work / Client'),
+        'track-work-client-2026-07-30.csv',
+      );
     });
 
     test('a name with no usable characters still yields a valid file name', () {

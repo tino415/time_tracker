@@ -40,7 +40,10 @@ Future<void> showBlockActions(
     (sheetContext) => Container(
       margin: const EdgeInsets.all(10),
       constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.85),
-      decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+      decoration: BoxDecoration(
+        color: t.bg,
+        border: Border.all(color: t.line, width: 3),
+      ),
       padding: const EdgeInsets.all(14),
       child: SingleChildScrollView(
         child: Column(
@@ -87,7 +90,9 @@ Future<void> showBlockActions(
                   exclude: block.activities.map((a) => a.syncId).toSet(),
                 );
                 if (id == null) return;
-                await ref.read(changeRepositoryProvider).addActivityToChange(block.change.syncId, id);
+                await ref
+                    .read(changeRepositoryProvider)
+                    .addActivityToChange(block.change.syncId, id);
               },
             ),
             const SizedBox(height: 14),
@@ -129,7 +134,9 @@ Future<void> showBlockActions(
             ),
             const SizedBox(height: 10),
             NeoButton(
-              label: (block.comment == null || block.comment!.isEmpty) ? '✎ add a note' : '✎ edit note',
+              label: (block.comment == null || block.comment!.isEmpty)
+                  ? '✎ add a note'
+                  : '✎ edit note',
               onTap: () {
                 Navigator.pop(sheetContext);
                 editBlockComment(context, ref, block);
@@ -217,7 +224,10 @@ class _ActivityRow extends StatelessWidget {
     final unnamed = isUnsorted(activity);
 
     return Container(
-      decoration: BoxDecoration(color: t.surface, border: Border.all(color: t.line, width: 2)),
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: Border.all(color: t.line, width: 2),
+      ),
       padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
       child: Row(
         children: [
@@ -246,9 +256,7 @@ class _ActivityRow extends StatelessWidget {
                   exclude: block.activities.map((a) => a.syncId).toSet(),
                 );
                 if (id == null) return;
-                await ref
-                    .read(trackerControllerProvider)
-                    .retagActivity(block, activity.syncId, id);
+                await ref.read(trackerControllerProvider).retagActivity(block, activity.syncId, id);
               },
             ),
             const SizedBox(width: 6),
@@ -290,8 +298,10 @@ class _RowAction extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           // Uppercased like every other control here — NeoButton and NeoChip
           // both do it, and a lowercase row action would read as a label.
-          child: Text(label.toUpperCase(),
-              style: mono(context, size: 11, weight: FontWeight.w800, color: t.surface)),
+          child: Text(
+            label.toUpperCase(),
+            style: mono(context, size: 11, weight: FontWeight.w800, color: t.surface),
+          ),
         ),
       ),
     );
@@ -311,8 +321,10 @@ void copyToClipboard(BuildContext context, String text, String what) {
     SnackBar(
       backgroundColor: t.line,
       duration: const Duration(seconds: 2),
-      content: Text('$what copied',
-          style: mono(context, weight: FontWeight.w800, color: t.surface)),
+      content: Text(
+        '$what copied',
+        style: mono(context, weight: FontWeight.w800, color: t.surface),
+      ),
     ),
   );
 }
@@ -326,25 +338,12 @@ void copyToClipboard(BuildContext context, String text, String what) {
 /// Where before what, because the boundary is the decision: the picker's own
 /// title ("track what from here") only means something once "here" is fixed.
 /// Returns silently if either step is dismissed or the point is not splittable.
-Future<void> promptSplit(
-  BuildContext context,
-  WidgetRef ref,
-  Block block, [
-  DateTime? at,
-]) async {
+Future<void> promptSplit(BuildContext context, WidgetRef ref, Block block, [DateTime? at]) async {
   final point = at ?? await chooseSplitPoint(context, ref, block);
   if (point == null) return;
   if (!context.mounted) return;
 
-  final id = await showActivityPicker(
-    context,
-    ref,
-    title: 'Track what from here',
-  );
+  final id = await showActivityPicker(context, ref, title: 'Track what from here');
   if (id == null) return;
-  await ref.read(trackerControllerProvider).splitBlock(
-        block: block,
-        at: point,
-        activityId: id,
-      );
+  await ref.read(trackerControllerProvider).splitBlock(block: block, at: point, activityId: id);
 }

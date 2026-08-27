@@ -81,16 +81,16 @@ class ActivityDto {
   final DateTime? deletedAt;
 
   Map<String, Object?> toJson() => {
-        'syncId': syncId,
-        'parentId': parentId,
-        'name': name,
-        'color': color,
-        'bookmarked': bookmarked,
-        'lastUsedAt': lastUsedAt?.millisecondsSinceEpoch,
-        'externalId': externalId,
-        'version': version,
-        'deletedAt': deletedAt?.millisecondsSinceEpoch,
-      };
+    'syncId': syncId,
+    'parentId': parentId,
+    'name': name,
+    'color': color,
+    'bookmarked': bookmarked,
+    'lastUsedAt': lastUsedAt?.millisecondsSinceEpoch,
+    'externalId': externalId,
+    'version': version,
+    'deletedAt': deletedAt?.millisecondsSinceEpoch,
+  };
 
   static ActivityDto? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -137,13 +137,13 @@ class ChangeDto {
   final List<String> activityIds;
 
   Map<String, Object?> toJson() => {
-        'syncId': syncId,
-        'changedAt': changedAt.millisecondsSinceEpoch,
-        'comment': comment,
-        'version': version,
-        'deletedAt': deletedAt?.millisecondsSinceEpoch,
-        'activityIds': activityIds,
-      };
+    'syncId': syncId,
+    'changedAt': changedAt.millisecondsSinceEpoch,
+    'comment': comment,
+    'version': version,
+    'deletedAt': deletedAt?.millisecondsSinceEpoch,
+    'activityIds': activityIds,
+  };
 
   static ChangeDto? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -174,11 +174,7 @@ class ChangeDto {
 /// own round trip and could interleave with a push, which is exactly when the
 /// "did my edit survive?" question gets hard to answer.
 class SyncRequest {
-  const SyncRequest({
-    required this.cursor,
-    this.activities = const [],
-    this.changes = const [],
-  });
+  const SyncRequest({required this.cursor, this.activities = const [], this.changes = const []});
 
   /// Opaque server position; null on a first sync, which pulls everything.
   final String? cursor;
@@ -186,10 +182,10 @@ class SyncRequest {
   final List<ChangeDto> changes;
 
   Map<String, Object?> toJson() => {
-        'cursor': cursor,
-        'activities': [for (final a in activities) a.toJson()],
-        'changes': [for (final c in changes) c.toJson()],
-      };
+    'cursor': cursor,
+    'activities': [for (final a in activities) a.toJson()],
+    'changes': [for (final c in changes) c.toJson()],
+  };
 }
 
 class SyncResponse {
@@ -235,5 +231,4 @@ class SyncResponse {
   }
 }
 
-DateTime? _millis(Object? raw) =>
-    raw is int ? DateTime.fromMillisecondsSinceEpoch(raw) : null;
+DateTime? _millis(Object? raw) => raw is int ? DateTime.fromMillisecondsSinceEpoch(raw) : null;

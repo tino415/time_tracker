@@ -8,11 +8,7 @@ import 'sync_transport.dart';
 
 /// The outcome of one round trip, for the UI's status line.
 class SyncResult {
-  const SyncResult({
-    required this.pushed,
-    required this.pulled,
-    required this.rejected,
-  });
+  const SyncResult({required this.pushed, required this.pulled, required this.rejected});
 
   final int pushed;
   final int pulled;
@@ -32,13 +28,10 @@ class SyncResult {
 /// and the local database is authoritative; syncing is how devices *agree*, not
 /// how they work, so it runs when asked and its failures are inert.
 class SyncService {
-  SyncService({
-    required SyncStore store,
-    required SyncTransport transport,
-    required String backend,
-  })  : _store = store,
-        _transport = transport,
-        _backend = backend;
+  SyncService({required SyncStore store, required SyncTransport transport, required String backend})
+    : _store = store,
+      _transport = transport,
+      _backend = backend;
 
   final SyncStore _store;
   final SyncTransport _transport;
@@ -61,11 +54,9 @@ class SyncService {
       final activities = await _store.pendingActivities();
       final changes = await _store.pendingChanges();
 
-      final response = await _transport.exchange(SyncRequest(
-        cursor: await _store.cursor(),
-        activities: activities,
-        changes: changes,
-      ));
+      final response = await _transport.exchange(
+        SyncRequest(cursor: await _store.cursor(), activities: activities, changes: changes),
+      );
 
       final rejected = response.rejected.toSet();
 

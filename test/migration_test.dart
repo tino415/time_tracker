@@ -50,10 +50,11 @@ File _writeV1(Directory dir, DateTime at) {
   final file = File('${dir.path}/db.sqlite');
   final v1 = sqlite3.open(file.path);
   v1.execute(_v1Schema);
-  v1.execute(
-    'INSERT INTO activities (sync_id, name, color) VALUES (?, ?, ?)',
-    ['a1', 'Deep work', '#4F8FEE'],
-  );
+  v1.execute('INSERT INTO activities (sync_id, name, color) VALUES (?, ?, ?)', [
+    'a1',
+    'Deep work',
+    '#4F8FEE',
+  ]);
   v1.execute(
     'INSERT INTO activity_changes (sync_id, changed_at) VALUES (?, ?)',
     ['c1', at.millisecondsSinceEpoch ~/ 1000], // v1 stored seconds

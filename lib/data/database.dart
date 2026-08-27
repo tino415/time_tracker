@@ -19,9 +19,8 @@ class Activities extends Table {
   /// Parent in the hierarchy, or null for a top-level activity. Self-FK.
   /// Soft-delete (see [deletedAt]) is the norm, so this cascade only bites on
   /// a genuine hard delete.
-  TextColumn get parentId => text()
-      .nullable()
-      .references(Activities, #syncId, onDelete: KeyAction.cascade)();
+  TextColumn get parentId =>
+      text().nullable().references(Activities, #syncId, onDelete: KeyAction.cascade)();
 
   TextColumn get name => text()();
 
@@ -106,8 +105,8 @@ class ActivityChanges extends Table {
 /// even-split among them for reporting). The join is owned by its change (it
 /// travels inside a ChangeUpsert), so it has no independent version.
 class ActivityChangeActivities extends Table {
-  TextColumn get activityChangeId => text()
-      .references(ActivityChanges, #syncId, onDelete: KeyAction.cascade)();
+  TextColumn get activityChangeId =>
+      text().references(ActivityChanges, #syncId, onDelete: KeyAction.cascade)();
   TextColumn get activityId =>
       text().references(Activities, #syncId, onDelete: KeyAction.cascade)();
 
@@ -115,9 +114,7 @@ class ActivityChangeActivities extends Table {
   Set<Column> get primaryKey => {activityChangeId, activityId};
 }
 
-@DriftDatabase(
-  tables: [Activities, ActivityChanges, ActivityChangeActivities, SyncMeta],
-)
+@DriftDatabase(tables: [Activities, ActivityChanges, ActivityChangeActivities, SyncMeta])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
@@ -133,9 +130,7 @@ class AppDatabase extends _$AppDatabase {
         // v1 stored changed_at as unix *seconds* (drift's dateTime() default);
         // v2 stores epoch millis. Column type is unchanged (INTEGER), so this is
         // a pure data conversion.
-        await customStatement(
-          'UPDATE activity_changes SET changed_at = changed_at * 1000',
-        );
+        await customStatement('UPDATE activity_changes SET changed_at = changed_at * 1000');
       }
       if (from < 3) {
         // Sync bookkeeping. Everything already on the device predates any

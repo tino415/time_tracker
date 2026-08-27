@@ -69,13 +69,21 @@ Future<void> _press(
 }
 
 /// `g` then a letter.
-Future<void> _go(WidgetTester tester, PhysicalKeyboardKey physical, LogicalKeyboardKey legend) async {
+Future<void> _go(
+  WidgetTester tester,
+  PhysicalKeyboardKey physical,
+  LogicalKeyboardKey legend,
+) async {
   await _press(tester, PhysicalKeyboardKey.keyG, LogicalKeyboardKey.keyG);
   await _press(tester, physical, legend);
 }
 
 /// `e` then a letter.
-Future<void> _edit(WidgetTester tester, PhysicalKeyboardKey physical, LogicalKeyboardKey legend) async {
+Future<void> _edit(
+  WidgetTester tester,
+  PhysicalKeyboardKey physical,
+  LogicalKeyboardKey legend,
+) async {
   await _press(tester, PhysicalKeyboardKey.keyE, LogicalKeyboardKey.keyE);
   await _press(tester, physical, legend);
 }
@@ -85,9 +93,9 @@ Future<void> _edit(WidgetTester tester, PhysicalKeyboardKey physical, LogicalKey
 /// `skipOffstage: false` is required: the tabs are an IndexedStack, so the Now
 /// screen stays built but off-stage while another tab is showing.
 Finder _searchField() => find.descendant(
-      of: find.byType(DottedField, skipOffstage: false),
-      matching: find.byType(TextField, skipOffstage: false),
-    );
+  of: find.byType(DottedField, skipOffstage: false),
+  matching: find.byType(TextField, skipOffstage: false),
+);
 
 Future<void> _tab(WidgetTester tester, {bool shift = false}) async {
   if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft, platform: 'web');
@@ -267,8 +275,11 @@ void main() {
     await settle(tester);
 
     expect(inScreen(NowScreen, find.text(_other)), findsWidgets);
-    expect(await db.select(db.activityChanges).get(), hasLength(before.length),
-        reason: 'a correction must not write a boundary');
+    expect(
+      await db.select(db.activityChanges).get(),
+      hasLength(before.length),
+      reason: 'a correction must not write a boundary',
+    );
 
     await disposeApp(tester);
   });
@@ -364,8 +375,11 @@ void main() {
     await _press(tester, PhysicalKeyboardKey.keyG, LogicalKeyboardKey.keyG);
     await _press(tester, PhysicalKeyboardKey.keyE, LogicalKeyboardKey.keyE);
 
-    expect(await db.select(db.activityChanges).get(), hasLength(1),
-        reason: 's must not start a block while typing');
+    expect(
+      await db.select(db.activityChanges).get(),
+      hasLength(1),
+      reason: 's must not start a block while typing',
+    );
     expect(find.text('g …'), findsNothing, reason: 'g must not arm while typing');
     expect(find.text('e …'), findsNothing, reason: 'e must not arm while typing');
 
@@ -413,8 +427,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('h and l step the week on Reports and the day on the calendar',
-      (tester) async {
+  testWidgets('h and l step the week on Reports and the day on the calendar', (tester) async {
     await bootApp(tester, viewport: _desktop, seed: _seed);
 
     // Inert on Now: a scoped binding must not act on a screen you cannot see.
@@ -476,8 +489,7 @@ void main() {
     expect(find.text('Keyboard'), findsOneWidget);
     // Generated from the same table that installs them, so the two cannot drift.
     for (final binding in shortcutBindings) {
-      expect(find.textContaining(binding.what), findsWidgets,
-          reason: '${binding.label} is listed');
+      expect(find.textContaining(binding.what), findsWidgets, reason: '${binding.label} is listed');
     }
 
     await disposeApp(tester);
@@ -506,8 +518,7 @@ void main() {
   testWidgets('Tab reaches a button, Shift+Tab leaves it', (tester) async {
     await bootApp(tester, viewport: _desktop, seed: _seed);
 
-    expect(await _tabTo(tester, _startNow), isTrue,
-        reason: 'Tab never reached the start button');
+    expect(await _tabTo(tester, _startNow), isTrue, reason: 'Tab never reached the start button');
 
     await _tab(tester, shift: true);
     expect(_focusedReads(_startNow), isFalse);
@@ -562,8 +573,7 @@ void main() {
       visited.add(_focusedScreen());
     }
 
-    expect(visited.difference({null, NowScreen}), isEmpty,
-        reason: 'focus left the visible screen');
+    expect(visited.difference({null, NowScreen}), isEmpty, reason: 'focus left the visible screen');
 
     await disposeApp(tester);
   });

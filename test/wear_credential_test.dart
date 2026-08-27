@@ -43,12 +43,12 @@ void main() {
   });
 
   WearSyncService serviceFor({required bool isWatch}) => WearSyncService(
-        bridge: bridge,
-        activities: DriftActivityRepository(db),
-        changes: DriftChangeRepository(db),
-        syncStore: store,
-        isWatch: isWatch,
-      );
+    bridge: bridge,
+    activities: DriftActivityRepository(db),
+    changes: DriftChangeRepository(db),
+    syncStore: store,
+    isWatch: isWatch,
+  );
 
   List<SyncCredential> credentials() => bridge.sent.whereType<SyncCredential>().toList();
 
@@ -234,8 +234,11 @@ void main() {
         await bridge.receive(const BookmarkSnapshot(activities: [], credentialVersion: 3));
       }
 
-      expect(bridge.sent.whereType<SnapshotRequest>(), hasLength(1),
-          reason: 'the cooldown bounds it to one exchange, not a spin');
+      expect(
+        bridge.sent.whereType<SnapshotRequest>(),
+        hasLength(1),
+        reason: 'the cooldown bounds it to one exchange, not a spin',
+      );
       service.dispose();
     });
 
@@ -288,7 +291,11 @@ void main() {
     test('a malformed credential revokes, and loses to everything', () {
       // Failing safe means failing shut — but at version 0, so a message this
       // build cannot read also cannot overwrite a credential already held.
-      for (final payload in [<Object?, Object?>{}, {'token': 42}, {'token': ''}]) {
+      for (final payload in [
+        <Object?, Object?>{},
+        {'token': 42},
+        {'token': ''},
+      ]) {
         final decoded = WearMessage.decode(SyncCredential.kind, payload) as SyncCredential;
         expect(decoded.token, isNull);
         expect(decoded.version, 0);

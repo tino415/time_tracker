@@ -68,10 +68,7 @@ Future<AppDatabase> bootApp(
   addTearDown(db.close);
   if (seed != null) await seed(db);
   await tester.pumpWidget(
-    ProviderScope(
-      overrides: [databaseProvider.overrideWithValue(db)],
-      child: const PhoneApp(),
-    ),
+    ProviderScope(overrides: [databaseProvider.overrideWithValue(db)], child: const PhoneApp()),
   );
   await settle(tester); // route transition + first stream emissions
   return db;
@@ -89,11 +86,7 @@ Future<void> disposeApp(WidgetTester tester) async {
 
 /// Fills the activity-editor sheet (the last text field in the tree is the one
 /// in the freshly pushed sheet) and confirms it.
-Future<void> fillEditor(
-  WidgetTester tester,
-  String name, {
-  required String confirm,
-}) async {
+Future<void> fillEditor(WidgetTester tester, String name, {required String confirm}) async {
   await tester.enterText(find.byType(TextField).last, name);
   await tester.pump();
   await tester.tap(find.text(confirm));

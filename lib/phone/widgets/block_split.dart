@@ -26,11 +26,7 @@ bool canSplit(Block block, DateTime now) =>
 /// So the position is typed or nudged instead, at minute resolution, the same
 /// way `editBlockStart` moves a boundary. The midpoint is only the starting
 /// guess.
-Future<DateTime?> chooseSplitPoint(
-  BuildContext context,
-  WidgetRef ref,
-  Block block,
-) {
+Future<DateTime?> chooseSplitPoint(BuildContext context, WidgetRef ref, Block block) {
   return showNeoSheet<DateTime>(context, (_) => _SplitSheet(block: block));
 }
 
@@ -51,16 +47,13 @@ class _SplitSheetState extends ConsumerState<_SplitSheet> {
   final _openedAt = DateTime.now();
 
   late final DateTime _end = widget.block.end ?? _openedAt;
-  late DateTime _at = _clamp(
-    widget.block.start.add(_end.difference(widget.block.start) ~/ 2),
-  );
+  late DateTime _at = _clamp(widget.block.start.add(_end.difference(widget.block.start) ~/ 2));
 
   /// The sheet reads and writes whole minutes, so it must not *store* anything
   /// finer. The midpoint of a five-minute block is 09:02:30, which this screen
   /// would show as "09:02" while writing a boundary half a minute later — a
   /// display quietly disagreeing with what it saves.
-  static DateTime _toMinute(DateTime t) =>
-      DateTime(t.year, t.month, t.day, t.hour, t.minute);
+  static DateTime _toMinute(DateTime t) => DateTime(t.year, t.month, t.day, t.hour, t.minute);
 
   @override
   void dispose() {
@@ -97,7 +90,10 @@ class _SplitSheetState extends ConsumerState<_SplitSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         margin: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
         padding: const EdgeInsets.all(14),
         child: SingleChildScrollView(
           child: Column(

@@ -116,8 +116,16 @@ void main() {
 
   test('setParent refuses a cycle (onto itself or into its own subtree)', () async {
     final root = await activities.createActivity(name: 'Work', color: '#333333');
-    final mid = await activities.createActivity(name: 'Client', color: '#444444', parentId: root.syncId);
-    final leaf = await activities.createActivity(name: 'Task', color: '#555555', parentId: mid.syncId);
+    final mid = await activities.createActivity(
+      name: 'Client',
+      color: '#444444',
+      parentId: root.syncId,
+    );
+    final leaf = await activities.createActivity(
+      name: 'Task',
+      color: '#555555',
+      parentId: mid.syncId,
+    );
 
     await activities.setParent(root.syncId, root.syncId);
     await activities.setParent(root.syncId, leaf.syncId); // into its own subtree
@@ -133,7 +141,9 @@ void main() {
     await changes.addActivityToChange(change.syncId, b.syncId);
 
     final links = await changes.watchChangeActivityLinks().first;
-    expect(links.where((l) => l.activityChangeId == change.syncId).map((l) => l.activityId).toSet(),
-        {a.syncId, b.syncId});
+    expect(
+      links.where((l) => l.activityChangeId == change.syncId).map((l) => l.activityId).toSet(),
+      {a.syncId, b.syncId},
+    );
   });
 }

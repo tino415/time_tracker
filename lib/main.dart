@@ -67,8 +67,7 @@ class TimeTrackerRoot extends ConsumerStatefulWidget {
   ConsumerState<TimeTrackerRoot> createState() => _TimeTrackerRootState();
 }
 
-class _TimeTrackerRootState extends ConsumerState<TimeTrackerRoot>
-    with WidgetsBindingObserver {
+class _TimeTrackerRootState extends ConsumerState<TimeTrackerRoot> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();

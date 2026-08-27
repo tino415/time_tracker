@@ -33,11 +33,9 @@ abstract class WearBridge {
 /// side. One APK covers both form factors, so this is the same class on the
 /// phone and on the watch — only the messages differ.
 class ChannelWearBridge implements WearBridge {
-  ChannelWearBridge({
-    MethodChannel? method,
-    EventChannel? events,
-  })  : _method = method ?? const MethodChannel('time_tracker/wear/method'),
-        _events = events ?? const EventChannel('time_tracker/wear/events') {
+  ChannelWearBridge({MethodChannel? method, EventChannel? events})
+    : _method = method ?? const MethodChannel('time_tracker/wear/method'),
+      _events = events ?? const EventChannel('time_tracker/wear/events') {
     _subscription = _events.receiveBroadcastStream().listen(
       _onEvent,
       onError: (Object error) {

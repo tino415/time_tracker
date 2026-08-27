@@ -74,11 +74,16 @@ late String emailId;
 
 Future<void> seedBookmarks(AppDatabase db) async {
   final activities = DriftActivityRepository(db);
-  deepWorkId =
-      (await activities.createActivity(name: 'Deep work', color: '#4F8FEE', bookmarked: true))
-          .syncId;
-  emailId =
-      (await activities.createActivity(name: 'Email', color: '#EE7C4F', bookmarked: true)).syncId;
+  deepWorkId = (await activities.createActivity(
+    name: 'Deep work',
+    color: '#4F8FEE',
+    bookmarked: true,
+  )).syncId;
+  emailId = (await activities.createActivity(
+    name: 'Email',
+    color: '#EE7C4F',
+    bookmarked: true,
+  )).syncId;
   // Not a bookmark: must not reach the watch's list.
   await activities.createActivity(name: 'Admin', color: '#888888');
 }
@@ -117,14 +122,16 @@ void main() {
 
     // emit + settle, not receive: receive awaits a real timer, and inside
     // testWidgets timers only fire when the tester pumps.
-    bridge.emit(BookmarkSnapshot(
-      activities: const [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
-      current: CurrentBlock(
-        changeId: 'phone-change',
-        startedAt: DateTime.now().subtract(const Duration(minutes: 12)),
-        activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+    bridge.emit(
+      BookmarkSnapshot(
+        activities: const [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+        current: CurrentBlock(
+          changeId: 'phone-change',
+          startedAt: DateTime.now().subtract(const Duration(minutes: 12)),
+          activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+        ),
       ),
-    ));
+    );
     await settle(tester);
 
     expect(find.text('nothing tracked'), findsNothing);
@@ -194,7 +201,9 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the timer stays clear of the round screen edge, and does not scroll', (tester) async {
+  testWidgets('the timer stays clear of the round screen edge, and does not scroll', (
+    tester,
+  ) async {
     // Reported: the clock was invisible, cut off by the curve. A circular
     // display narrows towards the top, and the hero had been sitting at the top
     // of a scroll view — flush against exactly where it cuts.
@@ -292,16 +301,20 @@ void main() {
   testWidgets('a long bookmark list scrolls without overflowing', (tester) async {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
-    await pumpWatch(tester, bridge, seed: (db) async {
-      final activities = DriftActivityRepository(db);
-      for (var i = 0; i < 12; i++) {
-        await activities.createActivity(
-          name: 'Activity number $i with a long name',
-          color: '#4F8FEE',
-          bookmarked: true,
-        );
-      }
-    });
+    await pumpWatch(
+      tester,
+      bridge,
+      seed: (db) async {
+        final activities = DriftActivityRepository(db);
+        for (var i = 0; i < 12; i++) {
+          await activities.createActivity(
+            name: 'Activity number $i with a long name',
+            color: '#4F8FEE',
+            bookmarked: true,
+          );
+        }
+      },
+    );
 
     // 12 tall tiles cannot fit 227px — the list must scroll rather than assert.
     expect(tester.takeException(), isNull);

@@ -33,11 +33,11 @@ class WearSyncService {
     required ChangeRepository changes,
     required SyncStore syncStore,
     required bool isWatch,
-  })  : _bridge = bridge,
-        _activities = activities,
-        _changes = changes,
-        _syncStore = syncStore,
-        _isWatch = isWatch;
+  }) : _bridge = bridge,
+       _activities = activities,
+       _changes = changes,
+       _syncStore = syncStore,
+       _isWatch = isWatch;
 
   final WearBridge _bridge;
   final ActivityRepository _activities;
@@ -100,9 +100,7 @@ class WearSyncService {
       // The request carries what this device already knows about the account, so
       // the phone can answer with a credential only when it holds something
       // newer. That is what makes the token travel once rather than routinely.
-      await _bridge.send(
-        SnapshotRequest(credentialVersion: await _syncStore.credentialVersion()),
-      );
+      await _bridge.send(SnapshotRequest(credentialVersion: await _syncStore.credentialVersion()));
       if (_gotSnapshot) return;
       attempt++;
       // 2s, 4s, 8s … capped at 32. Cheap enough to leave running indefinitely:
@@ -163,9 +161,7 @@ class WearSyncService {
     if (last != null && now.difference(last) < _credentialCooldown) return;
     _askedForCredentialAt = now;
 
-    await _bridge.send(
-      SnapshotRequest(credentialVersion: await _syncStore.credentialVersion()),
-    );
+    await _bridge.send(SnapshotRequest(credentialVersion: await _syncStore.credentialVersion()));
   }
 
   /// Phone → watch, when the account changes and when a watch asks for
@@ -193,10 +189,7 @@ class WearSyncService {
       // Reconnected: the watch may have been away while the account changed, and
       // it will ask anyway — but volunteering saves a round trip.
       unawaited(() async {
-        await _pushCredential(
-          await _syncStore.token(),
-          await _syncStore.credentialVersion(),
-        );
+        await _pushCredential(await _syncStore.token(), await _syncStore.credentialVersion());
       }());
     }
   }
@@ -351,18 +344,10 @@ class WearSyncService {
     final changeSyncId = _uuid.v4();
     final when = at ?? DateTime.now();
 
-    await _changes.applyRelayedSwitch(
-      changeSyncId: changeSyncId,
-      activityId: activityId,
-      at: when,
-    );
+    await _changes.applyRelayedSwitch(changeSyncId: changeSyncId, activityId: activityId, at: when);
     await _activities.touchUsed(activityId, when);
 
-    await _bridge.send(SwitchRequest(
-      changeSyncId: changeSyncId,
-      activityId: activityId,
-      at: when,
-    ));
+    await _bridge.send(SwitchRequest(changeSyncId: changeSyncId, activityId: activityId, at: when));
   }
 
   void dispose() {

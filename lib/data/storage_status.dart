@@ -30,11 +30,7 @@ class StorageStatus {
   final int? quotaBytes;
 
   /// Non-web: a real file on disk, nothing to negotiate.
-  static const native = StorageStatus(
-    kind: 'native',
-    persistent: true,
-    crossOriginIsolated: false,
-  );
+  static const native = StorageStatus(kind: 'native', persistent: true, crossOriginIsolated: false);
 
   /// One-line summary for the UI, e.g. `opfs · persistent · isolated`.
   String get summary {

@@ -140,8 +140,9 @@ class _NeoPressableState extends State<NeoPressable> {
   /// answers them the same way whichever of the two the platform sends.
   Map<Type, Action<Intent>> get _activate => {
     ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) => widget.onTap?.call()),
-    ButtonActivateIntent:
-        CallbackAction<ButtonActivateIntent>(onInvoke: (_) => widget.onTap?.call()),
+    ButtonActivateIntent: CallbackAction<ButtonActivateIntent>(
+      onInvoke: (_) => widget.onTap?.call(),
+    ),
   };
 
   @override
@@ -166,19 +167,15 @@ class _NeoPressableState extends State<NeoPressable> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 110),
           curve: Curves.easeOut,
-          transform: Matrix4.translationValues(
-            _pressed ? o : 0,
-            _pressed ? o : 0,
-            0,
-          ),
+          transform: Matrix4.translationValues(_pressed ? o : 0, _pressed ? o : 0, 0),
           decoration: BoxDecoration(
             color: widget.fill ?? t.surface,
             border: Border.all(color: t.line, width: widget.borderWidth),
             boxShadow: _pressed
                 ? const []
                 : _focused
-                    ? t.focusShadow(o)
-                    : t.hardShadow(o),
+                ? t.focusShadow(o)
+                : t.hardShadow(o),
           ),
           padding: widget.padding,
           child: widget.child,
@@ -226,7 +223,10 @@ class NeoButton extends StatelessWidget {
         mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
         children: [
           if (icon != null) ...[
-            Text(icon!, style: mono(context, weight: FontWeight.w800, color: fg)),
+            Text(
+              icon!,
+              style: mono(context, weight: FontWeight.w800, color: fg),
+            ),
             const SizedBox(width: 8),
           ],
           if (compact)
@@ -295,7 +295,10 @@ class NeoSwatch extends StatelessWidget {
     return Container(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: color, border: Border.all(color: t.line, width: 2)),
+      decoration: BoxDecoration(
+        color: color,
+        border: Border.all(color: t.line, width: 2),
+      ),
     );
   }
 }

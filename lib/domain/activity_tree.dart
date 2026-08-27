@@ -76,9 +76,7 @@ class ActivityTree {
 
   /// Human-readable path, root first: `Work / Client / CU-1234`.
   String pathName(String id, {String separator = ' / '}) {
-    final chain = ancestorIdsInclusive(id).reversed
-        .map((i) => byId[i]?.name ?? '?')
-        .toList();
+    final chain = ancestorIdsInclusive(id).reversed.map((i) => byId[i]?.name ?? '?').toList();
     return chain.join(separator);
   }
 

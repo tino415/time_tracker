@@ -71,8 +71,9 @@ void main() {
   // now splits, because a note lives on the block and splitting is how the
   // second stretch of the same work gets its own. The accidental double-tap is
   // answered by the undo below rather than by refusing the tap.
-  testWidgets('re-tapping the running activity splits the block, and offers to undo',
-      (tester) async {
+  testWidgets('re-tapping the running activity splits the block, and offers to undo', (
+    tester,
+  ) async {
     final db = await bootApp(tester, viewport: _phone);
 
     await tester.tap(inScreen(NowScreen, find.text('+ NEW ACTIVITY')));

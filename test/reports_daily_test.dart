@@ -71,7 +71,10 @@ void main() {
     await _openLastWeek(tester);
 
     final saturday = _lastWeek(DateTime.saturday);
-    expect(inScreen(ReportsScreen, find.text(_dayLabel(_lastWeek(DateTime.monday)))), findsOneWidget);
+    expect(
+      inScreen(ReportsScreen, find.text(_dayLabel(_lastWeek(DateTime.monday)))),
+      findsOneWidget,
+    );
     expect(inScreen(ReportsScreen, find.text(_dayLabel(saturday))), findsOneWidget);
 
     // 20:00 to midnight on Saturday; the hour the Break block spends past
@@ -94,8 +97,10 @@ void main() {
     await tester.tap(inScreen(ReportsScreen, find.text(_dayLabel(saturday))));
     await settle(tester);
 
-    expect(inScreen(ReportsScreen, find.text('PER CATEGORY · ${_dayLabel(saturday)}')),
-        findsOneWidget);
+    expect(
+      inScreen(ReportsScreen, find.text('PER CATEGORY · ${_dayLabel(saturday)}')),
+      findsOneWidget,
+    );
     // Saturday alone: two hours each, and the day row keeps the week's totals.
     expect(inScreen(ReportsScreen, find.text('2h 00m')), findsNWidgets(2));
     expect(inScreen(ReportsScreen, find.text('4h 00m')), findsOneWidget);

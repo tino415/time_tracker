@@ -55,10 +55,7 @@ class HttpSyncTransport implements SyncTransport {
       response = await _client
           .post(
             baseUrl.resolve('sync'),
-            headers: {
-              'content-type': 'application/json',
-              'authorization': 'Bearer $token',
-            },
+            headers: {'content-type': 'application/json', 'authorization': 'Bearer $token'},
             body: jsonEncode(request.toJson()),
           )
           .timeout(timeout);
@@ -75,9 +72,7 @@ class HttpSyncTransport implements SyncTransport {
       throw SyncException('http ${response.statusCode}: ${response.body}');
     }
 
-    final decoded = SyncResponse.fromJson(
-      jsonDecode(response.body) as Object?,
-    );
+    final decoded = SyncResponse.fromJson(jsonDecode(response.body) as Object?);
     if (decoded == null) {
       throw const SyncException('malformed response');
     }

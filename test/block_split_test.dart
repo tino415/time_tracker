@@ -110,17 +110,21 @@ void main() {
   });
 
   testWidgets('refuses a block with no room for two halves', (tester) async {
-    await bootApp(tester, viewport: _phone, seed: (db) async {
-      final activities = DriftActivityRepository(db);
-      final changes = DriftChangeRepository(db);
-      final a = await activities.createActivity(name: 'Alpha', color: '#4F8FEE');
-      final b = await activities.createActivity(name: 'Beta', color: '#EE7C4F');
-      await changes.switchTo(a.syncId, at: _at(9));
-      // 90 seconds: splitting would leave a half shorter than the minute the
-      // controller insists on, so the action must not be offered at all rather
-      // than being offered and silently doing nothing.
-      await changes.switchTo(b.syncId, at: _at(9).add(const Duration(seconds: 90)));
-    });
+    await bootApp(
+      tester,
+      viewport: _phone,
+      seed: (db) async {
+        final activities = DriftActivityRepository(db);
+        final changes = DriftChangeRepository(db);
+        final a = await activities.createActivity(name: 'Alpha', color: '#4F8FEE');
+        final b = await activities.createActivity(name: 'Beta', color: '#EE7C4F');
+        await changes.switchTo(a.syncId, at: _at(9));
+        // 90 seconds: splitting would leave a half shorter than the minute the
+        // controller insists on, so the action must not be offered at all rather
+        // than being offered and silently doing nothing.
+        await changes.switchTo(b.syncId, at: _at(9).add(const Duration(seconds: 90)));
+      },
+    );
 
     await openTab(tester, 'TIMELINE');
     await tester.tap(inScreen(TimelineScreen, find.text('Alpha')));

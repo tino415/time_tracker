@@ -91,23 +91,24 @@ class _TimelineList extends ConsumerWidget {
         for (final b in blocks) {
           final day = DateTime(b.start.year, b.start.month, b.start.day);
           if (lastDay == null || day != lastDay) {
-            rows.add(Padding(
-              padding: EdgeInsets.only(top: lastDay == null ? 0 : 18, bottom: 10),
-              child: NeoChip(_dayLabel(day, now)),
-            ));
+            rows.add(
+              Padding(
+                padding: EdgeInsets.only(top: lastDay == null ? 0 : 18, bottom: 10),
+                child: NeoChip(_dayLabel(day, now)),
+              ),
+            );
             lastDay = day;
           }
-          rows.add(Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            // Blocks are newest-first, so the last one is the earliest — it has
-            // no preceding boundary to merge into.
-            child: _BlockCard(block: b, now: now, canMerge: b != blocks.last),
-          ));
+          rows.add(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              // Blocks are newest-first, so the last one is the earliest — it has
+              // no preceding boundary to merge into.
+              child: _BlockCard(block: b, now: now, canMerge: b != blocks.last),
+            ),
+          );
         }
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-          children: rows,
-        );
+        return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), children: rows);
       },
     );
   }
@@ -163,8 +164,10 @@ class _BlockCard extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(formatDurationHm(block.duration(now)),
-                            style: mono(context, weight: FontWeight.w800)),
+                        Text(
+                          formatDurationHm(block.duration(now)),
+                          style: mono(context, weight: FontWeight.w800),
+                        ),
                         // Resume, one tap, without opening anything. A visible
                         // control rather than a swipe: there is no swipe on a
                         // mouse, and a gesture nobody sees is not an affordance.
@@ -184,20 +187,28 @@ class _BlockCard extends ConsumerWidget {
                         Text(range, style: mono(context, size: 11, color: t.muted)),
                         if (block.isOpen) ...[
                           const SizedBox(width: 8),
-                          Text('● open', style: mono(context, size: 11, weight: FontWeight.w700, color: t.brand)),
+                          Text(
+                            '● open',
+                            style: mono(context, size: 11, weight: FontWeight.w700, color: t.brand),
+                          ),
                         ],
                       ],
                     ),
                     if (multi) ...[
                       const SizedBox(height: 6),
-                      Text('forgot to switch · even-split ${formatDurationHm(Duration(microseconds: block.duration(now).inMicroseconds ~/ acts.length))} each',
-                          style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted)),
+                      Text(
+                        'forgot to switch · even-split ${formatDurationHm(Duration(microseconds: block.duration(now).inMicroseconds ~/ acts.length))} each',
+                        style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted),
+                      ),
                     ],
                     if (block.comment != null && block.comment!.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text('✎ ${block.comment}',
-                          maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: mono(context, size: 12, weight: FontWeight.w700)),
+                      Text(
+                        '✎ ${block.comment}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: mono(context, size: 12, weight: FontWeight.w700),
+                      ),
                     ],
                   ],
                 ),
@@ -243,8 +254,10 @@ class _ResumeButton extends ConsumerWidget {
           // screen reader would say and what a text-matching browser check
           // would have to work around.
           child: ExcludeSemantics(
-            child: Text('▶',
-                style: mono(context, size: 12, weight: FontWeight.w800, color: t.surface)),
+            child: Text(
+              '▶',
+              style: mono(context, size: 12, weight: FontWeight.w800, color: t.surface),
+            ),
           ),
         ),
       ),
@@ -263,11 +276,12 @@ class _ColourRail extends StatelessWidget {
     final cs = colors.isEmpty ? [t.muted] : colors;
     return Container(
       width: 14,
-      decoration: BoxDecoration(border: Border(right: BorderSide(color: t.line, width: 3))),
+      decoration: BoxDecoration(
+        border: Border(right: BorderSide(color: t.line, width: 3)),
+      ),
       child: Column(
         children: [for (final c in cs) Expanded(child: Container(color: c))],
       ),
     );
   }
 }
-

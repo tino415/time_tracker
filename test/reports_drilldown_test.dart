@@ -42,13 +42,25 @@ Future<void> _seedLastWeek(AppDatabase db) async {
 
   final work = await activities.createActivity(name: 'Work', color: '#4F8FEE');
   final payout = await activities.createActivity(
-      name: 'Payout', color: '#EE7C4F', parentId: work.syncId);
+    name: 'Payout',
+    color: '#EE7C4F',
+    parentId: work.syncId,
+  );
   final tracker = await activities.createActivity(
-      name: 'Time tracker', color: '#4FEE8F', parentId: work.syncId);
+    name: 'Time tracker',
+    color: '#4FEE8F',
+    parentId: work.syncId,
+  );
   final cu1 = await activities.createActivity(
-      name: 'CU-1 Refund webhook', color: '#EE7C4F', parentId: payout.syncId);
+    name: 'CU-1 Refund webhook',
+    color: '#EE7C4F',
+    parentId: payout.syncId,
+  );
   final cu2 = await activities.createActivity(
-      name: 'CU-2 Payout report', color: '#EE7C4F', parentId: payout.syncId);
+    name: 'CU-2 Payout report',
+    color: '#EE7C4F',
+    parentId: payout.syncId,
+  );
   final brk = await activities.createActivity(name: 'Break', color: '#9A9B95');
 
   await changes.switchTo(brk.syncId, at: _at(19, 30));
@@ -114,7 +126,6 @@ void main() {
 
     await disposeApp(tester);
   });
-
 }
 
 // A golden of the drilled-open report was tried and removed. It pinned what the

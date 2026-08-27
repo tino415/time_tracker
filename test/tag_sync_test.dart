@@ -33,9 +33,7 @@ void main() {
   /// Pretend the last sync succeeded, so what a test does next is the only
   /// thing outstanding.
   Future<void> synced() async {
-    await db.update(db.activityChanges).write(
-          const ActivityChangesCompanion(dirty: Value(false)),
-        );
+    await db.update(db.activityChanges).write(const ActivityChangesCompanion(dirty: Value(false)));
   }
 
   test('tagging a synced block leaves something to push', () async {

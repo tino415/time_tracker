@@ -15,11 +15,7 @@ library;
 
 /// One bookmarked activity, as much of it as the watch needs to draw a tile.
 class WearActivity {
-  const WearActivity({
-    required this.syncId,
-    required this.name,
-    required this.color,
-  });
+  const WearActivity({required this.syncId, required this.name, required this.color});
 
   final String syncId;
   final String name;
@@ -27,11 +23,7 @@ class WearActivity {
   /// Stored `#RRGGBB`, same as the phone's catalogue.
   final String color;
 
-  Map<String, Object?> toPayload() => {
-        'syncId': syncId,
-        'name': name,
-        'color': color,
-      };
+  Map<String, Object?> toPayload() => {'syncId': syncId, 'name': name, 'color': color};
 
   static WearActivity? fromPayload(Object? raw) {
     if (raw is! Map) return null;
@@ -45,10 +37,7 @@ class WearActivity {
 
   @override
   bool operator ==(Object other) =>
-      other is WearActivity &&
-      other.syncId == syncId &&
-      other.name == name &&
-      other.color == color;
+      other is WearActivity && other.syncId == syncId && other.name == name && other.color == color;
 
   @override
   int get hashCode => Object.hash(syncId, name, color);
@@ -134,21 +123,17 @@ class SyncCredential extends WearMessage {
 /// watch writes the same boundary rather than a second one — and can run a live
 /// elapsed clock instead of guessing when it started.
 class CurrentBlock {
-  const CurrentBlock({
-    required this.changeId,
-    required this.startedAt,
-    required this.activity,
-  });
+  const CurrentBlock({required this.changeId, required this.startedAt, required this.activity});
 
   final String changeId;
   final DateTime startedAt;
   final WearActivity activity;
 
   Map<String, Object?> toPayload() => {
-        'changeId': changeId,
-        'startedAt': startedAt.millisecondsSinceEpoch,
-        'activity': activity.toPayload(),
-      };
+    'changeId': changeId,
+    'startedAt': startedAt.millisecondsSinceEpoch,
+    'activity': activity.toPayload(),
+  };
 
   static CurrentBlock? fromPayload(Object? raw) {
     if (raw is! Map) return null;
@@ -171,11 +156,7 @@ class CurrentBlock {
 /// that missed messages while off the wrist recovers completely from the next
 /// one instead of accumulating drift.
 class BookmarkSnapshot extends WearMessage {
-  const BookmarkSnapshot({
-    required this.activities,
-    this.current,
-    this.credentialVersion = 0,
-  });
+  const BookmarkSnapshot({required this.activities, this.current, this.credentialVersion = 0});
 
   static const kind = 'bookmarks';
 
@@ -207,10 +188,10 @@ class BookmarkSnapshot extends WearMessage {
 
   @override
   Map<String, Object?> toPayload() => {
-        'activities': [for (final a in activities) a.toPayload()],
-        'current': current?.toPayload(),
-        'credentialVersion': credentialVersion,
-      };
+    'activities': [for (final a in activities) a.toPayload()],
+    'current': current?.toPayload(),
+    'credentialVersion': credentialVersion,
+  };
 
   static BookmarkSnapshot fromPayload(Map<Object?, Object?> payload) {
     final raw = payload['activities'];
@@ -235,11 +216,7 @@ class BookmarkSnapshot extends WearMessage {
 /// upserts that id, so a message delivered twice — or replayed from the
 /// listener service's queue after the app restarts — cannot open two boundaries.
 class SwitchRequest extends WearMessage {
-  const SwitchRequest({
-    required this.changeSyncId,
-    required this.activityId,
-    required this.at,
-  });
+  const SwitchRequest({required this.changeSyncId, required this.activityId, required this.at});
 
   static const kind = 'switch';
 
@@ -252,11 +229,11 @@ class SwitchRequest extends WearMessage {
 
   @override
   Map<String, Object?> toPayload() => {
-        'changeSyncId': changeSyncId,
-        'activityId': activityId,
-        // Epoch millis, matching how the boundary is stored.
-        'at': at.millisecondsSinceEpoch,
-      };
+    'changeSyncId': changeSyncId,
+    'activityId': activityId,
+    // Epoch millis, matching how the boundary is stored.
+    'at': at.millisecondsSinceEpoch,
+  };
 
   static SwitchRequest? fromPayload(Map<Object?, Object?> payload) {
     final changeSyncId = payload['changeSyncId'];
@@ -315,8 +292,8 @@ enum WearReachability {
   reachable;
 
   static WearReachability parse(Object? raw) => switch (raw) {
-        'reachable' => WearReachability.reachable,
-        'pairedButNotReachable' => WearReachability.pairedButNotReachable,
-        _ => WearReachability.notPaired,
-      };
+    'reachable' => WearReachability.reachable,
+    'pairedButNotReachable' => WearReachability.pairedButNotReachable,
+    _ => WearReachability.notPaired,
+  };
 }

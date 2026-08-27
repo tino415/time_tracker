@@ -123,8 +123,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           day == null ? 'Per category' : 'Per category · ${formatWeekdayDay(day)}',
           brand: true,
           trailing: drillable
-              ? Text('tap to drill in',
-                  style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted))
+              ? Text(
+                  'tap to drill in',
+                  style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted),
+                )
               : null,
         ),
         const SizedBox(height: 12),
@@ -132,7 +134,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           // An empty state, not a zero total: with continuous tracking the only
           // way to reach it is a range that holds no data at all.
           Text(
-            day == null ? 'nothing tracked this week' : 'nothing tracked on ${formatWeekdayDay(day)}',
+            day == null
+                ? 'nothing tracked this week'
+                : 'nothing tracked on ${formatWeekdayDay(day)}',
             style: mono(context, color: t.muted),
           )
         else
@@ -189,8 +193,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           total: day.total,
           max: busiest,
           selected: day.day == selected,
-          onTap: () => ref.read(reportDayProvider.notifier).state =
-              day.day == selected ? null : day.day,
+          onTap: () =>
+              ref.read(reportDayProvider.notifier).state = day.day == selected ? null : day.day,
         ),
       const SizedBox(height: 18),
     ];
@@ -216,17 +220,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final children = _tracked(totals, tree.childrenOf(id));
       final open = _expanded.contains(id);
 
-      out.add(_ReportBar(
-        label: activity.name,
-        color: parseHexColor(activity.color),
-        value: totals.subtreeOf(id),
-        max: max,
-        depth: depth,
-        expanded: open,
-        onTap: children.isEmpty
-            ? null
-            : () => setState(() => open ? _expanded.remove(id) : _expanded.add(id)),
-      ));
+      out.add(
+        _ReportBar(
+          label: activity.name,
+          color: parseHexColor(activity.color),
+          value: totals.subtreeOf(id),
+          max: max,
+          depth: depth,
+          expanded: open,
+          onTap: children.isEmpty
+              ? null
+              : () => setState(() => open ? _expanded.remove(id) : _expanded.add(id)),
+        ),
+      );
 
       if (!open || children.isEmpty) continue;
 
@@ -236,14 +242,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final childMax = totals.subtreeOf(id);
 
       if (direct > Duration.zero) {
-        out.add(_ReportBar(
-          label: 'direct',
-          color: parseHexColor(activity.color),
-          value: direct,
-          max: childMax,
-          depth: depth + 1,
-          muted: true,
-        ));
+        out.add(
+          _ReportBar(
+            label: 'direct',
+            color: parseHexColor(activity.color),
+            value: direct,
+            max: childMax,
+            depth: depth + 1,
+            muted: true,
+          ),
+        );
       }
       out.addAll(_rows(tree, totals, children, max: childMax, depth: depth + 1));
     }
@@ -284,7 +292,8 @@ class _SyncActionState extends ConsumerState<_SyncAction> {
       final result = await service.syncNow();
       if (!mounted) return;
       setState(() {
-        _status = '↑${result.pushed} ↓${result.pulled}'
+        _status =
+            '↑${result.pushed} ↓${result.pulled}'
             '${result.rejected > 0 ? " · ${result.rejected} superseded" : ""}';
       });
     } on SyncException catch (e) {
@@ -334,7 +343,10 @@ class _SyncActionState extends ConsumerState<_SyncAction> {
         ),
         if (_status != null) ...[
           const SizedBox(width: 10),
-          Text(_status!, style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted)),
+          Text(
+            _status!,
+            style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+          ),
         ],
       ],
     );
@@ -358,8 +370,10 @@ class _StorageLine extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Text('LOCAL DB · ',
-                style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+            Text(
+              'LOCAL DB · ',
+              style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted),
+            ),
             Expanded(
               child: Text(
                 status.summary,
@@ -379,8 +393,10 @@ class _StorageLine extends ConsumerWidget {
         const SizedBox(height: 4),
         // So "which version is on this device?" is answerable by looking, rather
         // than by inferring from what was last installed.
-        Text('BUILD · $kBuildId',
-            style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted)),
+        Text(
+          'BUILD · $kBuildId',
+          style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted),
+        ),
         const SizedBox(height: 4),
         const _SyncBackendLine(),
       ],
@@ -411,8 +427,10 @@ class _SyncBackendLine extends ConsumerWidget {
 
     return Row(
       children: [
-        Text('SYNC · ',
-            style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+        Text(
+          'SYNC · ',
+          style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted),
+        ),
         Expanded(
           child: SelectableText(
             label,
@@ -443,7 +461,9 @@ class _WeekSelector extends StatelessWidget {
       children: [
         NeoButton(label: '‹', onTap: onPrev, shadowOffset: 3, compact: true),
         Expanded(
-          child: Center(child: Text(label, style: mono(context, weight: FontWeight.w800))),
+          child: Center(
+            child: Text(label, style: mono(context, weight: FontWeight.w800)),
+          ),
         ),
         NeoButton(label: '›', onTap: onNext, shadowOffset: 3, compact: true),
       ],
@@ -508,20 +528,26 @@ class _DayBar extends StatelessWidget {
                 // labels start on one line.
                 SizedBox(
                   width: 16,
-                  child: Text(selected ? '▾' : '▸',
-                      style: mono(context, size: 14, weight: FontWeight.w800, color: t.muted)),
+                  child: Text(
+                    selected ? '▾' : '▸',
+                    style: mono(context, size: 14, weight: FontWeight.w800, color: t.muted),
+                  ),
                 ),
                 Expanded(
-                  child: Text(label,
-                      style: mono(
-                        context,
-                        size: 14,
-                        weight: FontWeight.w700,
-                        color: selected ? t.brand : t.ink,
-                      )),
+                  child: Text(
+                    label,
+                    style: mono(
+                      context,
+                      size: 14,
+                      weight: FontWeight.w700,
+                      color: selected ? t.brand : t.ink,
+                    ),
+                  ),
                 ),
-                Text(formatDurationHm(total),
-                    style: mono(context, size: 14, weight: FontWeight.w800, color: t.ink)),
+                Text(
+                  formatDurationHm(total),
+                  style: mono(context, size: 14, weight: FontWeight.w800, color: t.ink),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -537,7 +563,10 @@ class _DayBar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (var i = 0; i < segments.length; i++)
-                    Expanded(flex: weights[i], child: ColoredBox(color: segments[i].color)),
+                    Expanded(
+                      flex: weights[i],
+                      child: ColoredBox(color: segments[i].color),
+                    ),
                   if (rest > 0) Expanded(flex: rest, child: const SizedBox.shrink()),
                 ],
               ),
@@ -604,13 +633,17 @@ class _ReportBar extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: Text(label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: mono(context, size: size, weight: FontWeight.w700, color: ink)),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono(context, size: size, weight: FontWeight.w700, color: ink),
+                  ),
                 ),
-                Text(formatDurationHm(value),
-                    style: mono(context, size: size, weight: FontWeight.w800, color: ink)),
+                Text(
+                  formatDurationHm(value),
+                  style: mono(context, size: size, weight: FontWeight.w800, color: ink),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -643,44 +676,39 @@ Future<void> _exportCsv(
   // Optional subtree filter: null scope = everything.
   String? scope = '__all__';
   if (tree.rootIds.isNotEmpty) {
-    scope = await showNeoSheet<String>(
-      context,
-      (sheet) {
-        final t = neo(sheet);
-        return Container(
-          margin: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              NeoChip('Export scope'),
-              const SizedBox(height: 12),
-              NeoButton(label: 'all activities', onTap: () => Navigator.pop(sheet, '__all__')),
-              const SizedBox(height: 10),
-              NeoButton(
-                label: 'a subtree…',
-                onTap: () async {
-                  final id = await showActivityPicker(context, ref, title: 'Export which subtree');
-                  if (context.mounted) Navigator.pop(sheet, id);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    scope = await showNeoSheet<String>(context, (sheet) {
+      final t = neo(sheet);
+      return Container(
+        margin: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            NeoChip('Export scope'),
+            const SizedBox(height: 12),
+            NeoButton(label: 'all activities', onTap: () => Navigator.pop(sheet, '__all__')),
+            const SizedBox(height: 10),
+            NeoButton(
+              label: 'a subtree…',
+              onTap: () async {
+                final id = await showActivityPicker(context, ref, title: 'Export which subtree');
+                if (context.mounted) Navigator.pop(sheet, id);
+              },
+            ),
+          ],
+        ),
+      );
+    });
   }
   if (scope == null) return; // dismissed
 
   final subtreeRootId = scope == '__all__' ? null : scope;
-  final csv = buildCsv(
-    blocks: blocks,
-    tree: tree,
-    now: now,
-    subtreeRootId: subtreeRootId,
-  );
+  final csv = buildCsv(blocks: blocks, tree: tree, now: now, subtreeRootId: subtreeRootId);
   final name = csvFileName(
     now,
     scopeName: subtreeRootId == null ? null : tree[subtreeRootId]?.name,
@@ -694,11 +722,7 @@ Future<void> _exportCsv(
     await SharePlus.instance.share(
       ShareParams(
         files: [
-          XFile.fromData(
-            Uint8List.fromList(utf8.encode(csv)),
-            mimeType: 'text/csv',
-            name: name,
-          ),
+          XFile.fromData(Uint8List.fromList(utf8.encode(csv)), mimeType: 'text/csv', name: name),
         ],
         fileNameOverrides: [name],
         subject: name,
@@ -718,18 +742,22 @@ Future<void> _showCsvPreview(BuildContext context, String csv) {
     context: context,
     builder: (_) => AlertDialog(
       backgroundColor: t.surface,
-      shape: RoundedRectangleBorder(side: BorderSide(color: t.line, width: 3), borderRadius: BorderRadius.zero),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: t.line, width: 3),
+        borderRadius: BorderRadius.zero,
+      ),
       title: Text('CSV · $rowCount rows', style: mono(context, weight: FontWeight.w800)),
       content: SizedBox(
         width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: SelectableText(csv, style: mono(context, size: 11)),
-        ),
+        child: SingleChildScrollView(child: SelectableText(csv, style: mono(context, size: 11))),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text('COPIED ✓ DONE', style: mono(context, weight: FontWeight.w800, color: t.brand)),
+          child: Text(
+            'COPIED ✓ DONE',
+            style: mono(context, weight: FontWeight.w800, color: t.brand),
+          ),
         ),
       ],
     ),

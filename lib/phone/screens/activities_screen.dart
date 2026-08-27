@@ -26,7 +26,9 @@ class ActivitiesScreen extends ConsumerWidget {
       children: [
         Expanded(
           child: ids.isEmpty
-              ? Center(child: Text('no activities yet', style: mono(context, color: t.muted)))
+              ? Center(
+                  child: Text('no activities yet', style: mono(context, color: t.muted)),
+                )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                   itemCount: ids.length,
@@ -73,19 +75,35 @@ class _ActivityRow extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono(context, weight: FontWeight.w800)),
+                  Text(
+                    a.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono(context, weight: FontWeight.w800),
+                  ),
                   if (a.externalId != null)
-                    Text(a.externalId!, style: mono(context, size: 11, weight: FontWeight.w700, color: t.brand)),
+                    Text(
+                      a.externalId!,
+                      style: mono(context, size: 11, weight: FontWeight.w700, color: t.brand),
+                    ),
                 ],
               ),
             ),
             GestureDetector(
-              onTap: () => ref.read(activityRepositoryProvider).setBookmarked(a.syncId, !a.bookmarked),
+              onTap: () =>
+                  ref.read(activityRepositoryProvider).setBookmarked(a.syncId, !a.bookmarked),
               behavior: HitTestBehavior.opaque,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                child: Text(a.bookmarked ? '★' : '☆',
-                    style: mono(context, size: 20, weight: FontWeight.w800, color: a.bookmarked ? t.brand : t.muted)),
+                child: Text(
+                  a.bookmarked ? '★' : '☆',
+                  style: mono(
+                    context,
+                    size: 20,
+                    weight: FontWeight.w800,
+                    color: a.bookmarked ? t.brand : t.muted,
+                  ),
+                ),
               ),
             ),
           ],
@@ -101,7 +119,10 @@ Future<void> _showRowActions(BuildContext context, WidgetRef ref, Activity a) as
     context,
     (sheet) => Container(
       margin: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+      decoration: BoxDecoration(
+        color: t.bg,
+        border: Border.all(color: t.line, width: 3),
+      ),
       padding: const EdgeInsets.all(14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -166,14 +187,26 @@ Future<bool> _confirmDelete(BuildContext context, String name) async {
     context: context,
     builder: (_) => AlertDialog(
       backgroundColor: t.surface,
-      shape: RoundedRectangleBorder(side: BorderSide(color: t.line, width: 3), borderRadius: BorderRadius.zero),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: t.line, width: 3),
+        borderRadius: BorderRadius.zero,
+      ),
       title: Text('DELETE', style: mono(context, weight: FontWeight.w800)),
-      content: Text('Delete "$name"? Any sub-activities move to the top level.', style: mono(context)),
+      content: Text(
+        'Delete "$name"? Any sub-activities move to the top level.',
+        style: mono(context),
+      ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: Text('CANCEL', style: mono(context))),
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('CANCEL', style: mono(context)),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(context, true),
-          child: Text('DELETE', style: mono(context, weight: FontWeight.w800, color: ActivityPalette.red)),
+          child: Text(
+            'DELETE',
+            style: mono(context, weight: FontWeight.w800, color: ActivityPalette.red),
+          ),
         ),
       ],
     ),

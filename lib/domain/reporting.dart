@@ -65,10 +65,7 @@ ReportTotals reportTotals({
     }
   }
 
-  return ReportTotals(
-    subtree: _asDurations(subtree),
-    direct: _asDurations(direct),
-  );
+  return ReportTotals(subtree: _asDurations(subtree), direct: _asDurations(direct));
 }
 
 /// One local day of a report range, split across the top-level categories.
@@ -129,9 +126,11 @@ List<DayTotals> dailyTotals({
 
   final lastDay = rangeEnd.isBefore(now) ? rangeEnd : now;
   final out = <DayTotals>[];
-  for (var day = rangeStart;
-      day.isBefore(rangeEnd) && !day.isAfter(lastDay);
-      day = DateTime(day.year, day.month, day.day + 1)) {
+  for (
+    var day = rangeStart;
+    day.isBefore(rangeEnd) && !day.isAfter(lastDay);
+    day = DateTime(day.year, day.month, day.day + 1)
+  ) {
     out.add(DayTotals(day: day, byRoot: _asDurations(micros[day] ?? const {})));
   }
   return out;

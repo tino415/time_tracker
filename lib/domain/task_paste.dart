@@ -17,8 +17,5 @@ final _idPrefix = RegExp(r'^([A-Za-z]{1,10}-\d+)\b');
 PastedTask parsePastedTask(String raw) {
   final text = raw.trim();
   final m = _idPrefix.firstMatch(text);
-  return PastedTask(
-    name: text,
-    externalId: m?.group(1)?.toUpperCase(),
-  );
+  return PastedTask(name: text, externalId: m?.group(1)?.toUpperCase());
 }

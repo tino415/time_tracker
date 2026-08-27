@@ -105,9 +105,7 @@ Future<void> _handle(HttpRequest request, Directory root) async {
   // this is a dev/test server — keep it simple and revalidate everything else.
   response.headers.set(
     HttpHeaders.cacheControlHeader,
-    (relative == 'index.html' || relative.contains('service_worker'))
-        ? 'no-store'
-        : 'no-cache',
+    (relative == 'index.html' || relative.contains('service_worker')) ? 'no-store' : 'no-cache',
   );
 
   await response.addStream(file.openRead());

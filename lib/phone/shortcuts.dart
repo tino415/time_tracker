@@ -113,52 +113,60 @@ class ShortcutBinding {
 
 const shortcutBindings = <ShortcutBinding>[
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyN,
-      prefix: goPrefix,
-      label: 'g n',
-      what: 'Now',
-      action: ShortcutAction.goNow),
+    key: PhysicalKeyboardKey.keyN,
+    prefix: goPrefix,
+    label: 'g n',
+    what: 'Now',
+    action: ShortcutAction.goNow,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyT,
-      prefix: goPrefix,
-      label: 'g t',
-      what: 'Timeline',
-      action: ShortcutAction.goTimeline),
+    key: PhysicalKeyboardKey.keyT,
+    prefix: goPrefix,
+    label: 'g t',
+    what: 'Timeline',
+    action: ShortcutAction.goTimeline,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyR,
-      prefix: goPrefix,
-      label: 'g r',
-      what: 'Reports',
-      action: ShortcutAction.goReports),
+    key: PhysicalKeyboardKey.keyR,
+    prefix: goPrefix,
+    label: 'g r',
+    what: 'Reports',
+    action: ShortcutAction.goReports,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyA,
-      prefix: goPrefix,
-      label: 'g a',
-      what: 'Activities',
-      action: ShortcutAction.goActivities),
+    key: PhysicalKeyboardKey.keyA,
+    prefix: goPrefix,
+    label: 'g a',
+    what: 'Activities',
+    action: ShortcutAction.goActivities,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyA,
-      prefix: editPrefix,
-      label: 'e a',
-      what: 'Change what the running block tracks',
-      action: ShortcutAction.editActivity),
+    key: PhysicalKeyboardKey.keyA,
+    prefix: editPrefix,
+    label: 'e a',
+    what: 'Change what the running block tracks',
+    action: ShortcutAction.editActivity,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyN,
-      prefix: editPrefix,
-      label: 'e n',
-      what: 'Note on the running block',
-      action: ShortcutAction.editNote),
+    key: PhysicalKeyboardKey.keyN,
+    prefix: editPrefix,
+    label: 'e n',
+    what: 'Note on the running block',
+    action: ShortcutAction.editNote,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyS,
-      label: 's',
-      what: 'Start a block, name it later',
-      action: ShortcutAction.startUnnamed),
+    key: PhysicalKeyboardKey.keyS,
+    label: 's',
+    what: 'Start a block, name it later',
+    action: ShortcutAction.startUnnamed,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyS,
-      shift: true,
-      label: 'S',
-      what: 'Search, or paste a task id',
-      action: ShortcutAction.focusSearch),
+    key: PhysicalKeyboardKey.keyS,
+    shift: true,
+    label: 'S',
+    what: 'Search, or paste a task id',
+    action: ShortcutAction.focusSearch,
+  ),
   // h and l rather than brackets: previous/next is a *direction*, and it then
   // means one thing on both screens — one unit back or forward along the time
   // axis, whether the unit is a week or a day.
@@ -167,35 +175,40 @@ const shortcutBindings = <ShortcutBinding>[
   // which argues for them there, but a day is a sequence you page through rather
   // than a direction you scroll — and anyone reaching for j/k means scrolling.
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyH,
-      label: 'h',
-      what: 'Previous week',
-      only: 'reports',
-      action: ShortcutAction.prevPeriod),
+    key: PhysicalKeyboardKey.keyH,
+    label: 'h',
+    what: 'Previous week',
+    only: 'reports',
+    action: ShortcutAction.prevPeriod,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyL,
-      label: 'l',
-      what: 'Next week',
-      only: 'reports',
-      action: ShortcutAction.nextPeriod),
+    key: PhysicalKeyboardKey.keyL,
+    label: 'l',
+    what: 'Next week',
+    only: 'reports',
+    action: ShortcutAction.nextPeriod,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyH,
-      label: 'h',
-      what: 'Previous day',
-      only: 'calendar',
-      action: ShortcutAction.prevPeriod),
+    key: PhysicalKeyboardKey.keyH,
+    label: 'h',
+    what: 'Previous day',
+    only: 'calendar',
+    action: ShortcutAction.prevPeriod,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.keyL,
-      label: 'l',
-      what: 'Next day',
-      only: 'calendar',
-      action: ShortcutAction.nextPeriod),
+    key: PhysicalKeyboardKey.keyL,
+    label: 'l',
+    what: 'Next day',
+    only: 'calendar',
+    action: ShortcutAction.nextPeriod,
+  ),
   ShortcutBinding(
-      key: PhysicalKeyboardKey.slash,
-      shift: true,
-      label: '?',
-      what: 'This list',
-      action: ShortcutAction.showHelp),
+    key: PhysicalKeyboardKey.slash,
+    shift: true,
+    label: '?',
+    what: 'This list',
+    action: ShortcutAction.showHelp,
+  ),
 ];
 
 // `/` on its own is deliberately unbound. It means "search" nearly everywhere,
@@ -443,8 +456,10 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
                 child: Container(
                   color: t.line,
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  child: Text('${_pending!.label} …',
-                      style: mono(context, size: 12, weight: FontWeight.w800, color: t.surface)),
+                  child: Text(
+                    '${_pending!.label} …',
+                    style: mono(context, size: 12, weight: FontWeight.w800, color: t.surface),
+                  ),
                 ),
               ),
             ),
@@ -477,8 +492,7 @@ Future<void> showShortcutsHelp(BuildContext context) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final b in shortcutBindings)
-                _HelpRow(keys: b.label, what: b.what, only: b.only),
+              for (final b in shortcutBindings) _HelpRow(keys: b.label, what: b.what, only: b.only),
               // Not one of ours — Flutter dismisses a modal route on Escape by
               // itself. Listed because someone reading this wants to know what
               // the keyboard does, not which layer implements it.
@@ -489,8 +503,9 @@ Future<void> showShortcutsHelp(BuildContext context) {
               // waiting. The prefixes are listed from the table so a new one
               // cannot leave this row naming only some of them.
               _HelpRow(
-                  keys: '${shortcutPrefixes.map((p) => p.label).join('/')} Esc',
-                  what: 'Cancel a pending prefix — Ctrl+G also'),
+                keys: '${shortcutPrefixes.map((p) => p.label).join('/')} Esc',
+                what: 'Cancel a pending prefix — Ctrl+G also',
+              ),
               const SizedBox(height: 14),
               Text(
                 'Keys are matched by position, so a non-US layout uses the same '
@@ -502,9 +517,7 @@ Future<void> showShortcutsHelp(BuildContext context) {
           ),
         ),
       ),
-      actions: [
-        NeoButton(label: 'close', onTap: () => Navigator.pop(ctx)),
-      ],
+      actions: [NeoButton(label: 'close', onTap: () => Navigator.pop(ctx))],
     ),
   );
 }
@@ -530,10 +543,12 @@ class _HelpRow extends StatelessWidget {
             child: Container(
               color: t.line,
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-              child: Text(keys,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mono(context, size: 11, weight: FontWeight.w800, color: t.surface)),
+              child: Text(
+                keys,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: mono(context, size: 11, weight: FontWeight.w800, color: t.surface),
+              ),
             ),
           ),
           const SizedBox(width: 10),

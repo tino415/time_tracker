@@ -52,10 +52,11 @@ List<Block> deriveBlocks({
 
   // Ties (same-instant boundaries) fall back to the id so the derived order is
   // stable and matches the repository's own ordering.
-  final asc = [...changes]..sort((a, b) {
-    final byTime = a.changedAt.compareTo(b.changedAt);
-    return byTime != 0 ? byTime : a.syncId.compareTo(b.syncId);
-  });
+  final asc = [...changes]
+    ..sort((a, b) {
+      final byTime = a.changedAt.compareTo(b.changedAt);
+      return byTime != 0 ? byTime : a.syncId.compareTo(b.syncId);
+    });
 
   final blocks = <Block>[];
   for (var i = 0; i < asc.length; i++) {
@@ -75,5 +76,4 @@ List<Block> deriveBlocks({
 
 /// The current (open) block — the newest change's set — or null if the timeline
 /// is empty. Convenience over [deriveBlocks]`.first`.
-Block? currentBlock(List<Block> newestFirst) =>
-    newestFirst.isEmpty ? null : newestFirst.first;
+Block? currentBlock(List<Block> newestFirst) => newestFirst.isEmpty ? null : newestFirst.first;

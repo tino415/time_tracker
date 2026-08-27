@@ -94,8 +94,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the sheet offers it too, and resumes a whole tagged set',
-      (tester) async {
+  testWidgets('the sheet offers it too, and resumes a whole tagged set', (tester) async {
     final db = await bootApp(tester, viewport: _phone, seed: _seed);
 
     await openTab(tester, 'TIMELINE');

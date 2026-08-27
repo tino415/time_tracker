@@ -72,8 +72,7 @@ const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /// `MON 18` — weekday plus day of month, for report rows whose month is already
 /// fixed by the week being shown.
-String formatWeekdayDay(DateTime d) =>
-    '${_weekdays[d.weekday - 1].toUpperCase()} ${d.day}';
+String formatWeekdayDay(DateTime d) => '${_weekdays[d.weekday - 1].toUpperCase()} ${d.day}';
 
 /// Readable local timestamp, e.g. `14:05` today or `Mon 14:05` otherwise.
 String formatTimestamp(DateTime t, DateTime now) {

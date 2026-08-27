@@ -64,8 +64,7 @@ void main() {
     expect((await changes.currentChange())!.syncId, first!.syncId);
   });
 
-  test('narrowing a two-activity block is not reported as a same-activity split',
-      () async {
+  test('narrowing a two-activity block is not reported as a same-activity split', () async {
     final a = await activities.createActivity(name: 'A', color: '#333333');
     final b = await activities.createActivity(name: 'B', color: '#444444');
     await controller.switchTo(a.syncId);
@@ -142,8 +141,7 @@ void main() {
 
     test('a drag past the previous boundary is clamped, not reordered', () async {
       final ids = await seedDay();
-      await controller.moveBoundary(ids[1], at(7), now: now,
-          minBlock: const Duration(minutes: 5));
+      await controller.moveBoundary(ids[1], at(7), now: now, minBlock: const Duration(minutes: 5));
 
       expect(await boundaryOf(ids[1]), at(9, 5));
       // Order is preserved, so no block silently changed owner.
@@ -153,8 +151,7 @@ void main() {
 
     test('a drag past the next boundary is clamped too', () async {
       final ids = await seedDay();
-      await controller.moveBoundary(ids[1], at(18), now: now,
-          minBlock: const Duration(minutes: 5));
+      await controller.moveBoundary(ids[1], at(18), now: now, minBlock: const Duration(minutes: 5));
 
       expect(await boundaryOf(ids[1]), at(14, 55));
     });

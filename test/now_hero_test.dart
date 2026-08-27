@@ -24,12 +24,14 @@ Future<void> _seedDeepPath(AppDatabase db) async {
   final changes = DriftChangeRepository(db);
 
   String? parent;
-  for (final name in ['Work', 'Infrastructure', 'Deployment pipeline', 'Staging', 'CU-1042 Rotate the signing key']) {
-    final a = await activities.createActivity(
-      name: name,
-      color: '#4F8FEE',
-      parentId: parent,
-    );
+  for (final name in [
+    'Work',
+    'Infrastructure',
+    'Deployment pipeline',
+    'Staging',
+    'CU-1042 Rotate the signing key',
+  ]) {
+    final a = await activities.createActivity(name: name, color: '#4F8FEE', parentId: parent);
     parent = a.syncId;
   }
   await changes.switchTo(parent!);
@@ -58,8 +60,7 @@ void main() {
       tester,
       viewport: _narrow,
       seed: (db) async {
-        final a = await DriftActivityRepository(db)
-            .createActivity(name: 'Break', color: '#9A9B95');
+        final a = await DriftActivityRepository(db).createActivity(name: 'Break', color: '#9A9B95');
         await DriftChangeRepository(db).switchTo(a.syncId);
       },
     );
@@ -69,7 +70,6 @@ void main() {
 
     await disposeApp(tester);
   });
-
 }
 
 // A golden of this hero was tried and removed. Where the breadcrumb gets cut is

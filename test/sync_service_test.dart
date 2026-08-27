@@ -44,7 +44,8 @@ class FakeServer implements SyncTransport {
 
     for (final dto in request.activities) {
       final stored = activities[dto.syncId];
-      if (stored != null && !acceptsPush(storedVersion: stored.version, incomingVersion: dto.version)) {
+      if (stored != null &&
+          !acceptsPush(storedVersion: stored.version, incomingVersion: dto.version)) {
         rejected.add(dto.syncId);
         continue;
       }
@@ -53,7 +54,8 @@ class FakeServer implements SyncTransport {
     }
     for (final dto in request.changes) {
       final stored = changes[dto.syncId];
-      if (stored != null && !acceptsPush(storedVersion: stored.version, incomingVersion: dto.version)) {
+      if (stored != null &&
+          !acceptsPush(storedVersion: stored.version, incomingVersion: dto.version)) {
         rejected.add(dto.syncId);
         continue;
       }
@@ -329,12 +331,14 @@ void main() {
     final watch = Device(server);
     addTearDown(watch.close);
 
-    await watch.store.applyRemoteChange(ChangeDto(
-      syncId: 'c1',
-      changedAt: DateTime(2026, 1, 5, 9),
-      version: 1,
-      activityIds: const ['not-here-yet'],
-    ));
+    await watch.store.applyRemoteChange(
+      ChangeDto(
+        syncId: 'c1',
+        changedAt: DateTime(2026, 1, 5, 9),
+        version: 1,
+        activityIds: const ['not-here-yet'],
+      ),
+    );
 
     final changes = await watch.changes.loadChanges();
     expect(changes, hasLength(1));

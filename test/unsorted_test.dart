@@ -49,8 +49,7 @@ void main() {
       expect((await activities.loadActivities()).single.deletedAt, isNull);
     });
 
-    test('corrects the superseded name, and bumps the version so peers see it',
-        () async {
+    test('corrects the superseded name, and bumps the version so peers see it', () async {
       // A device that created the catch-all before the rename holds the old
       // label, and it is the *stored* name every screen now reads — so left
       // alone that device would keep showing a different word from a fresh one.
@@ -156,8 +155,7 @@ void main() {
 
       await controller.assignBlock(unnamed.syncId, work.syncId);
 
-      final stored = (await activities.loadActivities())
-          .firstWhere((a) => a.syncId == work.syncId);
+      final stored = (await activities.loadActivities()).firstWhere((a) => a.syncId == work.syncId);
       expect(stored.lastUsedAt, isNotNull);
     });
 

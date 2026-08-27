@@ -41,14 +41,18 @@ void main() {
       // The phone may be tracking something that is not bookmarked, so it is
       // absent from `activities` — the watch still needs enough to draw it and
       // to give its block a row to point at.
-      final decoded = roundTrip(BookmarkSnapshot(
-        activities: const [],
-        current: CurrentBlock(
-          changeId: 'c1',
-          startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
-          activity: const WearActivity(syncId: 'z', name: 'Ad hoc', color: '#123456'),
-        ),
-      )) as BookmarkSnapshot;
+      final decoded =
+          roundTrip(
+                BookmarkSnapshot(
+                  activities: const [],
+                  current: CurrentBlock(
+                    changeId: 'c1',
+                    startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+                    activity: const WearActivity(syncId: 'z', name: 'Ad hoc', color: '#123456'),
+                  ),
+                ),
+              )
+              as BookmarkSnapshot;
 
       expect(decoded.activities, isEmpty);
       expect(decoded.current!.activity.syncId, 'z');
@@ -91,11 +95,9 @@ void main() {
   group('SwitchRequest', () {
     test('round-trips, keeping the instant exact', () {
       final at = DateTime.fromMillisecondsSinceEpoch(1770000000123);
-      final decoded = roundTrip(SwitchRequest(
-        changeSyncId: 'change-1',
-        activityId: 'a',
-        at: at,
-      )) as SwitchRequest;
+      final decoded =
+          roundTrip(SwitchRequest(changeSyncId: 'change-1', activityId: 'a', at: at))
+              as SwitchRequest;
 
       expect(decoded.changeSyncId, 'change-1');
       expect(decoded.activityId, 'a');
@@ -109,10 +111,7 @@ void main() {
       expect(SwitchRequest.fromPayload({'activityId': 'a', 'at': 1}), isNull);
       expect(SwitchRequest.fromPayload({'changeSyncId': 'c', 'at': 1}), isNull);
       expect(SwitchRequest.fromPayload({'changeSyncId': 'c', 'activityId': 'a'}), isNull);
-      expect(
-        SwitchRequest.fromPayload({'changeSyncId': '', 'activityId': 'a', 'at': 1}),
-        isNull,
-      );
+      expect(SwitchRequest.fromPayload({'changeSyncId': '', 'activityId': 'a', 'at': 1}), isNull);
       expect(
         SwitchRequest.fromPayload({'changeSyncId': 'c', 'activityId': 'a', 'at': '1'}),
         isNull,

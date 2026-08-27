@@ -76,9 +76,9 @@ class DriftActivityRepository implements ActivityRepository {
     while (cursor != null && seen.add(cursor)) {
       if (cursor == ancestorId) return true;
       final at = cursor;
-      final row = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(at)))
-          .getSingleOrNull();
+      final row = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(at))).getSingleOrNull();
       cursor = row?.parentId;
     }
     return false;
@@ -91,12 +91,14 @@ class DriftActivityRepository implements ActivityRepository {
   @override
   Future<void> ensurePeerActivity(WearActivity activity) async {
     await _db.transaction(() async {
-      final existing = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(activity.syncId)))
-          .getSingleOrNull();
+      final existing = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(activity.syncId))).getSingleOrNull();
 
       if (existing == null) {
-        await _db.into(_db.activities).insert(
+        await _db
+            .into(_db.activities)
+            .insert(
               ActivitiesCompanion.insert(
                 syncId: activity.syncId,
                 name: activity.name,
@@ -124,9 +126,9 @@ class DriftActivityRepository implements ActivityRepository {
   @override
   Future<Activity> ensureUnsorted() async {
     return _db.transaction(() async {
-      final existing = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(kUnsortedActivityId)))
-          .getSingleOrNull();
+      final existing = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(kUnsortedActivityId))).getSingleOrNull();
 
       // Un-tombstone rather than insert: deleting the catch-all and then
       // starting an unnamed block again must not fail on the primary key.
@@ -147,14 +149,16 @@ class DriftActivityRepository implements ActivityRepository {
           // Through _bump, so the version moves and the correction reaches the
           // other devices instead of each one waiting to notice for itself.
           await _bump(kUnsortedActivityId, companion);
-          return (await (_db.select(_db.activities)
-                ..where((t) => t.syncId.equals(kUnsortedActivityId)))
-              .getSingle());
+          return (await (_db.select(
+            _db.activities,
+          )..where((t) => t.syncId.equals(kUnsortedActivityId))).getSingle());
         }
         return existing;
       }
 
-      return _db.into(_db.activities).insertReturning(
+      return _db
+          .into(_db.activities)
+          .insertReturning(
             ActivitiesCompanion.insert(
               syncId: kUnsortedActivityId,
               name: kUnsortedName,
@@ -174,12 +178,14 @@ class DriftActivityRepository implements ActivityRepository {
       final incoming = {for (final a in activities) a.syncId: a};
 
       for (final a in activities) {
-        final existing = await (_db.select(_db.activities)
-              ..where((t) => t.syncId.equals(a.syncId)))
-            .getSingleOrNull();
+        final existing = await (_db.select(
+          _db.activities,
+        )..where((t) => t.syncId.equals(a.syncId))).getSingleOrNull();
 
         if (existing == null) {
-          await _db.into(_db.activities).insert(
+          await _db
+              .into(_db.activities)
+              .insert(
                 ActivitiesCompanion.insert(
                   syncId: a.syncId,
                   name: a.name,
@@ -213,9 +219,9 @@ class DriftActivityRepository implements ActivityRepository {
 
       // Bookmarks the snapshot no longer lists are no longer bookmarks. The
       // rows stay: the peer told us what is bookmarked, not what exists.
-      final staleBookmarks = await (_db.select(_db.activities)
-            ..where((t) => t.bookmarked.equals(true) & t.deletedAt.isNull()))
-          .get();
+      final staleBookmarks = await (_db.select(
+        _db.activities,
+      )..where((t) => t.bookmarked.equals(true) & t.deletedAt.isNull())).get();
       for (final row in staleBookmarks) {
         if (!incoming.containsKey(row.syncId)) {
           await _applyPeer(row.syncId, const ActivitiesCompanion(bookmarked: Value(false)));
@@ -230,9 +236,9 @@ class DriftActivityRepository implements ActivityRepository {
   /// so "needs pushing" is maintained here rather than remembered at each call
   /// site. Remote adoptions bypass it deliberately — see [applyRemoteActivity].
   Future<void> _bump(String id, ActivitiesCompanion patch) async {
-    final row = await (_db.select(_db.activities)
-          ..where((t) => t.syncId.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.activities,
+    )..where((t) => t.syncId.equals(id))).getSingleOrNull();
     if (row == null) return;
     await (_db.update(_db.activities)..where((t) => t.syncId.equals(id))).write(
       patch.copyWith(version: Value(row.version + 1), dirty: const Value(true)),
@@ -276,10 +282,7 @@ class DriftChangeRepository implements ChangeRepository {
   Future<List<ActivityChange>> loadChanges() {
     return (_db.select(_db.activityChanges)
           ..where((t) => t.deletedAt.isNull())
-          ..orderBy([
-            (t) => OrderingTerm.desc(t.changedAt),
-            (t) => OrderingTerm.desc(t.syncId),
-          ]))
+          ..orderBy([(t) => OrderingTerm.desc(t.changedAt), (t) => OrderingTerm.desc(t.syncId)]))
         .get();
   }
 
@@ -287,10 +290,7 @@ class DriftChangeRepository implements ChangeRepository {
   Future<ActivityChange?> currentChange() {
     return (_db.select(_db.activityChanges)
           ..where((t) => t.deletedAt.isNull())
-          ..orderBy([
-            (t) => OrderingTerm.desc(t.changedAt),
-            (t) => OrderingTerm.desc(t.syncId),
-          ])
+          ..orderBy([(t) => OrderingTerm.desc(t.changedAt), (t) => OrderingTerm.desc(t.syncId)])
           ..limit(1))
         .getSingleOrNull();
   }
@@ -301,12 +301,11 @@ class DriftChangeRepository implements ChangeRepository {
       final change = await _db
           .into(_db.activityChanges)
           .insertReturning(
-            ActivityChangesCompanion.insert(
-              syncId: _uuid.v4(),
-              changedAt: at ?? DateTime.now(),
-            ),
+            ActivityChangesCompanion.insert(syncId: _uuid.v4(), changedAt: at ?? DateTime.now()),
           );
-      await _db.into(_db.activityChangeActivities).insert(
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
             ActivityChangeActivitiesCompanion.insert(
               activityChangeId: change.syncId,
               activityId: activityId,
@@ -326,39 +325,41 @@ class DriftChangeRepository implements ChangeRepository {
       // The activity must exist locally or the join row would break its foreign
       // key. The snapshot carries the tracked activity whole, so the caller has
       // already ensured it — this is the guard for a malformed peer.
-      final activity = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(activityId)))
-          .getSingleOrNull();
+      final activity = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(activityId))).getSingleOrNull();
       if (activity == null) return;
 
-      final existing = await (_db.select(_db.activityChanges)
-            ..where((t) => t.syncId.equals(changeSyncId)))
-          .getSingleOrNull();
+      final existing = await (_db.select(
+        _db.activityChanges,
+      )..where((t) => t.syncId.equals(changeSyncId))).getSingleOrNull();
 
       if (existing == null) {
-        await _db.into(_db.activityChanges).insert(
-              ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at),
-            );
+        await _db
+            .into(_db.activityChanges)
+            .insert(ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at));
       } else if (existing.changedAt != at) {
         // Adopting a peer's state is not a local edit, so no version bump —
         // same rule as SyncStore, for the same reason.
-        await (_db.update(_db.activityChanges)
-              ..where((t) => t.syncId.equals(changeSyncId)))
-            .write(ActivityChangesCompanion(changedAt: Value(at)));
+        await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(changeSyncId))).write(
+          ActivityChangesCompanion(changedAt: Value(at)),
+        );
       }
 
-      final links = await (_db.select(_db.activityChangeActivities)
-            ..where((t) => t.activityChangeId.equals(changeSyncId)))
-          .get();
+      final links = await (_db.select(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeSyncId))).get();
       final current = links.map((l) => l.activityId).toList();
       // Only rewrite when the set actually differs, so re-applying an unchanged
       // snapshot does not churn the join table on every push.
       if (current.length == 1 && current.first == activityId) return;
 
-      await (_db.delete(_db.activityChangeActivities)
-            ..where((t) => t.activityChangeId.equals(changeSyncId)))
-          .go();
-      await _db.into(_db.activityChangeActivities).insert(
+      await (_db.delete(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeSyncId))).go();
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
             ActivityChangeActivitiesCompanion.insert(
               activityChangeId: changeSyncId,
               activityId: activityId,
@@ -374,24 +375,26 @@ class DriftChangeRepository implements ChangeRepository {
     required DateTime at,
   }) async {
     return _db.transaction(() async {
-      final existing = await (_db.select(_db.activityChanges)
-            ..where((t) => t.syncId.equals(changeSyncId)))
-          .getSingleOrNull();
+      final existing = await (_db.select(
+        _db.activityChanges,
+      )..where((t) => t.syncId.equals(changeSyncId))).getSingleOrNull();
       // Already applied — a duplicate delivery, or our own relay coming back.
       if (existing != null) return false;
 
       // The activity must exist locally, or the join row would violate its
       // foreign key. A watch tapping a tile it was told about cannot hit this;
       // a stale relay naming a since-deleted activity can.
-      final activity = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(activityId)))
-          .getSingleOrNull();
+      final activity = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(activityId))).getSingleOrNull();
       if (activity == null) return false;
 
-      await _db.into(_db.activityChanges).insert(
-            ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at),
-          );
-      await _db.into(_db.activityChangeActivities).insert(
+      await _db
+          .into(_db.activityChanges)
+          .insert(ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at));
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
             ActivityChangeActivitiesCompanion.insert(
               activityChangeId: changeSyncId,
               activityId: activityId,
@@ -410,15 +413,18 @@ class DriftChangeRepository implements ChangeRepository {
   @override
   Future<void> addActivityToChange(String changeId, String activityId) async {
     await _db.transaction(() async {
-      final already = await (_db.select(_db.activityChangeActivities)
-            ..where((t) =>
-                t.activityChangeId.equals(changeId) & t.activityId.equals(activityId)))
-          .getSingleOrNull();
+      final already =
+          await (_db.select(_db.activityChangeActivities)..where(
+                (t) => t.activityChangeId.equals(changeId) & t.activityId.equals(activityId),
+              ))
+              .getSingleOrNull();
       // Already tagged: nothing changed, so nothing to push. Bumping anyway
       // would re-send an identical block every time the sheet was opened.
       if (already != null) return;
 
-      await _db.into(_db.activityChangeActivities).insert(
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
             ActivityChangeActivitiesCompanion.insert(
               activityChangeId: changeId,
               activityId: activityId,
@@ -435,16 +441,14 @@ class DriftChangeRepository implements ChangeRepository {
   @override
   Future<void> removeActivityFromChange(String changeId, String activityId) async {
     await _db.transaction(() async {
-      final count = await (_db.select(_db.activityChangeActivities)
-            ..where((t) => t.activityChangeId.equals(changeId)))
-          .get()
-          .then((rows) => rows.length);
+      final count = await (_db.select(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeId))).get().then((rows) => rows.length);
       // Never strip a block down to an empty set — something is always tracking.
       if (count <= 1) return;
-      final removed = await (_db.delete(_db.activityChangeActivities)
-            ..where((t) =>
-                t.activityChangeId.equals(changeId) & t.activityId.equals(activityId)))
-          .go();
+      final removed = await (_db.delete(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeId) & t.activityId.equals(activityId))).go();
       // Only when something actually went. A refused or no-op untag must not
       // dirty the row, or every sync would re-send an unchanged block.
       if (removed == 0) return;
@@ -455,28 +459,26 @@ class DriftChangeRepository implements ChangeRepository {
   @override
   Future<void> replaceActivityInChange(String changeId, String from, String to) async {
     await _db.transaction(() async {
-      final links = await (_db.select(_db.activityChangeActivities)
-            ..where((t) => t.activityChangeId.equals(changeId)))
-          .get();
+      final links = await (_db.select(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeId))).get();
       final ids = links.map((l) => l.activityId).toSet();
       // Nothing to swap, or the destination is already here — either way the set
       // would be unchanged, and an unchanged set must not be marked for pushing.
       if (!ids.contains(from) || ids.contains(to)) return;
 
-      final activity = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(to)))
-          .getSingleOrNull();
+      final activity = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(to))).getSingleOrNull();
       if (activity == null) return;
 
-      await (_db.delete(_db.activityChangeActivities)
-            ..where((t) =>
-                t.activityChangeId.equals(changeId) & t.activityId.equals(from)))
-          .go();
-      await _db.into(_db.activityChangeActivities).insert(
-            ActivityChangeActivitiesCompanion.insert(
-              activityChangeId: changeId,
-              activityId: to,
-            ),
+      await (_db.delete(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeId) & t.activityId.equals(from))).go();
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
+            ActivityChangeActivitiesCompanion.insert(activityChangeId: changeId, activityId: to),
             mode: InsertMode.insertOrIgnore,
           );
       // The set is part of the change for sync — same rule as everywhere else.
@@ -487,20 +489,22 @@ class DriftChangeRepository implements ChangeRepository {
   @override
   Future<void> setChangeActivity(String changeId, String activityId) async {
     await _db.transaction(() async {
-      final change = await (_db.select(_db.activityChanges)
-            ..where((t) => t.syncId.equals(changeId)))
-          .getSingleOrNull();
+      final change = await (_db.select(
+        _db.activityChanges,
+      )..where((t) => t.syncId.equals(changeId))).getSingleOrNull();
       if (change == null) return;
 
-      final activity = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(activityId)))
-          .getSingleOrNull();
+      final activity = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(activityId))).getSingleOrNull();
       if (activity == null) return;
 
-      await (_db.delete(_db.activityChangeActivities)
-            ..where((t) => t.activityChangeId.equals(changeId)))
-          .go();
-      await _db.into(_db.activityChangeActivities).insert(
+      await (_db.delete(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeId))).go();
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
             ActivityChangeActivitiesCompanion.insert(
               activityChangeId: changeId,
               activityId: activityId,
@@ -527,18 +531,18 @@ class DriftChangeRepository implements ChangeRepository {
 
   @override
   Future<List<String>> activityIdsForChange(String changeId) async {
-    final rows = await (_db.select(_db.activityChangeActivities)
-          ..where((t) => t.activityChangeId.equals(changeId)))
-        .get();
+    final rows = await (_db.select(
+      _db.activityChangeActivities,
+    )..where((t) => t.activityChangeId.equals(changeId))).get();
     return rows.map((r) => r.activityId).toList();
   }
 
   /// See [DriftActivityRepository._bump] — same contract, same reason for
   /// setting `dirty` here rather than at every call site.
   Future<void> _bump(String id, ActivityChangesCompanion patch) async {
-    final row = await (_db.select(_db.activityChanges)
-          ..where((t) => t.syncId.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.activityChanges,
+    )..where((t) => t.syncId.equals(id))).getSingleOrNull();
     if (row == null) return;
     await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(id))).write(
       patch.copyWith(version: Value(row.version + 1), dirty: const Value(true)),

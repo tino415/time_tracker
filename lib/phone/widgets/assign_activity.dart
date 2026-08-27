@@ -18,18 +18,15 @@ import 'neo.dart';
 /// always means naming something tracked recently, and the whole feature exists
 /// to save seconds. Typing filters; the create row makes a new activity and
 /// assigns it in one step.
-Future<void> assignBlockActivity(
-  BuildContext context,
-  WidgetRef ref,
-  Block block,
-) async {
+Future<void> assignBlockActivity(BuildContext context, WidgetRef ref, Block block) async {
   final id = await pickOrCreateActivity(
     context,
     ref,
     // A named block reaching this sheet is being corrected, not answered, and
     // "What was this?" would be asking about something already on screen.
     title: isUnsortedSet(block.activities) ? 'What was this?' : 'Change to',
-    trailing: '${formatTimeOfDay(block.start)} · '
+    trailing:
+        '${formatTimeOfDay(block.start)} · '
         '${formatDurationHm(block.duration(DateTime.now()))}',
   );
   if (id == null) return;
@@ -82,22 +79,22 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
 
   List<Activity> _suggestions(List<Activity> all) {
     final q = _query.trim().toLowerCase();
-    final matches = all.where((a) {
-      // The catch-all is not something you can answer *with*.
-      if (isUnsorted(a)) return false;
-      // Already on the block — tagging it again would do nothing.
-      if (widget.exclude.contains(a.syncId)) return false;
-      if (q.isEmpty) return true;
-      return a.name.toLowerCase().contains(q) ||
-          (a.externalId?.toLowerCase().contains(q) ?? false);
-    }).toList()
-      ..sort((a, b) {
-        final la = a.lastUsedAt, lb = b.lastUsedAt;
-        if (la != null && lb != null) return lb.compareTo(la);
-        if (la != null) return -1;
-        if (lb != null) return 1;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
+    final matches =
+        all.where((a) {
+          // The catch-all is not something you can answer *with*.
+          if (isUnsorted(a)) return false;
+          // Already on the block — tagging it again would do nothing.
+          if (widget.exclude.contains(a.syncId)) return false;
+          if (q.isEmpty) return true;
+          return a.name.toLowerCase().contains(q) ||
+              (a.externalId?.toLowerCase().contains(q) ?? false);
+        }).toList()..sort((a, b) {
+          final la = a.lastUsedAt, lb = b.lastUsedAt;
+          if (la != null && lb != null) return lb.compareTo(la);
+          if (la != null) return -1;
+          if (lb != null) return 1;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
     return matches.take(6).toList();
   }
 
@@ -105,11 +102,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
 
   Future<void> _createAndAssign() async {
     final name = _controller.text.trim();
-    final created = await showActivityEditor(
-      context,
-      ref,
-      initialName: name.isEmpty ? null : name,
-    );
+    final created = await showActivityEditor(context, ref, initialName: name.isEmpty ? null : name);
     if (created == null) return;
     if (mounted) _assign(created.syncId);
   }
@@ -125,7 +118,10 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
       child: Container(
         margin: const EdgeInsets.all(10),
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-        decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
         padding: const EdgeInsets.all(14),
         child: SingleChildScrollView(
           child: Column(
@@ -169,10 +165,12 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
                         NeoSwatch(parseHexColor(a.color), size: 14),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: Text(a.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: mono(context, weight: FontWeight.w700)),
+                          child: Text(
+                            a.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: mono(context, weight: FontWeight.w700),
+                          ),
                         ),
                         if (a.externalId != null)
                           Text(a.externalId!, style: mono(context, size: 11, color: t.muted)),
@@ -181,9 +179,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
                   ),
                 ),
               NeoButton(
-                label: _query.trim().isEmpty
-                    ? '+ new activity'
-                    : '+ create "${_query.trim()}"',
+                label: _query.trim().isEmpty ? '+ new activity' : '+ create "${_query.trim()}"',
                 primary: true,
                 shadowOffset: 3,
                 onTap: _createAndAssign,

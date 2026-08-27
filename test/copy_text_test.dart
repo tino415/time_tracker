@@ -21,17 +21,20 @@ const _phone = Size(400, 880);
 /// Returns a getter for whatever was last copied.
 String? Function() _captureClipboard(WidgetTester tester) {
   String? copied;
-  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-    SystemChannels.platform,
-    (call) async {
-      if (call.method == 'Clipboard.setData') {
-        copied = (call.arguments as Map)['text'] as String?;
-      }
-      return null;
-    },
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (
+    call,
+  ) async {
+    if (call.method == 'Clipboard.setData') {
+      copied = (call.arguments as Map)['text'] as String?;
+    }
+    return null;
+  });
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
   );
-  addTearDown(() => tester.binding.defaultBinaryMessenger
-      .setMockMethodCallHandler(SystemChannels.platform, null));
   return () => copied;
 }
 
@@ -75,9 +78,7 @@ void main() {
     await bootApp(tester, viewport: _phone, seed: _seed);
 
     await openTab(tester, 'ACTIVITIES');
-    await tester.longPress(
-      inScreen(ActivitiesScreen, find.text('CU-1042 Rotate the signing key')),
-    );
+    await tester.longPress(inScreen(ActivitiesScreen, find.text('CU-1042 Rotate the signing key')));
     await settle(tester);
 
     await tester.tap(find.text('⧉ COPY CU-1042'));

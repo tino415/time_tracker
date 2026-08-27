@@ -32,9 +32,9 @@ class AutoSyncService {
     this.debounce = const Duration(seconds: 20),
     this.minInterval = const Duration(minutes: 1),
     DateTime Function()? clock,
-  })  : _sync = sync,
-        _localChanges = localChanges,
-        _now = clock ?? DateTime.now;
+  }) : _sync = sync,
+       _localChanges = localChanges,
+       _now = clock ?? DateTime.now;
 
   final SyncService _sync;
   final Stream<Object?> _localChanges;

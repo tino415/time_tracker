@@ -25,12 +25,8 @@ Future<String?> showActivityPicker(
 }) {
   return showNeoSheet<String>(
     context,
-    (_) => _PickerSheet(
-      title: title,
-      exclude: exclude,
-      excludeSubtrees: excludeSubtrees,
-      only: only,
-    ),
+    (_) =>
+        _PickerSheet(title: title, exclude: exclude, excludeSubtrees: excludeSubtrees, only: only),
   );
 }
 
@@ -74,8 +70,7 @@ class _PickerSheetState extends ConsumerState<_PickerSheet> {
       if (only != null && !only.contains(id)) return false;
       if (q.isEmpty) return true;
       final a = tree[id]!;
-      return a.name.toLowerCase().contains(q) ||
-          (a.externalId?.toLowerCase().contains(q) ?? false);
+      return a.name.toLowerCase().contains(q) || (a.externalId?.toLowerCase().contains(q) ?? false);
     }).toList();
 
     return Padding(
@@ -83,7 +78,10 @@ class _PickerSheetState extends ConsumerState<_PickerSheet> {
       child: Container(
         margin: const EdgeInsets.all(10),
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
-        decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
         padding: const EdgeInsets.all(14),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -106,8 +104,11 @@ class _PickerSheetState extends ConsumerState<_PickerSheet> {
               child: ids.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.symmetric(vertical: 24),
-                      child: Text('no activities',
-                          textAlign: TextAlign.center, style: mono(context, color: t.muted)),
+                      child: Text(
+                        'no activities',
+                        textAlign: TextAlign.center,
+                        style: mono(context, color: t.muted),
+                      ),
                     )
                   : ListView.separated(
                       shrinkWrap: true,
@@ -185,7 +186,10 @@ class _SearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = neo(context);
     return Container(
-      decoration: BoxDecoration(color: t.surface, border: Border.all(color: t.line, width: 3)),
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: Border.all(color: t.line, width: 3),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: TextField(
         autofocus: true,

@@ -66,13 +66,15 @@ List<DaySlice> sliceDay({
     final end = blockEnd.isBefore(dayEnd) ? blockEnd : dayEnd;
     if (!end.isAfter(start)) continue;
 
-    out.add(DaySlice(
-      block: block,
-      start: start,
-      end: end,
-      continuesBefore: block.start.isBefore(dayStart),
-      continuesAfter: blockEnd.isAfter(dayEnd),
-    ));
+    out.add(
+      DaySlice(
+        block: block,
+        start: start,
+        end: end,
+        continuesBefore: block.start.isBefore(dayStart),
+        continuesAfter: blockEnd.isAfter(dayEnd),
+      ),
+    );
   }
 
   out.sort((a, b) => a.start.compareTo(b.start));

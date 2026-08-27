@@ -63,10 +63,7 @@ class _StartSheetState extends ConsumerState<_StartSheet> {
   }
 
   Future<void> _save() async {
-    await ref.read(trackerControllerProvider).moveBoundary(
-          widget.block.change.syncId,
-          _start,
-        );
+    await ref.read(trackerControllerProvider).moveBoundary(widget.block.change.syncId, _start);
     if (mounted) Navigator.pop(context);
   }
 
@@ -90,7 +87,10 @@ class _StartSheetState extends ConsumerState<_StartSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         margin: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
         padding: const EdgeInsets.all(14),
         child: SingleChildScrollView(
           child: Column(
@@ -185,12 +185,7 @@ class _StartSheetState extends ConsumerState<_StartSheet> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: NeoButton(
-                      label: 'save',
-                      primary: true,
-                      shadowOffset: 3,
-                      onTap: _save,
-                    ),
+                    child: NeoButton(label: 'save', primary: true, shadowOffset: 3, onTap: _save),
                   ),
                 ],
               ),

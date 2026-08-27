@@ -102,9 +102,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
 
     final ratio = _zoomLevels[clamped].hourHeight / _hourHeight;
     final hasViewport = _scroll.hasClients;
-    final centre = hasViewport
-        ? _scroll.offset + _scroll.position.viewportDimension / 2
-        : 0.0;
+    final centre = hasViewport ? _scroll.offset + _scroll.position.viewportDimension / 2 : 0.0;
 
     setState(() => _zoom = clamped);
 
@@ -145,7 +143,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         ),
         Expanded(
           child: slices.isEmpty
-              ? Center(child: Text('nothing tracked this day', style: mono(context, color: t.muted)))
+              ? Center(
+                  child: Text('nothing tracked this day', style: mono(context, color: t.muted)),
+                )
               : SingleChildScrollView(
                   controller: _scroll,
                   child: Padding(
@@ -215,10 +215,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
       _dragAt = null;
     });
     if (at == null) return;
-    await ref.read(trackerControllerProvider).moveBoundary(
-          s.block.change.syncId,
-          snapTime(at, _snap),
-        );
+    await ref
+        .read(trackerControllerProvider)
+        .moveBoundary(s.block.change.syncId, snapTime(at, _snap));
   }
 
   Widget _sliceCard(BuildContext context, DaySlice s, DateTime now) {
@@ -235,12 +234,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         slice: s,
         now: now,
         height: height,
-        onTap: () => showBlockActions(
-          context,
-          ref,
-          s.block,
-          canMerge: !s.continuesBefore,
-        ),
+        onTap: () => showBlockActions(context, ref, s.block, canMerge: !s.continuesBefore),
         onLongPressAt: (fraction) => _split(s, _timeAtFraction(s, fraction)),
       ),
     );
@@ -250,10 +244,7 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   /// exactly where it looks like it will.
   DateTime _timeAtFraction(DaySlice s, double fraction) {
     final span = s.end.difference(s.start).inMilliseconds;
-    return snapTime(
-      s.start.add(Duration(milliseconds: (span * fraction).round())),
-      _snap,
-    );
+    return snapTime(s.start.add(Duration(milliseconds: (span * fraction).round())), _snap);
   }
 
   /// The long-press keeps its direct split; the sheet's "split at…" asks for a
@@ -292,7 +283,9 @@ class _DaySelector extends StatelessWidget {
       children: [
         NeoButton(label: '‹', onTap: onPrev, shadowOffset: 3, compact: true),
         Expanded(
-          child: Center(child: Text(label, style: mono(context, weight: FontWeight.w800))),
+          child: Center(
+            child: Text(label, style: mono(context, weight: FontWeight.w800)),
+          ),
         ),
         NeoButton(label: '›', onTap: onNext, shadowOffset: 3, compact: true),
         const SizedBox(width: 10),
@@ -335,9 +328,7 @@ class _HourGrid extends StatelessWidget {
                     style: mono(context, size: 10, color: t.muted),
                   ),
                 ),
-                Expanded(
-                  child: Container(height: 1, color: t.line.withValues(alpha: .18)),
-                ),
+                Expanded(child: Container(height: 1, color: t.line.withValues(alpha: .18))),
               ],
             ),
           ),
@@ -378,9 +369,8 @@ class _SliceCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) => GestureDetector(
         onTap: onTap,
-        onLongPressStart: (d) => onLongPressAt(
-          (d.localPosition.dy / constraints.maxHeight).clamp(0.0, 1.0),
-        ),
+        onLongPressStart: (d) =>
+            onLongPressAt((d.localPosition.dy / constraints.maxHeight).clamp(0.0, 1.0)),
         behavior: HitTestBehavior.opaque,
         child: Container(
           decoration: BoxDecoration(
@@ -417,21 +407,21 @@ class _SliceCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mono(context, size: 11, weight: FontWeight.w800),
-                ),
-                // Only worth laying out when there is room for a second line.
-                if (height >= 26)
                   Text(
-                    '${formatTimeOfDay(slice.start)}–${slice.block.isOpen ? "now" : formatTimeOfDay(slice.end)}'
-                    ' · ${formatDurationHm(slice.duration)}',
+                    label,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: mono(context, size: 10, color: t.muted),
+                    style: mono(context, size: 11, weight: FontWeight.w800),
                   ),
+                  // Only worth laying out when there is room for a second line.
+                  if (height >= 26)
+                    Text(
+                      '${formatTimeOfDay(slice.start)}–${slice.block.isOpen ? "now" : formatTimeOfDay(slice.end)}'
+                      ' · ${formatDurationHm(slice.duration)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: mono(context, size: 10, color: t.muted),
+                    ),
                 ],
               ),
             ),

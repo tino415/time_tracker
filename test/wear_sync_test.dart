@@ -33,12 +33,12 @@ void main() {
   });
 
   WearSyncService serviceFor({required bool isWatch}) => WearSyncService(
-        bridge: bridge,
-        activities: activities,
-        changes: changes,
-        syncStore: SyncStore(db),
-        isWatch: isWatch,
-      );
+    bridge: bridge,
+    activities: activities,
+    changes: changes,
+    syncStore: SyncStore(db),
+    isWatch: isWatch,
+  );
 
   group('phone side', () {
     test('answers a snapshot request with the bookmarked set', () async {
@@ -91,11 +91,7 @@ void main() {
       await service.start();
 
       final at = DateTime.fromMillisecondsSinceEpoch(1770000000000);
-      await bridge.receive(SwitchRequest(
-        changeSyncId: 'from-watch',
-        activityId: a.syncId,
-        at: at,
-      ));
+      await bridge.receive(SwitchRequest(changeSyncId: 'from-watch', activityId: a.syncId, at: at));
 
       final rows = await changes.loadChanges();
       expect(rows.single.syncId, 'from-watch');
@@ -128,11 +124,13 @@ void main() {
       final service = serviceFor(isWatch: false);
       await service.start();
 
-      await bridge.receive(SwitchRequest(
-        changeSyncId: 'from-watch',
-        activityId: 'deleted-since',
-        at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
-      ));
+      await bridge.receive(
+        SwitchRequest(
+          changeSyncId: 'from-watch',
+          activityId: 'deleted-since',
+          at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+        ),
+      );
 
       expect(await changes.loadChanges(), isEmpty);
       service.dispose();
@@ -239,10 +237,14 @@ void main() {
       final service = serviceFor(isWatch: true);
       await service.start();
 
-      await bridge.receive(const BookmarkSnapshot(activities: [
-        WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
-        WearActivity(syncId: 'b', name: 'Email', color: '#EE7C4F'),
-      ]));
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [
+            WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+            WearActivity(syncId: 'b', name: 'Email', color: '#EE7C4F'),
+          ],
+        ),
+      );
 
       final local = await activities.loadActivities();
       expect(local.map((a) => a.syncId).toSet(), {'a', 'b'});
@@ -258,14 +260,16 @@ void main() {
       await service.start();
 
       final startedAt = DateTime.fromMillisecondsSinceEpoch(1770000000000);
-      await bridge.receive(BookmarkSnapshot(
-        activities: const [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
-        current: CurrentBlock(
-          changeId: 'phone-change',
-          startedAt: startedAt,
-          activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+      await bridge.receive(
+        BookmarkSnapshot(
+          activities: const [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+          current: CurrentBlock(
+            changeId: 'phone-change',
+            startedAt: startedAt,
+            activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+          ),
         ),
-      ));
+      );
 
       final rows = await changes.loadChanges();
       expect(rows.single.syncId, 'phone-change');
@@ -283,14 +287,16 @@ void main() {
       final service = serviceFor(isWatch: true);
       await service.start();
 
-      await bridge.receive(BookmarkSnapshot(
-        activities: const [],
-        current: CurrentBlock(
-          changeId: 'phone-change',
-          startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
-          activity: const WearActivity(syncId: 'z', name: 'Ad hoc', color: '#123456'),
+      await bridge.receive(
+        BookmarkSnapshot(
+          activities: const [],
+          current: CurrentBlock(
+            changeId: 'phone-change',
+            startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+            activity: const WearActivity(syncId: 'z', name: 'Ad hoc', color: '#123456'),
+          ),
         ),
-      ));
+      );
 
       final local = await activities.loadActivities();
       expect(local.single.syncId, 'z');
@@ -310,26 +316,33 @@ void main() {
       await service.start();
 
       final startedAt = DateTime.fromMillisecondsSinceEpoch(1770000000000);
-      await bridge.receive(BookmarkSnapshot(
-        activities: const [],
-        current: CurrentBlock(
-          changeId: 'phone-change',
-          startedAt: startedAt,
-          activity: const WearActivity(
-              syncId: kUnsortedActivityId, name: 'Unsorted', color: '#9A9B95'),
+      await bridge.receive(
+        BookmarkSnapshot(
+          activities: const [],
+          current: CurrentBlock(
+            changeId: 'phone-change',
+            startedAt: startedAt,
+            activity: const WearActivity(
+              syncId: kUnsortedActivityId,
+              name: 'Unsorted',
+              color: '#9A9B95',
+            ),
+          ),
         ),
-      ));
+      );
       expect(await changes.activityIdsForChange('phone-change'), [kUnsortedActivityId]);
 
       // Named on the phone: same change, different activity.
-      await bridge.receive(BookmarkSnapshot(
-        activities: const [],
-        current: CurrentBlock(
-          changeId: 'phone-change',
-          startedAt: startedAt,
-          activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+      await bridge.receive(
+        BookmarkSnapshot(
+          activities: const [],
+          current: CurrentBlock(
+            changeId: 'phone-change',
+            startedAt: startedAt,
+            activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+          ),
         ),
-      ));
+      );
 
       expect(await changes.activityIdsForChange('phone-change'), ['a']);
       // Still one boundary, still at the original instant — naming does not
@@ -346,10 +359,10 @@ void main() {
       await service.start();
 
       CurrentBlock at(int millis) => CurrentBlock(
-            changeId: 'phone-change',
-            startedAt: DateTime.fromMillisecondsSinceEpoch(millis),
-            activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
-          );
+        changeId: 'phone-change',
+        startedAt: DateTime.fromMillisecondsSinceEpoch(millis),
+        activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+      );
 
       await bridge.receive(BookmarkSnapshot(activities: const [], current: at(1770000000000)));
       // The phone dragged the boundary in the calendar.
@@ -384,13 +397,19 @@ void main() {
       final service = serviceFor(isWatch: true);
       await service.start();
 
-      await bridge.receive(const BookmarkSnapshot(activities: [
-        WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
-        WearActivity(syncId: 'b', name: 'Email', color: '#EE7C4F'),
-      ]));
-      await bridge.receive(const BookmarkSnapshot(activities: [
-        WearActivity(syncId: 'a', name: 'Focus', color: '#000000'),
-      ]));
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [
+            WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+            WearActivity(syncId: 'b', name: 'Email', color: '#EE7C4F'),
+          ],
+        ),
+      );
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [WearActivity(syncId: 'a', name: 'Focus', color: '#000000')],
+        ),
+      );
 
       final local = {for (final a in await activities.loadActivities()) a.syncId: a};
       expect(local['a']!.name, 'Focus');
@@ -407,9 +426,9 @@ void main() {
       final service = serviceFor(isWatch: true);
       await service.start();
 
-      const snapshot = BookmarkSnapshot(activities: [
-        WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
-      ]);
+      const snapshot = BookmarkSnapshot(
+        activities: [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+      );
       await bridge.receive(snapshot);
       final first = (await activities.loadActivities()).single.version;
       await bridge.receive(snapshot);
@@ -423,9 +442,11 @@ void main() {
     test('a tap writes locally and relays under the same id', () async {
       final service = serviceFor(isWatch: true);
       await service.start();
-      await bridge.receive(const BookmarkSnapshot(activities: [
-        WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
-      ]));
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+        ),
+      );
       bridge.sent.clear();
 
       await service.requestSwitch('a', at: DateTime.fromMillisecondsSinceEpoch(1770000000000));
@@ -448,9 +469,11 @@ void main() {
       // later sync can reconcile.
       final service = serviceFor(isWatch: true);
       await service.start();
-      await bridge.receive(const BookmarkSnapshot(activities: [
-        WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
-      ]));
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+        ),
+      );
 
       await service.requestSwitch('a');
 
@@ -479,8 +502,11 @@ void main() {
       expect(bridge.deliverable, isTrue, reason: 'the sends here are succeeding');
 
       await Future<void>.delayed(const Duration(seconds: 3));
-      expect(bridge.sent.whereType<SnapshotRequest>().length, greaterThan(asked),
-          reason: 'a delivered but unanswered request must be repeated');
+      expect(
+        bridge.sent.whereType<SnapshotRequest>().length,
+        greaterThan(asked),
+        reason: 'a delivered but unanswered request must be repeated',
+      );
 
       // A snapshot is an answer, and does stop it.
       await bridge.receive(const BookmarkSnapshot(activities: []));
@@ -513,9 +539,9 @@ void main() {
 
     test('applies messages the native queue parked while the app was dead', () async {
       bridge.pending = [
-        const BookmarkSnapshot(activities: [
-          WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
-        ]),
+        const BookmarkSnapshot(
+          activities: [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+        ),
       ];
 
       final service = serviceFor(isWatch: true);

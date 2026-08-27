@@ -4,5 +4,4 @@
 /// and there is nothing to negotiate.
 library;
 
-export 'storage_probe_native.dart'
-    if (dart.library.js_interop) 'storage_probe_web.dart';
+export 'storage_probe_native.dart' if (dart.library.js_interop) 'storage_probe_web.dart';

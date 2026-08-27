@@ -7,28 +7,14 @@ import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/domain/block.dart';
 import 'package:time_tracker/domain/calendar.dart';
 
-Activity act(String id, String name) => Activity(
-      syncId: id,
-      name: name,
-      color: '#4F8FEE',
-      bookmarked: false,
-      version: 1,
-      dirty: false,
-    );
+Activity act(String id, String name) =>
+    Activity(syncId: id, name: name, color: '#4F8FEE', bookmarked: false, version: 1, dirty: false);
 
-ActivityChange chg(String id, DateTime at) => ActivityChange(
-      syncId: id,
-      changedAt: at,
-      version: 1,
-      dirty: false,
-    );
+ActivityChange chg(String id, DateTime at) =>
+    ActivityChange(syncId: id, changedAt: at, version: 1, dirty: false);
 
-Block block(String id, DateTime start, DateTime? end) => Block(
-      change: chg(id, start),
-      start: start,
-      end: end,
-      activities: [act('a', 'Alpha')],
-    );
+Block block(String id, DateTime start, DateTime? end) =>
+    Block(change: chg(id, start), start: start, end: end, activities: [act('a', 'Alpha')]);
 
 final day = DateTime(2026, 1, 5); // Mon
 DateTime t(int hour, [int minute = 0]) => DateTime(2026, 1, 5, hour, minute);
@@ -100,10 +86,7 @@ void main() {
 
   group('clampBoundary', () {
     test('an unobstructed target is left alone', () {
-      expect(
-        clampBoundary(desired: t(12), previous: t(9), next: t(15), notAfter: t(20)),
-        t(12),
-      );
+      expect(clampBoundary(desired: t(12), previous: t(9), next: t(15), notAfter: t(20)), t(12));
     });
 
     test('is held off the previous boundary by minBlock', () {
@@ -137,10 +120,7 @@ void main() {
       // its own, so it gets the same clearance a neighbour would: dragging its
       // start onto the present would leave a block of zero length — a card too
       // short to draw and a block that cannot be grabbed to undo it.
-      expect(
-        clampBoundary(desired: t(19), previous: t(9), notAfter: t(17)),
-        t(16, 59),
-      );
+      expect(clampBoundary(desired: t(19), previous: t(9), notAfter: t(17)), t(16, 59));
     });
 
     test('the first boundary has no lower bound', () {

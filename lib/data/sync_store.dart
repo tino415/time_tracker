@@ -25,9 +25,9 @@ class SyncStore {
   /// Stored rather than compiled in: a token baked into a web build is served to
   /// anyone who loads the page, and it has to differ per account anyway.
   Future<String?> token() async {
-    final row = await (_db.select(_db.syncMeta)
-          ..where((t) => t.key.equals(_tokenKey)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.syncMeta,
+    )..where((t) => t.key.equals(_tokenKey))).getSingleOrNull();
     final value = row?.value ?? '';
     return value.isEmpty ? null : value;
   }
@@ -40,9 +40,9 @@ class SyncStore {
   /// startup. Without this the watch would store a token and go on believing it
   /// had none until the next launch.
   Stream<String?> watchToken() {
-    return (_db.select(_db.syncMeta)..where((t) => t.key.equals(_tokenKey)))
-        .watchSingleOrNull()
-        .map((row) {
+    return (_db.select(
+      _db.syncMeta,
+    )..where((t) => t.key.equals(_tokenKey))).watchSingleOrNull().map((row) {
       final value = row?.value ?? '';
       return value.isEmpty ? null : value;
     });
@@ -63,9 +63,9 @@ class SyncStore {
   /// 0 means "never set", which is what a device that has never heard of an
   /// account reports.
   Future<int> credentialVersion() async {
-    final row = await (_db.select(_db.syncMeta)
-          ..where((t) => t.key.equals(_tokenVersionKey)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.syncMeta,
+    )..where((t) => t.key.equals(_tokenVersionKey))).getSingleOrNull();
     return int.tryParse(row?.value ?? '') ?? 0;
   }
 
@@ -74,8 +74,7 @@ class SyncStore {
   /// The counterpart to [grantCredential], and the same split as `_applyPeer`
   /// against `_bump` in the repositories: adopting somebody else's state is not
   /// an edit, so it must not look newer than what it came from.
-  Future<void> adoptCredential(String? token, int version) =>
-      _writeCredential(token, version);
+  Future<void> adoptCredential(String? token, int version) => _writeCredential(token, version);
 
   /// Set the credential *here*, stamping it a version nothing has used yet.
   ///
@@ -93,11 +92,13 @@ class SyncStore {
       if (token == null || token.isEmpty) {
         await (_db.delete(_db.syncMeta)..where((t) => t.key.equals(_tokenKey))).go();
       } else {
-        await _db.into(_db.syncMeta).insertOnConflictUpdate(
-              SyncMetaCompanion.insert(key: _tokenKey, value: token),
-            );
+        await _db
+            .into(_db.syncMeta)
+            .insertOnConflictUpdate(SyncMetaCompanion.insert(key: _tokenKey, value: token));
       }
-      await _db.into(_db.syncMeta).insertOnConflictUpdate(
+      await _db
+          .into(_db.syncMeta)
+          .insertOnConflictUpdate(
             SyncMetaCompanion.insert(key: _tokenVersionKey, value: '$version'),
           );
     });
@@ -114,9 +115,9 @@ class SyncStore {
   ///
   /// Returns whether a reset happened.
   Future<bool> adoptBackend(String backend) async {
-    final row = await (_db.select(_db.syncMeta)
-          ..where((t) => t.key.equals(_backendKey)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.syncMeta,
+    )..where((t) => t.key.equals(_backendKey))).getSingleOrNull();
     if (row?.value == backend) return false;
 
     await _db.transaction(() async {
@@ -124,45 +125,39 @@ class SyncStore {
       // had. Marking them dirty is safe even when the new server already has
       // them: the push is version-checked, and an identical version is accepted
       // rather than duplicated.
-      await _db.update(_db.activities).write(
-            const ActivitiesCompanion(dirty: Value(true)),
-          );
-      await _db.update(_db.activityChanges).write(
-            const ActivityChangesCompanion(dirty: Value(true)),
-          );
+      await _db.update(_db.activities).write(const ActivitiesCompanion(dirty: Value(true)));
+      await _db
+          .update(_db.activityChanges)
+          .write(const ActivityChangesCompanion(dirty: Value(true)));
       await (_db.delete(_db.syncMeta)..where((t) => t.key.equals(_cursorKey))).go();
-      await _db.into(_db.syncMeta).insertOnConflictUpdate(
-            SyncMetaCompanion.insert(key: _backendKey, value: backend),
-          );
+      await _db
+          .into(_db.syncMeta)
+          .insertOnConflictUpdate(SyncMetaCompanion.insert(key: _backendKey, value: backend));
     });
     return true;
   }
 
   Future<String?> cursor() async {
-    final row = await (_db.select(_db.syncMeta)
-          ..where((t) => t.key.equals(_cursorKey)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.syncMeta,
+    )..where((t) => t.key.equals(_cursorKey))).getSingleOrNull();
     return row?.value;
   }
 
   Future<void> setCursor(String cursor) async {
-    await _db.into(_db.syncMeta).insertOnConflictUpdate(
-          SyncMetaCompanion.insert(key: _cursorKey, value: cursor),
-        );
+    await _db
+        .into(_db.syncMeta)
+        .insertOnConflictUpdate(SyncMetaCompanion.insert(key: _cursorKey, value: cursor));
   }
 
   /// Local rows the server has not accepted yet.
   Future<List<ActivityDto>> pendingActivities() async {
-    final rows = await (_db.select(_db.activities)
-          ..where((t) => t.dirty.equals(true)))
-        .get();
+    final rows = await (_db.select(_db.activities)..where((t) => t.dirty.equals(true))).get();
     return [for (final r in rows) _toActivityDto(r)];
   }
 
   Future<List<ChangeDto>> pendingChanges() async {
-    final rows = await (_db.select(_db.activityChanges)
-          ..where((t) => t.dirty.equals(true)))
-        .get();
+    final rows = await (_db.select(_db.activityChanges)..where((t) => t.dirty.equals(true))).get();
     return [
       for (final r in rows)
         ChangeDto(
@@ -232,9 +227,9 @@ class SyncStore {
   /// this enforces foreign keys immediately and so depends on delivery order.
   Future<bool> applyRemoteActivity(ActivityDto dto) async {
     return _db.transaction(() async {
-      final local = await (_db.select(_db.activities)
-            ..where((t) => t.syncId.equals(dto.syncId)))
-          .getSingleOrNull();
+      final local = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(dto.syncId))).getSingleOrNull();
 
       if (local != null) {
         final decision = decideIncoming(
@@ -247,7 +242,9 @@ class SyncStore {
 
       // Written verbatim, version included, and *not* dirty: this is the
       // server's row, not an edit of ours.
-      await _db.into(_db.activities).insertOnConflictUpdate(
+      await _db
+          .into(_db.activities)
+          .insertOnConflictUpdate(
             ActivitiesCompanion.insert(
               syncId: dto.syncId,
               name: dto.name,
@@ -267,9 +264,9 @@ class SyncStore {
 
   Future<bool> applyRemoteChange(ChangeDto dto) async {
     return _db.transaction(() async {
-      final local = await (_db.select(_db.activityChanges)
-            ..where((t) => t.syncId.equals(dto.syncId)))
-          .getSingleOrNull();
+      final local = await (_db.select(
+        _db.activityChanges,
+      )..where((t) => t.syncId.equals(dto.syncId))).getSingleOrNull();
 
       if (local != null) {
         final decision = decideIncoming(
@@ -280,7 +277,9 @@ class SyncStore {
         if (decision == SyncDecision.keep) return false;
       }
 
-      await _db.into(_db.activityChanges).insertOnConflictUpdate(
+      await _db
+          .into(_db.activityChanges)
+          .insertOnConflictUpdate(
             ActivityChangesCompanion.insert(
               syncId: dto.syncId,
               changedAt: dto.changedAt,
@@ -296,15 +295,17 @@ class SyncStore {
       // Links naming an activity this device has never seen are skipped rather
       // than failing the whole change: the activity may arrive in a later page,
       // and the next sync will fill it in.
-      await (_db.delete(_db.activityChangeActivities)
-            ..where((t) => t.activityChangeId.equals(dto.syncId)))
-          .go();
+      await (_db.delete(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(dto.syncId))).go();
       for (final activityId in dto.activityIds) {
-        final exists = await (_db.select(_db.activities)
-              ..where((t) => t.syncId.equals(activityId)))
-            .getSingleOrNull();
+        final exists = await (_db.select(
+          _db.activities,
+        )..where((t) => t.syncId.equals(activityId))).getSingleOrNull();
         if (exists == null) continue;
-        await _db.into(_db.activityChangeActivities).insert(
+        await _db
+            .into(_db.activityChangeActivities)
+            .insert(
               ActivityChangeActivitiesCompanion.insert(
                 activityChangeId: dto.syncId,
                 activityId: activityId,
@@ -317,21 +318,21 @@ class SyncStore {
   }
 
   Future<List<String>> _activityIdsFor(String changeId) async {
-    final rows = await (_db.select(_db.activityChangeActivities)
-          ..where((t) => t.activityChangeId.equals(changeId)))
-        .get();
+    final rows = await (_db.select(
+      _db.activityChangeActivities,
+    )..where((t) => t.activityChangeId.equals(changeId))).get();
     return [for (final r in rows) r.activityId];
   }
 
   ActivityDto _toActivityDto(Activity r) => ActivityDto(
-        syncId: r.syncId,
-        parentId: r.parentId,
-        name: r.name,
-        color: r.color,
-        bookmarked: r.bookmarked,
-        lastUsedAt: r.lastUsedAt,
-        externalId: r.externalId,
-        version: r.version,
-        deletedAt: r.deletedAt,
-      );
+    syncId: r.syncId,
+    parentId: r.parentId,
+    name: r.name,
+    color: r.color,
+    bookmarked: r.bookmarked,
+    lastUsedAt: r.lastUsedAt,
+    externalId: r.externalId,
+    version: r.version,
+    deletedAt: r.deletedAt,
+  );
 }

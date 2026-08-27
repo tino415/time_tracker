@@ -132,7 +132,10 @@ class _ReadableWidth extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: child),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: child,
+      ),
     );
   }
 }
@@ -151,7 +154,9 @@ class _NowBesideTimeline extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: FocusTraversalGroup(child: _Pane(index: nowTab, selected: tab == nowTab)),
+            child: FocusTraversalGroup(
+              child: _Pane(index: nowTab, selected: tab == nowTab),
+            ),
           ),
           Expanded(
             child: FocusTraversalGroup(
@@ -182,7 +187,9 @@ class _Pane extends StatelessWidget {
     final t = neo(context);
     return Container(
       decoration: bordered
-          ? BoxDecoration(border: Border(left: BorderSide(color: t.line, width: 3)))
+          ? BoxDecoration(
+              border: Border(left: BorderSide(color: t.line, width: 3)),
+            )
           : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -266,10 +273,7 @@ class _Sidebar extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 18),
-            child: _Wordmark(),
-          ),
+          const Padding(padding: EdgeInsets.fromLTRB(16, 16, 16, 18), child: _Wordmark()),
           for (var i = 0; i < _tabs.length; i++)
             _TabButton(
               label: _tabs[i].label,
@@ -290,8 +294,10 @@ class _Wordmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text('[track]',
-        style: mono(context, size: 18, weight: FontWeight.w800, color: neo(context).brand));
+    return Text(
+      '[track]',
+      style: mono(context, size: 18, weight: FontWeight.w800, color: neo(context).brand),
+    );
   }
 }
 
@@ -315,17 +321,14 @@ class _AppControls extends ConsumerWidget {
         // everywhere (a Bluetooth keyboard on a phone should work), but a
         // keyboard button on a touch phone is noise, and the platform is the
         // honest signal here rather than how wide the window happens to be.
-        if (kIsWeb)
-          _ControlButton(
-            label: '⌨ KEYS',
-            onTap: () => showShortcutsHelp(context),
-          ),
+        if (kIsWeb) _ControlButton(label: '⌨ KEYS', onTap: () => showShortcutsHelp(context)),
         _ControlButton(
           label: '◑ THEME',
           onTap: () {
             final cur = Theme.of(context).brightness;
-            ref.read(themeModeProvider.notifier).state =
-                cur == Brightness.dark ? ThemeMode.light : ThemeMode.dark;
+            ref.read(themeModeProvider.notifier).state = cur == Brightness.dark
+                ? ThemeMode.light
+                : ThemeMode.dark;
           },
         ),
       ],
@@ -347,8 +350,10 @@ class _ControlButton extends StatelessWidget {
       shadowOffset: 3,
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       onTap: onTap,
-      child: Text(label,
-          style: mono(context, size: 11, weight: FontWeight.w700, color: t.surface)),
+      child: Text(
+        label,
+        style: mono(context, size: 11, weight: FontWeight.w700, color: t.surface),
+      ),
     );
   }
 }
@@ -387,8 +392,7 @@ class _TabButtonState extends State<_TabButton> {
       mouseCursor: SystemMouseCursors.click,
       actions: {
         ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) => widget.onTap()),
-        ButtonActivateIntent:
-            CallbackAction<ButtonActivateIntent>(onInvoke: (_) => widget.onTap()),
+        ButtonActivateIntent: CallbackAction<ButtonActivateIntent>(onInvoke: (_) => widget.onTap()),
       },
       onShowFocusHighlight: (v) => setState(() => _focused = v),
       child: GestureDetector(

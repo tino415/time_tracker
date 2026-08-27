@@ -42,9 +42,9 @@ Future<List<String>> _currentSet(AppDatabase db) async {
 /// order. Only the sheet's row has a × inside it, so the descendant search picks
 /// it out without depending on which Row happens to be found first.
 Finder _removeOn(String activity) => find.descendant(
-      of: find.ancestor(of: find.text(activity), matching: find.byType(Row)),
-      matching: find.text('×'),
-    );
+  of: find.ancestor(of: find.text(activity), matching: find.byType(Row)),
+  matching: find.text('×'),
+);
 
 Future<void> _openBlockSheet(WidgetTester tester) async {
   await openTab(tester, 'TIMELINE');
@@ -71,8 +71,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('an unnamed block can be named again from the same sheet',
-      (tester) async {
+  testWidgets('an unnamed block can be named again from the same sheet', (tester) async {
     // The round trip: remove the last tag, then answer it. If this did not work
     // the previous test would have described a trap rather than a feature.
     final db = await bootApp(tester, viewport: _phone, seed: _seed);
@@ -109,8 +108,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('one row of a tagged pair is removed without a picker',
-      (tester) async {
+  testWidgets('one row of a tagged pair is removed without a picker', (tester) async {
     final db = await bootApp(tester, viewport: _phone, seed: _seed);
     await _openBlockSheet(tester);
     await tester.tap(find.text('+ ANOTHER ACTIVITY'));
@@ -131,8 +129,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the add row cannot offer what is already on the block',
-      (tester) async {
+  testWidgets('the add row cannot offer what is already on the block', (tester) async {
     final db = await bootApp(tester, viewport: _phone, seed: _seed);
     await _openBlockSheet(tester);
 

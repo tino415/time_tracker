@@ -47,10 +47,7 @@ Future<void> _openCalendar(WidgetTester tester) async {
 
 /// The drawn height of Alpha's one-hour card — i.e. pixels per hour.
 double _alphaHeight(WidgetTester tester) => tester
-    .getSize(find.ancestor(
-      of: find.text('Alpha'),
-      matching: find.byType(GestureDetector),
-    ).first)
+    .getSize(find.ancestor(of: find.text('Alpha'), matching: find.byType(GestureDetector)).first)
     .height;
 
 void main() {

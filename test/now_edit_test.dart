@@ -27,8 +27,7 @@ Future<void> _seedRunning(AppDatabase db, DateTime start) async {
   await DriftChangeRepository(db).switchTo(a.syncId, at: start);
 }
 
-Future<List<ActivityChange>> _changes(AppDatabase db) =>
-    DriftChangeRepository(db).loadChanges();
+Future<List<ActivityChange>> _changes(AppDatabase db) => DriftChangeRepository(db).loadChanges();
 
 /// Create a second activity from the Activities tab, without switching to it,
 /// and come back to Now.
@@ -102,10 +101,12 @@ void main() {
     await settle(tester);
 
     final after = (await _changes(db)).single.changedAt;
-    expect(after.isAfter(DateTime.now()), isFalse,
-        reason: 'a block may not start in the future');
-    expect(after.isBefore(before), isFalse,
-        reason: 'the clamp holds the boundary at the ceiling, it does not rewind it');
+    expect(after.isAfter(DateTime.now()), isFalse, reason: 'a block may not start in the future');
+    expect(
+      after.isBefore(before),
+      isFalse,
+      reason: 'the clamp holds the boundary at the ceiling, it does not rewind it',
+    );
 
     await disposeApp(tester);
   });
@@ -171,9 +172,13 @@ void main() {
   });
 
   testWidgets('an unnamed block keeps its naming action alongside the block menu', (tester) async {
-    await bootApp(tester, viewport: _phone, seed: (db) async {
-      await _seedRunning(db, DateTime.now().subtract(const Duration(minutes: 30)));
-    });
+    await bootApp(
+      tester,
+      viewport: _phone,
+      seed: (db) async {
+        await _seedRunning(db, DateTime.now().subtract(const Duration(minutes: 30)));
+      },
+    );
 
     // Start an unnamed block over the top of the seeded one.
     await tester.tap(inScreen(NowScreen, find.text('▶ START NOW · NAME IT LATER')));

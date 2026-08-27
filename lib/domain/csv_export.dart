@@ -49,7 +49,8 @@ String buildCsv({
 /// File name for an export made [at], e.g. `track-2026-07-30.csv`, or
 /// `track-work-2026-07-30.csv` when scoped to a subtree named "Work".
 String csvFileName(DateTime at, {String? scopeName}) {
-  final date = '${at.year.toString().padLeft(4, '0')}-'
+  final date =
+      '${at.year.toString().padLeft(4, '0')}-'
       '${at.month.toString().padLeft(2, '0')}-'
       '${at.day.toString().padLeft(2, '0')}';
   final scope = scopeName == null ? '' : '-${_slug(scopeName)}';

@@ -15,7 +15,10 @@ Future<void> editBlockComment(BuildContext context, WidgetRef ref, Block block) 
     context: context,
     builder: (_) => AlertDialog(
       backgroundColor: t.surface,
-      shape: RoundedRectangleBorder(side: BorderSide(color: t.line, width: 3), borderRadius: BorderRadius.zero),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: t.line, width: 3),
+        borderRadius: BorderRadius.zero,
+      ),
       title: Text('NOTE', style: mono(context, weight: FontWeight.w800)),
       // An explicit width, not the field's intrinsic one. AlertDialog sizes its
       // content to what the child asks for, and an unconstrained TextField asks
@@ -33,15 +36,23 @@ Future<void> editBlockComment(BuildContext context, WidgetRef ref, Block block) 
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: Text('CANCEL', style: mono(context))),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('CANCEL', style: mono(context)),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(context, controller.text),
-          child: Text('SAVE', style: mono(context, weight: FontWeight.w800, color: t.brand)),
+          child: Text(
+            'SAVE',
+            style: mono(context, weight: FontWeight.w800, color: t.brand),
+          ),
         ),
       ],
     ),
   );
   if (result == null) return; // dismissed
   final text = result.trim();
-  await ref.read(changeRepositoryProvider).setComment(block.change.syncId, text.isEmpty ? null : text);
+  await ref
+      .read(changeRepositoryProvider)
+      .setComment(block.change.syncId, text.isEmpty ? null : text);
 }

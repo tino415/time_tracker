@@ -117,8 +117,11 @@ void main() {
     expect(inScreen(NowScreen, find.textContaining('Review')), findsWidgets);
     expect(inScreen(NowScreen, find.textContaining('Deep work')), findsNothing);
     expect(inScreen(NowScreen, find.textContaining('Email')), findsWidgets);
-    expect((await DriftChangeRepository(db).loadChanges()), hasLength(1),
-        reason: 'a correction re-points the block; it must not open a boundary');
+    expect(
+      (await DriftChangeRepository(db).loadChanges()),
+      hasLength(1),
+      reason: 'a correction re-points the block; it must not open a boundary',
+    );
 
     await disposeApp(tester);
   });

@@ -66,27 +66,34 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
       child: Container(
         margin: const EdgeInsets.all(10),
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-        decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
         padding: const EdgeInsets.all(14),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(children: [
-                NeoChip(token == null ? 'Set up sync' : 'Sync account'),
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Text('✕', style: mono(context, size: 18, weight: FontWeight.w800)),
-                ),
-              ]),
+              Row(
+                children: [
+                  NeoChip(token == null ? 'Set up sync' : 'Sync account'),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Text('✕', style: mono(context, size: 18, weight: FontWeight.w800)),
+                  ),
+                ],
+              ),
               const SizedBox(height: 14),
               if (token == null) ..._setup(context, t) else ..._connected(context, t, token),
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!,
-                    style: mono(context, size: 12, weight: FontWeight.w700, color: t.brand)),
+                Text(
+                  _error!,
+                  style: mono(context, size: 12, weight: FontWeight.w700, color: t.brand),
+                ),
               ],
             ],
           ),
@@ -107,10 +114,12 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
         NeoButton(
           label: _busy ? 'working…' : '＋ new account',
           primary: true,
-          onTap: _busy ? null : () => _run(() async {
-            final created = await ref.read(syncAccountProvider).createAccount();
-            if (mounted) setState(() => _justCreated = created);
-          }),
+          onTap: _busy
+              ? null
+              : () => _run(() async {
+                  final created = await ref.read(syncAccountProvider).createAccount();
+                  if (mounted) setState(() => _justCreated = created);
+                }),
         ),
         const SizedBox(height: 10),
         NeoButton(
@@ -118,8 +127,10 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
           onTap: _busy ? null : () => setState(() => _entering = true),
         ),
       ] else ...[
-        Text('Scan the code on your other device, or paste its token',
-            style: mono(context, size: 12, color: t.muted)),
+        Text(
+          'Scan the code on your other device, or paste its token',
+          style: mono(context, size: 12, color: t.muted),
+        ),
         const SizedBox(height: 8),
         // Camera on the phone only — the web build has no decoder, see
         // scan_token.dart.
@@ -181,10 +192,7 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
             // redundancy would only make the modules smaller.
             errorCorrectionLevel: QrErrorCorrectLevel.L,
             backgroundColor: const Color(0xFFFFFFFF),
-            eyeStyle: const QrEyeStyle(
-              eyeShape: QrEyeShape.square,
-              color: Color(0xFF000000),
-            ),
+            eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: Color(0xFF000000)),
             dataModuleStyle: const QrDataModuleStyle(
               dataModuleShape: QrDataModuleShape.square,
               color: Color(0xFF000000),
@@ -193,10 +201,16 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
         ),
       ),
       const SizedBox(height: 12),
-      Text('TOKEN', style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+      Text(
+        'TOKEN',
+        style: mono(context, size: 10, weight: FontWeight.w800, spacing: 1, color: t.muted),
+      ),
       const SizedBox(height: 6),
       Container(
-        decoration: BoxDecoration(color: t.surface2, border: Border.all(color: t.line, width: 2)),
+        decoration: BoxDecoration(
+          color: t.surface2,
+          border: Border.all(color: t.line, width: 2),
+        ),
         padding: const EdgeInsets.all(10),
         child: SelectableText(token, style: mono(context, size: 13, weight: FontWeight.w700)),
       ),
@@ -210,18 +224,20 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
         },
       ),
       const SizedBox(height: 10),
-      Text('Scan the code with another device, or copy the token and paste it there.',
-          style: mono(context, size: 12, color: t.muted)),
+      Text(
+        'Scan the code with another device, or copy the token and paste it there.',
+        style: mono(context, size: 12, color: t.muted),
+      ),
       const SizedBox(height: 16),
       NeoButton(
         label: 'disconnect',
         onTap: _busy
             ? null
             : () => _run(() async {
-                  // Deliberately does not touch the local database: that is the
-                  // authoritative copy, and disconnecting is not deleting.
-                  await ref.read(syncAccountProvider).forget();
-                }),
+                // Deliberately does not touch the local database: that is the
+                // authoritative copy, and disconnecting is not deleting.
+                await ref.read(syncAccountProvider).forget();
+              }),
       ),
     ];
   }

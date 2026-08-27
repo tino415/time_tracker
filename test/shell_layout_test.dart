@@ -46,11 +46,9 @@ Future<void> _seedBookmarks(AppDatabase db) async {
   }
 }
 
-NeoChip _chip(String label) => find
-    .byWidgetPredicate((w) => w is NeoChip && w.text == label)
-    .evaluate()
-    .single
-    .widget as NeoChip;
+NeoChip _chip(String label) =>
+    find.byWidgetPredicate((w) => w is NeoChip && w.text == label).evaluate().single.widget
+        as NeoChip;
 
 /// Tap a navigation destination by name.
 ///
@@ -189,8 +187,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('a single column stops widening long before the window does',
-      (tester) async {
+  testWidgets('a single column stops widening long before the window does', (tester) async {
     await bootApp(tester, viewport: const Size(2560, 1200), seed: _seed);
     await tester.tap(find.text('REPORTS'));
     await settle(tester);
@@ -226,8 +223,10 @@ void main() {
   testWidgets('a phone keeps the bookmark grid two tiles wide', (tester) async {
     await bootApp(tester, viewport: _phone, seed: _seedBookmarks);
 
-    expect(tester.getCenter(find.text('Three')).dy,
-        greaterThan(tester.getCenter(find.text('One')).dy));
+    expect(
+      tester.getCenter(find.text('Three')).dy,
+      greaterThan(tester.getCenter(find.text('One')).dy),
+    );
 
     await disposeApp(tester);
   });

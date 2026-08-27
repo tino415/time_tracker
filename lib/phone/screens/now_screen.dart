@@ -51,8 +51,10 @@ class NowScreen extends ConsumerWidget {
               NeoSectionHeader('Switch to · bookmarked'),
               const SizedBox(height: 12),
               if (bookmarked.isEmpty)
-                Text('no bookmarks yet — star an activity to pin it here',
-                    style: mono(context, color: neo(context).muted))
+                Text(
+                  'no bookmarks yet — star an activity to pin it here',
+                  style: mono(context, color: neo(context).muted),
+                )
               else
                 _SwitchGrid(activities: bookmarked, current: current),
             ],
@@ -111,8 +113,10 @@ class _HeroCard extends ConsumerWidget {
           children: [
             NeoChip('Not tracking'),
             const SizedBox(height: 14),
-            Text('pick something below to start',
-                style: mono(context, size: 16, weight: FontWeight.w700, color: t.muted)),
+            Text(
+              'pick something below to start',
+              style: mono(context, size: 16, weight: FontWeight.w700, color: t.muted),
+            ),
           ],
         ),
       );
@@ -174,7 +178,10 @@ class _HeroCard extends ConsumerWidget {
                 children: [
                   _LiveDot(color: onFill),
                   const SizedBox(width: 6),
-                  Text('TRACKING', style: mono(context, size: 10, weight: FontWeight.w800, color: onFill)),
+                  Text(
+                    'TRACKING',
+                    style: mono(context, size: 10, weight: FontWeight.w800, color: onFill),
+                  ),
                 ],
               ),
             ],
@@ -199,8 +206,16 @@ class _HeroCard extends ConsumerWidget {
                   fill: onFill,
                   shadowOffset: 4,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  child: Text('▸ WHAT IS THIS?',
-                      style: mono(context, size: 12, weight: FontWeight.w800, spacing: .8, color: fill)),
+                  child: Text(
+                    '▸ WHAT IS THIS?',
+                    style: mono(
+                      context,
+                      size: 12,
+                      weight: FontWeight.w800,
+                      spacing: .8,
+                      color: fill,
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 8),
               ],
@@ -217,15 +232,19 @@ class _HeroCard extends ConsumerWidget {
                 fill: onFill,
                 shadowOffset: 4,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                child: Text(unnamed ? '⋯' : '⋯ EDIT BLOCK',
-                    style: mono(context, size: 12, weight: FontWeight.w800, spacing: .8, color: fill)),
+                child: Text(
+                  unnamed ? '⋯' : '⋯ EDIT BLOCK',
+                  style: mono(context, size: 12, weight: FontWeight.w800, spacing: .8, color: fill),
+                ),
               ),
             ],
           ),
           if (multi) ...[
             const SizedBox(height: 6),
-            Text('${acts.length} activities · even-split',
-                style: mono(context, size: 11, weight: FontWeight.w700, color: onFill)),
+            Text(
+              '${acts.length} activities · even-split',
+              style: mono(context, size: 11, weight: FontWeight.w700, color: onFill),
+            ),
           ],
           const SizedBox(height: 16),
           SecondTicker(
@@ -242,12 +261,21 @@ class _HeroCard extends ConsumerWidget {
             behavior: HitTestBehavior.opaque,
             child: Row(
               children: [
-                Text('since ${formatTimeOfDay(b.start)}',
-                    style: mono(context, size: 12, weight: FontWeight.w700, color: onFill)),
+                Text(
+                  'since ${formatTimeOfDay(b.start)}',
+                  style: mono(context, size: 12, weight: FontWeight.w700, color: onFill),
+                ),
                 const SizedBox(width: 8),
-                Text('edit',
-                    style: mono(context, size: 10, weight: FontWeight.w800, spacing: .8, color: onFill)
-                        .copyWith(decoration: TextDecoration.underline, decorationColor: onFill)),
+                Text(
+                  'edit',
+                  style: mono(
+                    context,
+                    size: 10,
+                    weight: FontWeight.w800,
+                    spacing: .8,
+                    color: onFill,
+                  ).copyWith(decoration: TextDecoration.underline, decorationColor: onFill),
+                ),
               ],
             ),
           ),
@@ -273,13 +301,19 @@ class _CommentRow extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('✎ ', style: mono(context, size: 13, weight: FontWeight.w800, color: onFill)),
+          Text(
+            '✎ ',
+            style: mono(context, size: 13, weight: FontWeight.w800, color: onFill),
+          ),
           Expanded(
             child: Text(
               comment == null || comment.isEmpty ? 'add a note…' : comment,
-              style: mono(context, size: 13, weight: FontWeight.w700, color: onFill).copyWith(
-                fontStyle: (comment == null || comment.isEmpty) ? FontStyle.italic : null,
-              ),
+              style: mono(
+                context,
+                size: 13,
+                weight: FontWeight.w700,
+                color: onFill,
+              ).copyWith(fontStyle: (comment == null || comment.isEmpty) ? FontStyle.italic : null),
             ),
           ),
         ],
@@ -297,8 +331,10 @@ class _LiveDot extends StatefulWidget {
 }
 
 class _LiveDotState extends State<_LiveDot> with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
 
   @override
   void dispose() {
@@ -370,14 +406,19 @@ class _SwitchGrid extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (showId)
-                Text(id,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: mono(context, size: 9, weight: FontWeight.w800, color: onFill)),
+                Text(
+                  id,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mono(context, size: 9, weight: FontWeight.w800, color: onFill),
+                ),
               Row(
                 children: [
                   if (active)
-                    Text('● ', style: mono(context, size: 11, weight: FontWeight.w800, color: onFill)),
+                    Text(
+                      '● ',
+                      style: mono(context, size: 11, weight: FontWeight.w800, color: onFill),
+                    ),
                   Expanded(
                     child: Text(
                       a.name,
@@ -385,7 +426,13 @@ class _SwitchGrid extends ConsumerWidget {
                       // the name has the tile to itself.
                       maxLines: showId ? 1 : 2,
                       overflow: TextOverflow.ellipsis,
-                      style: mono(context, size: 13, weight: FontWeight.w800, color: onFill, height: 1.15),
+                      style: mono(
+                        context,
+                        size: 13,
+                        weight: FontWeight.w800,
+                        color: onFill,
+                        height: 1.15,
+                      ),
                     ),
                   ),
                 ],
@@ -419,17 +466,18 @@ class _QuickSwitchFieldState extends ConsumerState<_QuickSwitchField> {
 
   List<Activity> _suggestions(List<Activity> all) {
     final q = _query.trim().toLowerCase();
-    final matches = all.where((a) {
-      if (q.isEmpty) return true;
-      return a.name.toLowerCase().contains(q) || (a.externalId?.toLowerCase().contains(q) ?? false);
-    }).toList()
-      ..sort((a, b) {
-        final la = a.lastUsedAt, lb = b.lastUsedAt;
-        if (la != null && lb != null) return lb.compareTo(la);
-        if (la != null) return -1;
-        if (lb != null) return 1;
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
+    final matches =
+        all.where((a) {
+          if (q.isEmpty) return true;
+          return a.name.toLowerCase().contains(q) ||
+              (a.externalId?.toLowerCase().contains(q) ?? false);
+        }).toList()..sort((a, b) {
+          final la = a.lastUsedAt, lb = b.lastUsedAt;
+          if (la != null && lb != null) return lb.compareTo(la);
+          if (la != null) return -1;
+          if (lb != null) return 1;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
     return matches.take(5).toList();
   }
 
@@ -471,12 +519,22 @@ class _QuickSwitchFieldState extends ConsumerState<_QuickSwitchField> {
                   onTap: () => _switch(a.syncId),
                   shadowOffset: 3,
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: Row(children: [
-                    NeoSwatch(parseHexColor(a.color), size: 14),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono(context, weight: FontWeight.w700))),
-                    if (a.externalId != null) Text(a.externalId!, style: mono(context, size: 11, color: t.muted)),
-                  ]),
+                  child: Row(
+                    children: [
+                      NeoSwatch(parseHexColor(a.color), size: 14),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          a.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: mono(context, weight: FontWeight.w700),
+                        ),
+                      ),
+                      if (a.externalId != null)
+                        Text(a.externalId!, style: mono(context, size: 11, color: t.muted)),
+                    ],
+                  ),
                 ),
               ),
             Padding(
@@ -486,9 +544,12 @@ class _QuickSwitchFieldState extends ConsumerState<_QuickSwitchField> {
                 fill: t.brand,
                 shadowOffset: 3,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                child: Text('+ create & switch: "${_controller.text.trim()}"',
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: mono(context, weight: FontWeight.w800, color: t.brandInk)),
+                child: Text(
+                  '+ create & switch: "${_controller.text.trim()}"',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mono(context, weight: FontWeight.w800, color: t.brandInk),
+                ),
               ),
             ),
           ],
@@ -570,11 +631,17 @@ class _FirstRunEmpty extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('nothing tracked yet',
-                style: mono(context, size: 18, weight: FontWeight.w800), textAlign: TextAlign.center),
+            Text(
+              'nothing tracked yet',
+              style: mono(context, size: 18, weight: FontWeight.w800),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 8),
-            Text('create your first activity to start tracking',
-                style: mono(context, color: t.muted), textAlign: TextAlign.center),
+            Text(
+              'create your first activity to start tracking',
+              style: mono(context, color: t.muted),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 20),
             NeoButton(
               label: '+ new activity',

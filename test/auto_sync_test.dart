@@ -57,11 +57,11 @@ void main() {
   tearDown(() => changes.close());
 
   AutoSyncService serviceFor({Duration? debounce, Duration? minInterval}) => AutoSyncService(
-        sync: CountingSync(transport),
-        localChanges: changes.stream,
-        debounce: debounce ?? const Duration(seconds: 20),
-        minInterval: minInterval ?? const Duration(minutes: 1),
-      );
+    sync: CountingSync(transport),
+    localChanges: changes.stream,
+    debounce: debounce ?? const Duration(seconds: 20),
+    minInterval: minInterval ?? const Duration(minutes: 1),
+  );
 
   test('syncs once on start', () {
     fakeAsync((async) {

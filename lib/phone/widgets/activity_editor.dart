@@ -183,7 +183,10 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
         // The form is taller than a short screen once the keyboard is up, so it
         // scrolls rather than overflowing (the confirm button must stay reachable).
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-        decoration: BoxDecoration(color: t.bg, border: Border.all(color: t.line, width: 3)),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
         padding: const EdgeInsets.all(14),
         child: SingleChildScrollView(
           child: Column(
@@ -209,13 +212,21 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
               ),
               if (_externalId != null) ...[
                 const SizedBox(height: 8),
-                Row(children: [
-                  Text('ID · ', style: mono(context, size: 12, color: t.muted)),
-                  Text(_externalId!, style: mono(context, size: 12, weight: FontWeight.w700, color: t.brand)),
-                ]),
+                Row(
+                  children: [
+                    Text('ID · ', style: mono(context, size: 12, color: t.muted)),
+                    Text(
+                      _externalId!,
+                      style: mono(context, size: 12, weight: FontWeight.w700, color: t.brand),
+                    ),
+                  ],
+                ),
               ],
               const SizedBox(height: 14),
-              Text('COLOUR', style: mono(context, size: 11, weight: FontWeight.w800, spacing: 1, color: t.muted)),
+              Text(
+                'COLOUR',
+                style: mono(context, size: 11, weight: FontWeight.w800, spacing: 1, color: t.muted),
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -225,10 +236,12 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                     _Swatch(
                       color: c,
                       selected: _effectiveColor.toARGB32() == c.toARGB32(),
-                      onTap: () => _keepTyping(() => setState(() {
-                        _color = c;
-                        _colorTouched = true;
-                      })),
+                      onTap: () => _keepTyping(
+                        () => setState(() {
+                          _color = c;
+                          _colorTouched = true;
+                        }),
+                      ),
                     ),
                 ],
               ),
@@ -263,8 +276,8 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                 label: _isEdit
                     ? 'save'
                     : widget.switchToOnCreate
-                        ? 'create & switch'
-                        : 'create',
+                    ? 'create & switch'
+                    : 'create',
                 primary: true,
                 onTap: _saving ? null : _save,
               ),
@@ -295,7 +308,10 @@ class _Field extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = neo(context);
     return Container(
-      decoration: BoxDecoration(color: t.surface, border: Border.all(color: t.line, width: 3)),
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: Border.all(color: t.line, width: 3),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: TextField(
         controller: controller,
@@ -341,10 +357,7 @@ class _Swatch extends StatelessWidget {
             height: 34,
             decoration: BoxDecoration(
               color: color,
-              border: Border.all(
-                color: selected ? t.brand : t.line,
-                width: selected ? 4 : 2,
-              ),
+              border: Border.all(color: selected ? t.brand : t.line, width: selected ? 4 : 2),
             ),
           ),
         ),
@@ -367,8 +380,15 @@ class _BookmarkToggle extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
         children: [
-          Text(value ? '★' : '☆',
-              style: mono(context, size: 18, weight: FontWeight.w800, color: value ? t.brand : t.muted)),
+          Text(
+            value ? '★' : '☆',
+            style: mono(
+              context,
+              size: 18,
+              weight: FontWeight.w800,
+              color: value ? t.brand : t.muted,
+            ),
+          ),
           const SizedBox(width: 10),
           // Flexible: the label is wider than a narrow phone's sheet.
           Expanded(

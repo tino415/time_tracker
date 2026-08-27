@@ -101,9 +101,15 @@ void main() {
 
     test('is rejected when required fields are missing or mistyped', () {
       expect(ActivityDto.fromJson({'name': 'x', 'color': '#fff', 'version': 1}), isNull);
-      expect(ActivityDto.fromJson({'syncId': '', 'name': 'x', 'color': '#fff', 'version': 1}), isNull);
+      expect(
+        ActivityDto.fromJson({'syncId': '', 'name': 'x', 'color': '#fff', 'version': 1}),
+        isNull,
+      );
       expect(ActivityDto.fromJson({'syncId': 'a', 'name': 'x', 'color': '#fff'}), isNull);
-      expect(ActivityDto.fromJson({'syncId': 'a', 'name': 'x', 'color': '#fff', 'version': '1'}), isNull);
+      expect(
+        ActivityDto.fromJson({'syncId': 'a', 'name': 'x', 'color': '#fff', 'version': '1'}),
+        isNull,
+      );
       expect(ActivityDto.fromJson('not a map'), isNull);
     });
   });
@@ -153,7 +159,12 @@ void main() {
           {'syncId': 'a', 'name': 'A', 'color': '#fff', 'version': 1},
         ],
         'changes': [
-          {'syncId': 'c', 'changedAt': 1, 'version': 1, 'activityIds': ['a']},
+          {
+            'syncId': 'c',
+            'changedAt': 1,
+            'version': 1,
+            'activityIds': ['a'],
+          },
         ],
         'rejected': ['stale-one'],
       })!;

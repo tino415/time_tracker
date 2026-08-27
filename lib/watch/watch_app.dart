@@ -32,10 +32,7 @@ class WatchApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: neoTheme(NeoTokens.dark, Brightness.dark),
-      home: const Scaffold(
-        backgroundColor: Color(0xFF000000),
-        body: _WatchHome(),
-      ),
+      home: const Scaffold(backgroundColor: Color(0xFF000000), body: _WatchHome()),
     );
   }
 }
@@ -127,51 +124,53 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
       // of the curve rather than permanently short of it.
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14),
       children: [
+        _ActivityTile(
+          // Keyed by identity, not label, so a test can find the tile without
+          // depending on wording — and without matching the same name in the
+          // hero above it.
+          key: const ValueKey('tile-$kUnsortedActivityId'),
+          name: unnamedRunning ? 'start another' : 'start now',
+          color: parseHexColor(kUnsortedColor),
+          // Deliberately enabled while an unnamed block runs: two in a row are
+          // two different things to name later, not one long one.
+          selected: false,
+          armed: _armed == kUnsortedActivityId,
+          onTap: () {
+            if (!_confirm(kUnsortedActivityId)) return;
+            ref.read(wearSyncProvider).startUnsorted();
+          },
+        ),
+        const SizedBox(height: 6),
+        for (final a in bookmarked) ...[
           _ActivityTile(
-            // Keyed by identity, not label, so a test can find the tile without
-            // depending on wording — and without matching the same name in the
-            // hero above it.
-            key: const ValueKey('tile-$kUnsortedActivityId'),
-            name: unnamedRunning ? 'start another' : 'start now',
-            color: parseHexColor(kUnsortedColor),
-            // Deliberately enabled while an unnamed block runs: two in a row are
-            // two different things to name later, not one long one.
-            selected: false,
-            armed: _armed == kUnsortedActivityId,
-            onTap: () {
-              if (!_confirm(kUnsortedActivityId)) return;
-              ref.read(wearSyncProvider).startUnsorted();
-            },
+            key: ValueKey('tile-${a.syncId}'),
+            name: a.name,
+            color: parseHexColor(a.color),
+            selected: a.syncId == currentId,
+            armed: _armed == a.syncId,
+            // Tapping what is already running would only split the block; the
+            // phone guards this too, but not offering it is clearer than a tap
+            // that does nothing.
+            onTap: a.syncId == currentId
+                ? null
+                : () {
+                    if (!_confirm(a.syncId)) return;
+                    ref.read(wearSyncProvider).requestSwitch(a.syncId);
+                  },
           ),
           const SizedBox(height: 6),
-          for (final a in bookmarked) ...[
-            _ActivityTile(
-              key: ValueKey('tile-${a.syncId}'),
-              name: a.name,
-              color: parseHexColor(a.color),
-              selected: a.syncId == currentId,
-              armed: _armed == a.syncId,
-              // Tapping what is already running would only split the block; the
-              // phone guards this too, but not offering it is clearer than a tap
-              // that does nothing.
-              onTap: a.syncId == currentId
-                  ? null
-                  : () {
-                      if (!_confirm(a.syncId)) return;
-                      ref.read(wearSyncProvider).requestSwitch(a.syncId);
-                    },
-            ),
-            const SizedBox(height: 6),
-          ],
-          if (bookmarked.isEmpty) const _NoBookmarksHint(),
-          const SizedBox(height: 6),
-          // The watch is the device where "what is installed here?" is hardest
-          // to answer any other way.
-          Text(kBuildId,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: mono(context, size: 8, weight: FontWeight.w700, color: neo(context).muted)),
+        ],
+        if (bookmarked.isEmpty) const _NoBookmarksHint(),
+        const SizedBox(height: 6),
+        // The watch is the device where "what is installed here?" is hardest
+        // to answer any other way.
+        Text(
+          kBuildId,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: mono(context, size: 8, weight: FontWeight.w700, color: neo(context).muted),
+        ),
       ],
     );
   }
@@ -263,8 +262,7 @@ class _NoBookmarksHint extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
-    final reachable =
-        ref.watch(wearReachabilityProvider).valueOrNull == WearReachability.reachable;
+    final reachable = ref.watch(wearReachabilityProvider).valueOrNull == WearReachability.reachable;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4),
@@ -334,9 +332,15 @@ class _ActivityTile extends StatelessWidget {
               ),
             ),
             if (armed)
-              Text('✓', style: mono(context, size: 13, weight: FontWeight.w800, color: t.brandInk))
+              Text(
+                '✓',
+                style: mono(context, size: 13, weight: FontWeight.w800, color: t.brandInk),
+              )
             else if (selected)
-              Text('●', style: mono(context, size: 10, weight: FontWeight.w800, color: color)),
+              Text(
+                '●',
+                style: mono(context, size: 10, weight: FontWeight.w800, color: color),
+              ),
           ],
         ),
       ),

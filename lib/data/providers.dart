@@ -38,8 +38,7 @@ final changesStreamProvider = StreamProvider<List<ActivityChange>>((ref) {
 });
 
 /// Live m:n join rows (change id -> activity id) across all changes.
-final changeLinksStreamProvider =
-    StreamProvider<List<ActivityChangeActivity>>((ref) {
+final changeLinksStreamProvider = StreamProvider<List<ActivityChangeActivity>>((ref) {
   return ref.watch(changeRepositoryProvider).watchChangeActivityLinks();
 });
 
@@ -71,11 +70,7 @@ final blocksProvider = Provider<List<Block>>((ref) {
   final changes = ref.watch(changesStreamProvider).valueOrNull ?? const [];
   final byChange = ref.watch(activityIdsByChangeProvider);
   final byId = ref.watch(activitiesByIdProvider);
-  return deriveBlocks(
-    changes: changes,
-    activityIdsByChange: byChange,
-    activitiesById: byId,
-  );
+  return deriveBlocks(changes: changes, activityIdsByChange: byChange, activitiesById: byId);
 });
 
 /// The current/open block (what's tracking now), or null on an empty timeline.

@@ -153,8 +153,18 @@ class ActivityPalette {
   static const slate = Color(0xFF6E7681);
 
   static const all = <Color>[
-    red, orange, amber, olive, teal, cyan,
-    blue, indigo, purple, magenta, pink, slate,
+    red,
+    orange,
+    amber,
+    olive,
+    teal,
+    cyan,
+    blue,
+    indigo,
+    purple,
+    magenta,
+    pink,
+    slate,
   ];
 
   /// Readable text colour for an activity [fill] (black on light, white on dark).
@@ -170,14 +180,7 @@ ThemeData neoTheme(NeoTokens t, Brightness brightness) {
   return base.copyWith(
     scaffoldBackgroundColor: t.bg,
     extensions: [t],
-    colorScheme: base.colorScheme.copyWith(
-      primary: t.brand,
-      surface: t.surface,
-    ),
-    textTheme: base.textTheme.apply(
-      fontFamily: kMonoFont,
-      bodyColor: t.ink,
-      displayColor: t.ink,
-    ),
+    colorScheme: base.colorScheme.copyWith(primary: t.brand, surface: t.surface),
+    textTheme: base.textTheme.apply(fontFamily: kMonoFont, bodyColor: t.ink, displayColor: t.ink),
   );
 }

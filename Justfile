@@ -134,18 +134,26 @@ test-only +args:
 test-failures +args="test":
     flutter test --no-pub --reporter=failures-only {{args}}
 
+# Both suites finish in well under a minute once the app is up. The cap is for
+# the failure that does not fail: the run attaches to the device, reports
+# "Finding the correct isolate with the integration test service extension", and
+# then sits there — seen three times, never reproducible afterwards, and it costs
+# twelve minutes of silence every time on the default. Three is generous for a
+# cold emulator and turns that into a fast, legible error.
+e2e_timeout := "--timeout 3m"
+
 # Needs a running emulator or a connected device. `flutter devices` lists the
 # ids; a phone paired over wifi gets a new ip:port each pairing, so pass it
 # explicitly when it changes.
-[doc('On-device run of the phone flow — needs an emulator or device; `flutter devices` lists the ids')]
+[doc('On-device run of the phone flow — needs an emulator or device; `flutter devices` lists the ids. Gives up after 3m rather than the default 12')]
 e2e device="127.0.0.1:5557":
-    flutter test integration_test/flow_test.dart --no-pub -d {{device}}
+    flutter test integration_test/flow_test.dart --no-pub {{e2e_timeout}} -d {{device}}
 
 # A *different suite*, not the phone one on a smaller screen: the watch has its
 # own shell because the phone layout does not fit a 227x227 round display.
-[doc('On-device run of the watch shell — a different suite from `e2e`, not the same one on a smaller screen')]
+[doc('On-device run of the watch shell — a different suite from `e2e`, not the same one on a smaller screen. Gives up after 3m rather than the default 12')]
 e2e-watch device="127.0.0.1:5555":
-    flutter test integration_test/watch_flow_test.dart --no-pub -d {{device}}
+    flutter test integration_test/watch_flow_test.dart --no-pub {{e2e_timeout}} -d {{device}}
 
 [doc('Regenerate drift code — run after editing the schema in lib/data/database.dart')]
 gen:

@@ -76,6 +76,7 @@ class WearSyncService {
 
     if (_isWatch) {
       _beginRequestingSnapshot();
+      _subscriptions.addAll(_cacheOwnCatalogue());
     } else {
       _subscriptions.addAll(_watchCatalogue());
     }
@@ -140,6 +141,23 @@ class WearSyncService {
         await _pushCredential(token, await _syncStore.credentialVersion());
       }),
     ];
+  }
+
+  /// Watch side: caches its own state on the same triggers [_watchCatalogue]
+  /// pushes on, but writes rather than sends — the watch has nobody to push a
+  /// snapshot *to*. This is what lets a widget or a watch-face complication
+  /// read something true without a running Flutter engine, the same trick the
+  /// phone uses to answer the watch's own `snapshot_request` while dead.
+  List<StreamSubscription<Object?>> _cacheOwnCatalogue() {
+    return [
+      _activities.watchActivities().listen((_) => _cacheSnapshot()),
+      _changes.watchChanges().listen((_) => _cacheSnapshot()),
+    ];
+  }
+
+  Future<void> _cacheSnapshot() async {
+    final snapshot = await _buildSnapshot();
+    await _bridge.cacheCurrent(snapshot.toPayload());
   }
 
   /// Watch → phone: "you have something I do not".
@@ -294,10 +312,9 @@ class WearSyncService {
     }
   }
 
-  /// Phone → watch. [force] skips the unchanged-since-last-send check.
-  Future<void> _pushSnapshot({bool force = false}) async {
-    if (_isWatch) return;
-
+  /// Built by both sides from the same two repositories, so the cache one
+  /// writes and the snapshot the other sends are always the same shape.
+  Future<BookmarkSnapshot> _buildSnapshot() async {
     final all = await _activities.loadActivities();
     final bookmarked = [
       for (final a in all)
@@ -328,13 +345,27 @@ class WearSyncService {
       }
     }
 
-    final snapshot = BookmarkSnapshot(
+    return BookmarkSnapshot(
       activities: bookmarked,
       current: current,
       // The number only. It is what lets the watch fetch a credential when there
       // is one to fetch, and stay silent when there is not.
       credentialVersion: await _syncStore.credentialVersion(),
     );
+  }
+
+  /// Phone → watch. [force] skips the unchanged-since-last-send check.
+  Future<void> _pushSnapshot({bool force = false}) async {
+    if (_isWatch) return;
+
+    final snapshot = await _buildSnapshot();
+
+    // Cached on every build, delivered or not: this is what lets the phone's
+    // WearListenerService answer a `snapshot_request` while the app is dead,
+    // and a send that fails to reach anyone still leaves the best available
+    // answer on disk for next time. Separate from _lastSentSnapshot below,
+    // which is about when to re-send, not about what belongs in the cache.
+    await _bridge.cacheCurrent(snapshot.toPayload());
 
     final fingerprint = snapshot.toPayload().toString();
     if (!force && fingerprint == _lastSentSnapshot) return;

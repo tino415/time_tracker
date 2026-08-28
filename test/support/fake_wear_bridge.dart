@@ -12,6 +12,10 @@ import 'package:time_tracker/domain/wear_protocol.dart';
 /// delivery itself is left to the manual pass.
 class FakeWearBridge implements WearBridge {
   final sent = <WearMessage>[];
+
+  /// Every payload handed to [cacheCurrent], in order, standing in for what
+  /// would land in `current_state.json` on the native side.
+  final cached = <Map<String, Object?>>[];
   final _messages = StreamController<WearMessage>.broadcast();
   final _reachability = StreamController<WearReachability>.broadcast();
   int drainCount = 0;
@@ -43,6 +47,11 @@ class FakeWearBridge implements WearBridge {
       _messages.add(m);
     }
     pending = [];
+  }
+
+  @override
+  Future<void> cacheCurrent(Map<String, Object?> payload) async {
+    cached.add(payload);
   }
 
   /// Simulate the peer sending something, without waiting for the handlers.

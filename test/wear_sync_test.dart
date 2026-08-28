@@ -313,6 +313,43 @@ void main() {
       expect(bridge.sent.whereType<BookmarkSnapshot>(), isNotEmpty);
       service.dispose();
     });
+
+    test('caches every snapshot it builds, including one that failed to send', () async {
+      // The cache is what WearListenerService answers a snapshot_request from
+      // while the app is dead, so a push that never reached the watch still
+      // has to leave the best available answer on disk — delivery tracking is
+      // about when to re-send, not about what belongs in the cache.
+      await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      bridge.deliverable = false;
+      final service = serviceFor(isWatch: false);
+      await service.start();
+      await bridge.pump();
+
+      expect(bridge.sent, isEmpty);
+      expect(bridge.cached, isNotEmpty);
+      final cached = bridge.cached.last;
+      expect((cached['activities'] as List).single, {
+        'syncId': anything,
+        'name': 'A',
+        'color': '#111111',
+      });
+      service.dispose();
+    });
+
+    test('caches current: null for a multi-activity block, same as it sends', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final b = await activities.createActivity(name: 'B', color: '#222222', bookmarked: true);
+      final change = await changes.switchTo(a.syncId);
+      await changes.addActivityToChange(change.syncId, b.syncId);
+
+      final service = serviceFor(isWatch: false);
+      await service.start();
+      await bridge.pump();
+
+      expect(bridge.cached, isNotEmpty);
+      expect(bridge.cached.last['current'], isNull);
+      service.dispose();
+    });
   });
 
   group('watch side', () {
@@ -710,6 +747,29 @@ void main() {
       await bridge.becomes(WearReachability.notPaired);
       expect(bridge.sent, isEmpty);
 
+      service.dispose();
+    });
+
+    test('caches its own state on a local change, without sending anything', () async {
+      // The watch has nobody to push a snapshot to, but a widget or watch-face
+      // complication reads this cache the same way the phone's
+      // WearListenerService does — so a local tap has to land there too.
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.pump();
+      bridge.cached.clear();
+
+      await service.startUnsorted();
+      await bridge.pump();
+
+      expect(bridge.cached, isNotEmpty);
+      final cached = bridge.cached.last['current'] as Map;
+      expect(cached['activity'], {
+        'syncId': kUnsortedActivityId,
+        'name': anything,
+        'color': anything,
+      });
+      expect(bridge.sent.whereType<BookmarkSnapshot>(), isEmpty);
       service.dispose();
     });
 

@@ -26,6 +26,14 @@ abstract class WearBridge {
   /// dead. Safe to call repeatedly; draining is destructive on the native side.
   Future<void> drainPending();
 
+  /// Persist [payload] — a [BookmarkSnapshot]'s wire payload — as this device's
+  /// last-known state, so the native listener service can answer a peer's
+  /// `snapshot_request` with something even while no engine is running to build
+  /// one. Fire-and-forget: there is nothing a caller can do about a failed
+  /// write beyond what is already true — the in-memory state is unaffected,
+  /// only a future cold answer is worse.
+  Future<void> cacheCurrent(Map<String, Object?> payload);
+
   void dispose();
 }
 
@@ -114,6 +122,17 @@ class ChannelWearBridge implements WearBridge {
   }
 
   @override
+  Future<void> cacheCurrent(Map<String, Object?> payload) async {
+    try {
+      await _method.invokeMethod<void>('cacheCurrent', {'payload': payload});
+    } on PlatformException catch (e) {
+      debugPrint('wear cacheCurrent failed: ${e.message}');
+    } on MissingPluginException {
+      // No native side — e.g. the web build. Nothing to cache into.
+    }
+  }
+
+  @override
   void dispose() {
     _subscription?.cancel();
     _messages.close();
@@ -137,6 +156,9 @@ class NullWearBridge implements WearBridge {
 
   @override
   Future<void> drainPending() async {}
+
+  @override
+  Future<void> cacheCurrent(Map<String, Object?> payload) async {}
 
   @override
   void dispose() {}

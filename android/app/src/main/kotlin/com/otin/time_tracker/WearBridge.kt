@@ -98,6 +98,28 @@ class WearBridge(
                     result.success(events)
                 }
             }
+            "cacheCurrent" -> {
+                @Suppress("UNCHECKED_CAST")
+                val payload = call.argument<Map<String, Any?>>("payload")
+                if (payload == null) {
+                    result.error("invalid_args", "cacheCurrent requires payload", null)
+                    return
+                }
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            CurrentStateCache.write(
+                                appContext,
+                                File(appContext.filesDir, CurrentStateCache.FILE_NAME),
+                                JSONObject(payload).toString(),
+                            )
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "caching current state failed: ${t.message}")
+                        }
+                    }
+                    result.success(null)
+                }
+            }
             "refreshReachability" -> {
                 emitReachability()
                 result.success(null)

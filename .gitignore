@@ -44,6 +44,10 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Gradle writes its own build directory beside the app one, currently holding
+# only the configuration-problems report. Output of a build, like /build.
+/android/build/
+
 # nix env (built from default.nix, tangled from repositories.org)
 .nix
 result

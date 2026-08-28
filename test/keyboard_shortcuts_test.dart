@@ -154,6 +154,23 @@ Future<void> _seed(AppDatabase db) async {
   await changes.switchTo(a.syncId);
 }
 
+/// A root with a tracked child, so the Reports category row it produces has
+/// something to drill into — a leaf row takes no `onTap` and so is never a
+/// focus stop, which would make it useless for the Tab test below.
+Future<void> _seedDrillable(AppDatabase db) async {
+  final activities = DriftActivityRepository(db);
+  final changes = DriftChangeRepository(db);
+  final work = await activities.createActivity(name: 'Work', color: '#4F8FEE');
+  final payout = await activities.createActivity(
+    name: 'Payout',
+    color: '#EE7C4F',
+    parentId: work.syncId,
+  );
+  final now = DateTime.now();
+  await changes.switchTo(work.syncId, at: now.subtract(const Duration(hours: 2)));
+  await changes.switchTo(payout.syncId, at: now.subtract(const Duration(hours: 1)));
+}
+
 /// [_seed] plus a second activity to change to.
 ///
 /// A separate function rather than another row in [_seed]: several tests below
@@ -506,7 +523,7 @@ void main() {
     await settle(tester);
 
     expect(find.text('Keyboard'), findsOneWidget);
-    expect(find.textContaining('Previous week'), findsWidgets);
+    expect(find.textContaining('Previous period'), findsWidgets);
 
     await disposeApp(tester);
   });
@@ -574,6 +591,24 @@ void main() {
     }
 
     expect(visited.difference({null, NowScreen}), isEmpty, reason: 'focus left the visible screen');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('Tab reaches a category row on Reports, and Enter expands it', (tester) async {
+    // The behaviour the whole `_ReportBar` -> `NeoPressable` conversion exists
+    // for: a category row is a real control, not a `GestureDetector` that
+    // Tab walks straight past.
+    await bootApp(tester, viewport: _desktop, seed: _seedDrillable);
+    await _go(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(inScreen(ReportsScreen, find.text('Payout')), findsNothing);
+    expect(await _tabTo(tester, 'Work'), isTrue, reason: 'Tab never reached the category row');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'web');
+    await settle(tester);
+
+    expect(inScreen(ReportsScreen, find.text('Payout')), findsOneWidget);
 
     await disposeApp(tester);
   });

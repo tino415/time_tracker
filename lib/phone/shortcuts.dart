@@ -177,14 +177,14 @@ const shortcutBindings = <ShortcutBinding>[
   ShortcutBinding(
     key: PhysicalKeyboardKey.keyH,
     label: 'h',
-    what: 'Previous week',
+    what: 'Previous period',
     only: 'reports',
     action: ShortcutAction.prevPeriod,
   ),
   ShortcutBinding(
     key: PhysicalKeyboardKey.keyL,
     label: 'l',
-    what: 'Next week',
+    what: 'Next period',
     only: 'reports',
     action: ShortcutAction.nextPeriod,
   ),
@@ -423,7 +423,7 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
   void _shiftPeriod(int delta) {
     switch (_screen()) {
       case 'reports':
-        shiftReportWeek(ref, delta);
+        ref.read(reportModeProvider) ? shiftReportDay(ref, delta) : shiftReportWeek(ref, delta);
       case 'calendar':
         shiftCalendarDay(ref, delta);
     }

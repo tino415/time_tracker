@@ -1,5 +1,7 @@
-// Widget-level test of the per-day section on Reports: a bar per day of the
-// week, and tapping one scopes the per-category bars to that day.
+// Widget-level test of Reports' week/day toggle: only one period is on screen
+// at a time, the day selector steps and refuses the future the same way the
+// week selector always has, and switching modes carries the period being
+// looked at across rather than resetting to today/this week.
 //
 // History is seeded in *last* week and the report stepped back to it, so the
 // expected totals do not depend on when the suite runs. The seed starts on
@@ -15,9 +17,9 @@ import 'package:time_tracker/phone/screens/reports_screen.dart';
 
 import 'support/flow_harness.dart';
 
-/// Tall enough to hold both sections without scrolling: an off-screen row is not
-/// built at all in a `ListView`, and would be unfindable rather than merely out
-/// of sight.
+/// Tall enough to hold the selector, the toggle and the category section
+/// without scrolling: an off-screen row is not built at all in a `ListView`,
+/// and would be unfindable rather than merely out of sight.
 const _tallPhone = Size(400, 1400);
 
 DateTime get _thisMonday => localWeekRange(DateTime.now()).start;
@@ -29,11 +31,25 @@ DateTime _lastWeek(int weekday, [int hour = 0]) {
   return DateTime(m.year, m.month, m.day - 7 + (weekday - DateTime.monday), hour);
 }
 
-/// The row label the day section renders, spelled out rather than borrowed from
-/// `format.dart`, so a change to it fails here.
-String _dayLabel(DateTime day) {
+/// The label the day selector renders, spelled out rather than borrowed from
+/// `reports_screen.dart`, so a change to it fails here. Mirrors what the
+/// calendar and timeline already call "Today"/"Yesterday".
+String _dayLabel(DateTime day, [DateTime? at]) {
+  final now = at ?? DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return 'Today';
+  if (diff == 1) return 'Yesterday';
   const names = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
   return '${names[day.weekday - 1]} ${day.day}';
+}
+
+/// The label the week selector renders for the week containing [day].
+String _weekLabel(DateTime day) {
+  final week = localWeekRange(day);
+  if (week.start == _thisMonday) return 'This week';
+  final end = DateTime(week.start.year, week.start.month, week.start.day + 6);
+  return '${week.start.day}/${week.start.month} – ${end.day}/${end.month}';
 }
 
 /// Saturday 20:00 Work, 22:00 Break, then Work again from Sunday 01:00.
@@ -61,70 +77,108 @@ Future<void> _openLastWeek(WidgetTester tester) async {
   await settle(tester);
 }
 
+Future<void> _toggleToDay(WidgetTester tester) async {
+  await tester.tap(inScreen(ReportsScreen, find.text('▤ DAY')));
+  await settle(tester);
+}
+
+Future<void> _toggleToWeek(WidgetTester tester) async {
+  await tester.tap(inScreen(ReportsScreen, find.text('▦ WEEK')));
+  await settle(tester);
+}
+
+Future<void> _stepDayForward(WidgetTester tester, int times) async {
+  for (var i = 0; i < times; i++) {
+    await tester.tap(inScreen(ReportsScreen, find.text('›')));
+    await settle(tester);
+  }
+}
+
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     await loadMonoFont();
   });
 
-  testWidgets('every day of the week gets a row, midnight-split', (tester) async {
-    await _openLastWeek(tester);
+  testWidgets('the toggle switches between week and day mode', (tester) async {
+    await bootApp(tester, viewport: _tallPhone);
+    await openTab(tester, 'REPORTS');
 
-    final saturday = _lastWeek(DateTime.saturday);
-    expect(
-      inScreen(ReportsScreen, find.text(_dayLabel(_lastWeek(DateTime.monday)))),
-      findsOneWidget,
-    );
-    expect(inScreen(ReportsScreen, find.text(_dayLabel(saturday))), findsOneWidget);
+    expect(inScreen(ReportsScreen, find.text('This week')), findsOneWidget);
 
-    // 20:00 to midnight on Saturday; the hour the Break block spends past
-    // midnight lands on Sunday, which tracking then fills to the full day.
-    expect(inScreen(ReportsScreen, find.text('4h 00m')), findsOneWidget);
-    expect(inScreen(ReportsScreen, find.text('24h 00m')), findsOneWidget);
-    // Monday to Friday, untracked.
-    expect(inScreen(ReportsScreen, find.text('0m')), findsNWidgets(5));
+    await _toggleToDay(tester);
+    expect(inScreen(ReportsScreen, find.text('This week')), findsNothing);
+    expect(inScreen(ReportsScreen, find.text('Today')), findsOneWidget);
+
+    await _toggleToWeek(tester);
+    expect(inScreen(ReportsScreen, find.text('Today')), findsNothing);
+    expect(inScreen(ReportsScreen, find.text('This week')), findsOneWidget);
 
     await disposeApp(tester);
   });
 
-  testWidgets('tapping a day scopes the category bars to it', (tester) async {
-    await _openLastWeek(tester);
-    final saturday = _lastWeek(DateTime.saturday);
+  testWidgets('day mode starts on today and refuses to step into the future', (tester) async {
+    await bootApp(tester, viewport: _tallPhone);
+    await openTab(tester, 'REPORTS');
+    await _toggleToDay(tester);
 
+    expect(inScreen(ReportsScreen, find.text('Today')), findsOneWidget);
+
+    // No day is later than today.
+    await tester.tap(inScreen(ReportsScreen, find.text('›')));
+    await settle(tester);
+    expect(inScreen(ReportsScreen, find.text('Today')), findsOneWidget);
+
+    await tester.tap(inScreen(ReportsScreen, find.text('‹')));
+    await settle(tester);
+    expect(inScreen(ReportsScreen, find.text('Yesterday')), findsOneWidget);
+
+    await tester.tap(inScreen(ReportsScreen, find.text('›')));
+    await settle(tester);
+    expect(inScreen(ReportsScreen, find.text('Today')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('day mode re-scopes the categories to a single day', (tester) async {
+    await _openLastWeek(tester);
     // The week: 25h of Work against 3h of Break.
     expect(inScreen(ReportsScreen, find.text('25h 00m')), findsOneWidget);
 
-    await tester.tap(inScreen(ReportsScreen, find.text(_dayLabel(saturday))));
-    await settle(tester);
-
+    await _toggleToDay(tester);
+    // Landed on last week's Monday — the week being viewed, carried across —
+    // which the seed left untracked.
+    final monday = _lastWeek(DateTime.monday);
+    expect(inScreen(ReportsScreen, find.text(_dayLabel(monday))), findsOneWidget);
     expect(
-      inScreen(ReportsScreen, find.text('PER CATEGORY · ${_dayLabel(saturday)}')),
+      inScreen(ReportsScreen, find.text('nothing tracked on ${_dayLabel(monday)}')),
       findsOneWidget,
     );
-    // Saturday alone: two hours each, and the day row keeps the week's totals.
-    expect(inScreen(ReportsScreen, find.text('2h 00m')), findsNWidgets(2));
-    expect(inScreen(ReportsScreen, find.text('4h 00m')), findsOneWidget);
-    expect(inScreen(ReportsScreen, find.text('25h 00m')), findsNothing);
 
-    // Tapping the same day again puts the week back.
-    await tester.tap(inScreen(ReportsScreen, find.text(_dayLabel(saturday))));
-    await settle(tester);
-    expect(inScreen(ReportsScreen, find.text('25h 00m')), findsOneWidget);
-    expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
+    await _stepDayForward(tester, 5); // Monday + 5 = Saturday
+    final saturday = _lastWeek(DateTime.saturday);
+    expect(inScreen(ReportsScreen, find.text(_dayLabel(saturday))), findsOneWidget);
+    // Saturday alone: two hours each of Work and Break.
+    expect(inScreen(ReportsScreen, find.text('2h 00m')), findsNWidgets(2));
+    expect(inScreen(ReportsScreen, find.text('25h 00m')), findsNothing);
 
     await disposeApp(tester);
   });
 
-  testWidgets('stepping the week drops the selected day', (tester) async {
-    await _openLastWeek(tester);
+  testWidgets('context carries across the toggle in both directions', (tester) async {
+    await _openLastWeek(tester); // week mode, last week
 
-    await tester.tap(inScreen(ReportsScreen, find.text(_dayLabel(_lastWeek(DateTime.saturday)))));
-    await settle(tester);
-    await tester.tap(inScreen(ReportsScreen, find.text('›'))); // back to this week
-    await settle(tester);
+    await _toggleToDay(tester);
+    // week -> day: lands on the viewed week's first day, since last week does
+    // not hold today.
+    final monday = _lastWeek(DateTime.monday);
+    expect(inScreen(ReportsScreen, find.text(_dayLabel(monday))), findsOneWidget);
 
-    // A day of last week means nothing in this one, so the scope is the week.
-    expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
+    await _toggleToWeek(tester);
+    // day -> week: shows the week the selected day belongs to — last week
+    // again, not a jump back to "this week".
+    expect(inScreen(ReportsScreen, find.text('This week')), findsNothing);
+    expect(inScreen(ReportsScreen, find.text(_weekLabel(monday))), findsOneWidget);
 
     await disposeApp(tester);
   });

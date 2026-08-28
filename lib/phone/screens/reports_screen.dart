@@ -8,7 +8,6 @@ import 'package:share_plus/share_plus.dart';
 import '../../build_info.dart';
 import '../../data/providers.dart';
 import '../../data/sync_service.dart';
-import '../../data/sync_transport.dart';
 import '../../domain/activity_tree.dart';
 import '../../domain/block.dart';
 import '../../domain/csv_export.dart';
@@ -16,7 +15,6 @@ import '../../domain/reporting.dart';
 import '../../format.dart';
 import '../widgets/activity_picker.dart';
 import '../widgets/neo.dart';
-import '../widgets/sync_setup.dart';
 
 /// Which week the report is showing: 0 = this week, -1 = last week, …
 ///
@@ -25,11 +23,18 @@ import '../widgets/sync_setup.dart';
 /// its `State` is not reachable from the app shell where the bindings live.
 final weekOffsetProvider = StateProvider<int>((_) => 0);
 
-/// Which day inside the shown week the report is scoped to; null = the week.
-///
-/// A day only means anything inside the week it belongs to, so stepping the week
-/// clears it.
-final reportDayProvider = StateProvider<DateTime?>((_) => null);
+/// The day that day mode is scoped to — an absolute date, not an offset,
+/// because it has to survive independently of whichever week
+/// [weekOffsetProvider] is on. Starts at today.
+final reportDayProvider = StateProvider<DateTime>((_) {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day);
+});
+
+/// Week roll-up or a single day. Same device as `timelineViewProvider`: lifted
+/// out of the screen so the `h`/`l` shortcut can read it to decide which of
+/// [shiftReportWeek] / [shiftReportDay] applies.
+final reportModeProvider = StateProvider<bool>((_) => false); // true = day mode
 
 /// Step the report week, refusing to walk into the future.
 ///
@@ -39,16 +44,29 @@ void shiftReportWeek(WidgetRef ref, int delta) {
   final next = ref.read(weekOffsetProvider) + delta;
   if (next > 0) return;
   ref.read(weekOffsetProvider.notifier).state = next;
-  ref.read(reportDayProvider.notifier).state = null;
 }
 
-/// Weekly report: a stacked bar per day of the week, rolled-up horizontal bars
-/// per top-level category that **drill down into their sub-activities**, and a
-/// client-side CSV export (optionally subtree-filtered).
+/// Step the reported day, refusing to walk into the future. [shiftReportWeek]'s
+/// counterpart for day mode.
+void shiftReportDay(WidgetRef ref, int delta) {
+  final current = ref.read(reportDayProvider);
+  final next = DateTime(current.year, current.month, current.day + delta);
+  final now = DateTime.now();
+  if (next.isAfter(DateTime(now.year, now.month, now.day))) return;
+  ref.read(reportDayProvider.notifier).state = next;
+}
+
+/// Weekly or daily report: rolled-up horizontal bars per top-level category that
+/// **drill down into their sub-activities**, and a client-side CSV export
+/// (optionally subtree-filtered).
 ///
-/// The two sections are linked: tapping a day scopes the category bars to it,
-/// which is the question a day row provokes ("what was Tuesday made of?") and,
-/// on today's row, gives a day report without a second range control.
+/// One period on screen at a time — a toggle switches between the week and a
+/// single day rather than showing both, so the category bars answer one
+/// question ("what did this week look like" or "what did Tuesday look like")
+/// instead of resizing under a tap on a day row. The toggle carries context
+/// across: entering day mode lands on today when the viewed week holds it,
+/// otherwise the week's first day; leaving day mode shows the week the selected
+/// day belongs to.
 ///
 /// The drill-down is the point of a hierarchical catalogue: `Work > Payout >
 /// CU-1042` means "how much did I work for Payout" is a question about a middle
@@ -78,24 +96,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final blocks = ref.watch(blocksProvider);
     final tree = ref.watch(activityTreeProvider);
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
+    final dayMode = ref.watch(reportModeProvider);
     final weekOffset = ref.watch(weekOffsetProvider);
     final base = DateTime(now.year, now.month, now.day + weekOffset * 7);
     final week = localWeekRange(base);
     final day = ref.watch(reportDayProvider);
 
-    final days = dailyTotals(
-      blocks: blocks,
-      tree: tree,
-      rangeStart: week.start,
-      rangeEnd: week.end,
-      now: now,
-    );
-
-    // The category section follows the day selection; the day bars keep
-    // describing the whole week, so the row you tapped does not resize under
-    // your finger.
-    final scope = day == null ? week : localDayRange(day);
+    final scope = dayMode ? localDayRange(day) : week;
     final totals = reportTotals(
       blocks: blocks,
       tree: tree,
@@ -112,15 +121,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       children: [
-        _WeekSelector(
-          label: _weekLabel(week.start, now),
-          onPrev: () => shiftReportWeek(ref, -1),
-          onNext: weekOffset < 0 ? () => shiftReportWeek(ref, 1) : null,
-        ),
+        dayMode
+            ? _PeriodSelector(
+                label: _dayLabel(day, now),
+                onPrev: () => shiftReportDay(ref, -1),
+                onNext: day.isBefore(today) ? () => shiftReportDay(ref, 1) : null,
+              )
+            : _PeriodSelector(
+                label: _weekLabel(week.start, now),
+                onPrev: () => shiftReportWeek(ref, -1),
+                onNext: weekOffset < 0 ? () => shiftReportWeek(ref, 1) : null,
+              ),
+        const SizedBox(height: 10),
+        _ModeToggle(dayMode: dayMode, onChanged: (v) => _setMode(v, week)),
         const SizedBox(height: 18),
-        ..._dayRows(tree, days, selected: day),
         NeoSectionHeader(
-          day == null ? 'Per category' : 'Per category · ${formatWeekdayDay(day)}',
+          'Per category',
           brand: true,
           trailing: drillable
               ? Text(
@@ -134,9 +150,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           // An empty state, not a zero total: with continuous tracking the only
           // way to reach it is a range that holds no data at all.
           Text(
-            day == null
-                ? 'nothing tracked this week'
-                : 'nothing tracked on ${formatWeekdayDay(day)}',
+            dayMode ? _emptyDayMessage(day, now) : 'nothing tracked this week',
             style: mono(context, color: t.muted),
           )
         else
@@ -148,56 +162,31 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           primary: true,
           onTap: () => _exportCsv(context, ref, blocks, tree, now),
         ),
-        const SizedBox(height: 10),
-        const _SyncAction(),
         const SizedBox(height: 14),
         const _StorageLine(),
       ],
     );
   }
 
-  /// The per-day section: one stacked bar per day the week has reached, tappable
-  /// to scope the rest of the screen to that day.
-  ///
-  /// Segments are ordered and coloured by the **week's** category ranking, not
-  /// each day's own, so a category keeps its place in every bar and the seven
-  /// rows can be compared down the column instead of row by row.
-  List<Widget> _dayRows(ActivityTree tree, List<DayTotals> days, {required DateTime? selected}) {
-    final byRoot = <String, Duration>{};
-    var busiest = Duration.zero;
-    for (final day in days) {
-      day.byRoot.forEach((id, d) => byRoot[id] = (byRoot[id] ?? Duration.zero) + d);
-      if (day.total > busiest) busiest = day.total;
+  /// Carries context across the toggle: entering day mode picks a day inside
+  /// the week on screen (today if the week holds it, its first day otherwise);
+  /// leaving it shows the week the selected day belongs to. Without this the
+  /// switch would drop you on whatever the other mode was last left at, which
+  /// could be a different month entirely.
+  void _setMode(bool toDayMode, ({DateTime start, DateTime end}) week) {
+    if (toDayMode) {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final inWeek = !today.isBefore(week.start) && today.isBefore(week.end);
+      ref.read(reportDayProvider.notifier).state = inWeek ? today : week.start;
+    } else {
+      final day = ref.read(reportDayProvider);
+      final thisWeekStart = localWeekRange(DateTime.now()).start;
+      final dayWeekStart = localWeekRange(day).start;
+      ref.read(weekOffsetProvider.notifier).state =
+          dayWeekStart.difference(thisWeekStart).inDays ~/ 7;
     }
-    if (byRoot.isEmpty) return const [];
-
-    final ranked = byRoot.keys.toList()..sort((a, b) => byRoot[b]!.compareTo(byRoot[a]!));
-
-    return [
-      NeoSectionHeader(
-        'Per day',
-        trailing: Text(
-          selected == null ? 'tap to scope' : 'tap again to clear',
-          style: mono(context, size: 10, weight: FontWeight.w700, color: neo(context).muted),
-        ),
-      ),
-      const SizedBox(height: 12),
-      for (final day in days)
-        _DayBar(
-          label: formatWeekdayDay(day.day),
-          segments: [
-            for (final id in ranked)
-              if (day.of(id) > Duration.zero)
-                (color: parseHexColor(tree[id]?.color ?? ''), duration: day.of(id)),
-          ],
-          total: day.total,
-          max: busiest,
-          selected: day.day == selected,
-          onTap: () =>
-              ref.read(reportDayProvider.notifier).state = day.day == selected ? null : day.day,
-        ),
-      const SizedBox(height: 18),
-    ];
+    ref.read(reportModeProvider.notifier).state = toDayMode;
   }
 
   /// One level of the drill-down: a bar per id in [ids], and — under any that is
@@ -264,92 +253,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (weekStart == thisWeek) return 'This week';
     return '${weekStart.day}/${weekStart.month} – ${end.day}/${end.month}';
   }
-}
 
-/// Manual sync. Hidden entirely when no backend is configured — sync is
-/// optional, and an action that cannot work is worse than no action.
-///
-/// Manual rather than a background loop, because the local database is
-/// authoritative: syncing is how devices *agree*, not how the app works, so its
-/// failure has to be inert and its timing the user's business.
-class _SyncAction extends ConsumerStatefulWidget {
-  const _SyncAction();
-
-  @override
-  ConsumerState<_SyncAction> createState() => _SyncActionState();
-}
-
-class _SyncActionState extends ConsumerState<_SyncAction> {
-  bool _running = false;
-  String? _status;
-
-  Future<void> _sync(SyncService service) async {
-    setState(() {
-      _running = true;
-      _status = null;
-    });
-    try {
-      final result = await service.syncNow();
-      if (!mounted) return;
-      setState(() {
-        _status =
-            '↑${result.pushed} ↓${result.pulled}'
-            '${result.rejected > 0 ? " · ${result.rejected} superseded" : ""}';
-      });
-    } on SyncException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        // Being offline is the normal state for this app, not a failure worth
-        // alarming about; a bad token is worth naming, because only the user
-        // can fix it.
-        _status = e.unauthorized ? 'token rejected' : 'offline';
-      });
-    } finally {
-      if (mounted) setState(() => _running = false);
-    }
+  /// "Today"/"Yesterday" the way the calendar and timeline already spell them;
+  /// [formatWeekdayDay] otherwise, which this screen already used for the same
+  /// purpose.
+  static String _dayLabel(DateTime day, DateTime now) {
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    return formatWeekdayDay(day);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final t = neo(context);
-    // No server in this build: nothing to offer, so offer nothing.
-    if (!ref.watch(syncConfigProvider).hasServer) return const SizedBox.shrink();
-
-    final service = ref.watch(syncServiceProvider);
-    // A server but no account — sync is opt-in, and this is the invitation.
-    if (service == null) {
-      return NeoButton(
-        label: '⟳ set up sync',
-        shadowOffset: 3,
-        onTap: () => showSyncSetup(context, ref),
-      );
-    }
-
-    return Row(
-      children: [
-        Expanded(
-          child: NeoButton(
-            label: _running ? '⟳ syncing…' : '⟳ sync now',
-            shadowOffset: 3,
-            onTap: _running ? null : () => _sync(service),
-          ),
-        ),
-        const SizedBox(width: 8),
-        NeoButton(
-          label: '⚙',
-          shadowOffset: 3,
-          compact: true,
-          onTap: () => showSyncSetup(context, ref),
-        ),
-        if (_status != null) ...[
-          const SizedBox(width: 10),
-          Text(
-            _status!,
-            style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
-          ),
-        ],
-      ],
-    );
+  static String _emptyDayMessage(DateTime day, DateTime now) {
+    final label = _dayLabel(day, now);
+    return label == 'Today' || label == 'Yesterday'
+        ? 'nothing tracked ${label.toLowerCase()}'
+        : 'nothing tracked on $label';
   }
 }
 
@@ -449,8 +369,11 @@ class _SyncBackendLine extends ConsumerWidget {
   }
 }
 
-class _WeekSelector extends StatelessWidget {
-  const _WeekSelector({required this.label, required this.onPrev, this.onNext});
+/// A period's label with `‹`/`›` steppers either side. The same shape whether
+/// the period is a week or a single day — only the label and what the arrows
+/// call differ.
+class _PeriodSelector extends StatelessWidget {
+  const _PeriodSelector({required this.label, required this.onPrev, this.onNext});
   final String label;
   final VoidCallback onPrev;
   final VoidCallback? onNext;
@@ -471,6 +394,39 @@ class _WeekSelector extends StatelessWidget {
   }
 }
 
+/// Week roll-up or a single day — never both. Built like `timeline_screen.dart`'s
+/// `_ViewToggle`: two buttons, the active one `primary`.
+class _ModeToggle extends StatelessWidget {
+  const _ModeToggle({required this.dayMode, required this.onChanged});
+  final bool dayMode;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: NeoButton(
+            label: '▦ week',
+            primary: !dayMode,
+            shadowOffset: 3,
+            onTap: () => onChanged(false),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: NeoButton(
+            label: '▤ day',
+            primary: dayMode,
+            shadowOffset: 3,
+            onTap: () => onChanged(true),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// The ids in [ids] that have time in the range, largest first — the only ones
 /// worth a row. An untracked branch is noise in a report.
 List<String> _tracked(ReportTotals totals, List<String> ids) {
@@ -478,108 +434,14 @@ List<String> _tracked(ReportTotals totals, List<String> ids) {
     ..sort((a, b) => totals.subtreeOf(b).compareTo(totals.subtreeOf(a)));
 }
 
-/// One day of the week, as a bar segmented by top-level category.
-///
-/// Stacked rather than a bare total because "what was Tuesday" is the question a
-/// day row raises, and answering it in the row itself beats a second screen. It
-/// stays legible on a phone only because the days run down the page — seven bars
-/// side by side would each be a sliver.
-///
-/// [max] is the week's busiest day, so bar lengths compare across the section;
-/// the unfilled tail is the difference from that day.
-class _DayBar extends StatelessWidget {
-  const _DayBar({
-    required this.label,
-    required this.segments,
-    required this.total,
-    required this.max,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final List<({Color color, Duration duration})> segments;
-  final Duration total;
-  final Duration max;
-
-  /// This day is what the rest of the screen is scoped to.
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = neo(context);
-    // Flex weights in seconds, not microseconds: the ratio is the same and the
-    // numbers stay in a range that reads in a debugger.
-    final weights = [for (final s in segments) s.duration.inSeconds < 1 ? 1 : s.duration.inSeconds];
-    final rest = max.inSeconds - weights.fold<int>(0, (a, b) => a + b);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // The same fixed slot the category rows use, so both sections'
-                // labels start on one line.
-                SizedBox(
-                  width: 16,
-                  child: Text(
-                    selected ? '▾' : '▸',
-                    style: mono(context, size: 14, weight: FontWeight.w800, color: t.muted),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: mono(
-                      context,
-                      size: 14,
-                      weight: FontWeight.w700,
-                      color: selected ? t.brand : t.ink,
-                    ),
-                  ),
-                ),
-                Text(
-                  formatDurationHm(total),
-                  style: mono(context, size: 14, weight: FontWeight.w800, color: t.ink),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Container(
-              height: 20,
-              decoration: BoxDecoration(
-                color: t.surface2,
-                border: Border.all(color: selected ? t.brand : t.line, width: 3),
-              ),
-              child: Row(
-                // Childless colour boxes measure zero high; stretching them fills
-                // the bar.
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < segments.length; i++)
-                    Expanded(
-                      flex: weights[i],
-                      child: ColoredBox(color: segments[i].color),
-                    ),
-                  if (rest > 0) Expanded(flex: rest, child: const SizedBox.shrink()),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// One labelled bar in the drill-down. Deeper rows are indented and rendered a
 /// size down, so the level a number belongs to is readable without a legend.
+///
+/// A [NeoPressable] rather than a bare gesture detector — the app's one device
+/// for a tappable row that also takes keyboard focus, answers Enter and Space,
+/// and shows a focus ring. Rows with nothing to drill into pass no [onTap],
+/// which `NeoPressable` already reads as "not a control": no focus stop, no
+/// cursor.
 class _ReportBar extends StatelessWidget {
   const _ReportBar({
     required this.label,
@@ -616,9 +478,9 @@ class _ReportBar extends StatelessWidget {
 
     return Padding(
       padding: EdgeInsets.only(left: depth * 14.0, bottom: root ? 12 : 8),
-      child: GestureDetector(
+      child: NeoPressable(
         onTap: onTap,
-        behavior: HitTestBehavior.opaque,
+        shadowOffset: root ? 5 : 3,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

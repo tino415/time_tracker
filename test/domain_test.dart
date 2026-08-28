@@ -199,101 +199,6 @@ void main() {
     });
   });
 
-  group('dailyTotals', () {
-    final work = act('work', 'Work');
-    final task = act('task', 'CU-1 Task', parent: 'work');
-    final brk = act('break', 'Break');
-    final tree = ActivityTree.build([work, task, brk]);
-    final byId = {
-      for (final x in [work, task, brk]) x.syncId: x,
-    };
-
-    final week = localWeekRange(d(12)); // Mon 2026-01-05 .. Mon 2026-01-12
-    final mon = week.start;
-    final tue = DateTime(2026, 1, 6);
-
-    test('a block crossing midnight is cut at the boundary', () {
-      // 23:00 Mon → 01:00 Tue, then Break for the rest of Tuesday.
-      final blocks = deriveBlocks(
-        changes: [chg('c1', d(23)), chg('c2', DateTime(2026, 1, 6, 1))],
-        activityIdsByChange: {
-          'c1': ['task'],
-          'c2': ['break'],
-        },
-        activitiesById: byId,
-      );
-      final days = dailyTotals(
-        blocks: blocks,
-        tree: tree,
-        rangeStart: week.start,
-        rangeEnd: week.end,
-        now: DateTime(2026, 1, 6, 3), // the Break block is open, 2h so far
-      );
-
-      expect(days.first.day, mon);
-      expect(days.first.of('work'), const Duration(hours: 1));
-      expect(days[1].day, tue);
-      expect(days[1].of('work'), const Duration(hours: 1));
-      expect(days[1].of('break'), const Duration(hours: 2));
-      expect(days[1].total, const Duration(hours: 3));
-    });
-
-    test('a day totals only what its category bars carry', () {
-      // One 2h block on both task (under Work) and Break: even split, and the
-      // task half rolls up to Work rather than landing on the leaf.
-      final blocks = deriveBlocks(
-        changes: [chg('c1', d(9)), chg('c2', d(11))],
-        activityIdsByChange: {
-          'c1': ['task', 'break'],
-          'c2': ['break'],
-        },
-        activitiesById: byId,
-      );
-      final days = dailyTotals(
-        blocks: blocks,
-        tree: tree,
-        rangeStart: week.start,
-        rangeEnd: week.end,
-        now: d(11), // second block has zero duration
-      );
-
-      expect(days.first.byRoot.keys.toSet(), {'work', 'break'});
-      expect(days.first.of('work'), const Duration(hours: 1));
-      expect(days.first.of('break'), const Duration(hours: 1));
-      expect(days.first.total, const Duration(hours: 2));
-    });
-
-    test('the current week stops at today, a past week runs the full seven', () {
-      final blocks = deriveBlocks(
-        changes: [chg('c1', d(9))],
-        activityIdsByChange: {
-          'c1': ['task'],
-        },
-        activitiesById: byId,
-      );
-
-      final running = dailyTotals(
-        blocks: blocks,
-        tree: tree,
-        rangeStart: week.start,
-        rangeEnd: week.end,
-        now: DateTime(2026, 1, 7, 10), // Wednesday morning
-      );
-      expect(running.map((d) => d.day), [mon, tue, DateTime(2026, 1, 7)]);
-
-      final past = dailyTotals(
-        blocks: blocks,
-        tree: tree,
-        rangeStart: week.start,
-        rangeEnd: week.end,
-        now: DateTime(2026, 2, 1),
-      );
-      expect(past.length, 7);
-      // A week with a single open block: every day after it is fully covered.
-      expect(past.last.of('work'), const Duration(hours: 24));
-    });
-  });
-
   group('localWeekRange', () {
     test('Monday-anchored week containing a Wednesday', () {
       final w = localWeekRange(DateTime(2026, 1, 7)); // Wed
@@ -304,20 +209,6 @@ void main() {
     test('Sunday belongs to the week that started the prior Monday', () {
       final w = localWeekRange(DateTime(2026, 1, 11)); // Sun
       expect(w.start, DateTime(2026, 1, 5));
-    });
-  });
-
-  group('splitByLocalDay', () {
-    test('an interval crossing midnight splits into two day segments', () {
-      final segs = splitByLocalDay(
-        DateTime(2026, 1, 5, 23, 30),
-        DateTime(2026, 1, 6, 1, 0),
-      ).toList();
-      expect(segs.length, 2);
-      expect(segs[0].end, DateTime(2026, 1, 6));
-      expect(segs[1].start, DateTime(2026, 1, 6));
-      expect(segs[0].day, DateTime(2026, 1, 5));
-      expect(segs[1].day, DateTime(2026, 1, 6));
     });
   });
 

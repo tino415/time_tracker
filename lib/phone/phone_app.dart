@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/sync_service.dart';
+import '../data/sync_transport.dart';
 import '../theme/tokens.dart';
 import 'breakpoints.dart';
 import 'screens/activities_screen.dart';
@@ -10,6 +12,7 @@ import 'screens/reports_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'shortcuts.dart';
 import 'widgets/neo.dart';
+import 'widgets/sync_setup.dart';
 
 /// App-wide theme mode, toggled from the header.
 final themeModeProvider = StateProvider<ThemeMode>((_) => ThemeMode.system);
@@ -71,7 +74,7 @@ class _Home extends ConsumerWidget {
           child: Row(
             children: [
               FocusTraversalGroup(child: const _Sidebar()),
-              Expanded(child: FocusTraversalGroup(child: _wideBody(tab, width))),
+              Expanded(child: FocusTraversalGroup(child: _wideBody(tab))),
             ],
           ),
         ),
@@ -94,28 +97,13 @@ class _Home extends ConsumerWidget {
     );
   }
 
-  /// One screen per destination until there is room for two, at which point Now
-  /// and Timeline become one view: what is running and what led to it are read
-  /// together. The four destinations then address three views, and which of the
-  /// paired two is selected still decides what a scoped key acts on.
-  ///
-  /// Either way each screen is mounted exactly once — a second copy would carry
-  /// its own state and its own database subscriptions.
-  Widget _wideBody(int tab, double width) {
-    if (width < twoPaneBreakpoint) {
-      return IndexedStack(
-        index: tab,
-        children: [for (final tt in _tabs) _ReadableWidth(child: tt.screen)],
-      );
-    }
-
+  /// One screen per destination, same as narrow — each mounted exactly once, so
+  /// a second copy never carries its own state and its own database
+  /// subscriptions.
+  Widget _wideBody(int tab) {
     return IndexedStack(
-      index: tab <= timelineTab ? 0 : tab - 1,
-      children: [
-        _NowBesideTimeline(tab: tab),
-        _ReadableWidth(child: _tabs[reportsTab].screen),
-        _ReadableWidth(child: _tabs[activitiesTab].screen),
-      ],
+      index: tab,
+      children: [for (final tt in _tabs) _ReadableWidth(child: tt.screen)],
     );
   }
 }
@@ -124,82 +112,16 @@ class _Home extends ConsumerWidget {
 /// how wide any of them is *allowed* to get is the shell's business, so the
 /// number lives in one place instead of in each screen.
 class _ReadableWidth extends StatelessWidget {
-  const _ReadableWidth({required this.child, this.maxWidth = contentMaxWidth});
+  const _ReadableWidth({required this.child});
 
   final Widget child;
-  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
+        constraints: const BoxConstraints(maxWidth: contentMaxWidth),
         child: child,
-      ),
-    );
-  }
-}
-
-class _NowBesideTimeline extends StatelessWidget {
-  const _NowBesideTimeline({required this.tab});
-
-  final int tab;
-
-  @override
-  Widget build(BuildContext context) {
-    return _ReadableWidth(
-      maxWidth: twoPaneMaxWidth,
-      // A group each, or reading order walks the two columns row by row instead
-      // of down one and then down the other.
-      child: Row(
-        children: [
-          Expanded(
-            child: FocusTraversalGroup(
-              child: _Pane(index: nowTab, selected: tab == nowTab),
-            ),
-          ),
-          Expanded(
-            child: FocusTraversalGroup(
-              child: _Pane(index: timelineTab, selected: tab == timelineTab, bordered: true),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// One screen of the pair, under a chip naming it.
-///
-/// The chip is what keeps the sidebar honest: with both screens on show,
-/// choosing between them changes nothing in the body, and a destination that
-/// visibly does nothing reads as broken. Brand-filled is this app's "the live
-/// one" already, so the click has an answer and the keys have a visible scope.
-class _Pane extends StatelessWidget {
-  const _Pane({required this.index, required this.selected, this.bordered = false});
-
-  final int index;
-  final bool selected;
-  final bool bordered;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = neo(context);
-    return Container(
-      decoration: bordered
-          ? BoxDecoration(
-              border: Border(left: BorderSide(color: t.line, width: 3)),
-            )
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-            child: NeoChip(_tabs[index].label, brand: selected),
-          ),
-          Expanded(child: _tabs[index].screen),
-        ],
       ),
     );
   }
@@ -331,6 +253,86 @@ class _AppControls extends ConsumerWidget {
                 : ThemeMode.dark;
           },
         ),
+        const _SyncControls(),
+      ],
+    );
+  }
+}
+
+/// Manual sync, reachable from every screen rather than sunk at the bottom of
+/// Reports' category list — the more activities exist, the further down that
+/// list it sank.
+///
+/// Hidden entirely when no backend is configured — sync is optional, and an
+/// action that cannot work is worse than no action.
+///
+/// Manual rather than a background loop, because the local database is
+/// authoritative: syncing is how devices *agree*, not how the app works, so its
+/// failure has to be inert and its timing the user's business.
+class _SyncControls extends ConsumerStatefulWidget {
+  const _SyncControls();
+
+  @override
+  ConsumerState<_SyncControls> createState() => _SyncControlsState();
+}
+
+class _SyncControlsState extends ConsumerState<_SyncControls> {
+  bool _running = false;
+  String? _status;
+
+  Future<void> _sync(SyncService service) async {
+    setState(() {
+      _running = true;
+      _status = null;
+    });
+    try {
+      final result = await service.syncNow();
+      if (!mounted) return;
+      setState(() {
+        _status =
+            '↑${result.pushed} ↓${result.pulled}'
+            '${result.rejected > 0 ? " · ${result.rejected} superseded" : ""}';
+      });
+    } on SyncException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        // Being offline is the normal state for this app, not a failure worth
+        // alarming about; a bad token is worth naming, because only the user
+        // can fix it.
+        _status = e.unauthorized ? 'token rejected' : 'offline';
+      });
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    // No server in this build: nothing to offer, so offer nothing.
+    if (!ref.watch(syncConfigProvider).hasServer) return const SizedBox.shrink();
+
+    final service = ref.watch(syncServiceProvider);
+    // A server but no account — sync is opt-in, and this is the invitation.
+    if (service == null) {
+      return _ControlButton(label: '⟳ SYNC', onTap: () => showSyncSetup(context, ref));
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _ControlButton(
+          label: _running ? '⟳ SYNCING…' : '⟳ SYNC',
+          onTap: _running ? null : () => _sync(service),
+        ),
+        _ControlButton(label: '⚙', onTap: () => showSyncSetup(context, ref)),
+        if (_status != null)
+          Text(
+            _status!,
+            style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted),
+          ),
       ],
     );
   }
@@ -340,7 +342,7 @@ class _ControlButton extends StatelessWidget {
   const _ControlButton({required this.label, required this.onTap});
 
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

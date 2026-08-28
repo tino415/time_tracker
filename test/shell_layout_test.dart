@@ -5,12 +5,17 @@
 // rather than by widget type. The shapes are private widgets, and "the tabs are
 // under your thumb" or "beside the content" is the actual claim either way.
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/data/providers.dart';
+import 'package:time_tracker/data/sync_service.dart';
 import 'package:time_tracker/phone/breakpoints.dart';
+import 'package:time_tracker/phone/phone_app.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
@@ -23,7 +28,7 @@ const _phone = Size(400, 880);
 /// A sidebar, but not room for two panes.
 const _desktop = Size(900, 900);
 
-/// Wide enough to pair Now with the timeline.
+/// A sidebar with plenty of room to spare beyond [_desktop].
 const _wide = Size(1280, 900);
 
 /// On the Now screen and always present once anything is tracked — a fixed point
@@ -46,25 +51,29 @@ Future<void> _seedBookmarks(AppDatabase db) async {
   }
 }
 
-NeoChip _chip(String label) =>
-    find.byWidgetPredicate((w) => w is NeoChip && w.text == label).evaluate().single.widget
-        as NeoChip;
+Offset _at(WidgetTester tester, Finder finder) => tester.getCenter(finder);
 
-/// Tap a navigation destination by name.
-///
-/// Scoped by position rather than by text: once the panes are labelled, the
-/// sidebar's "TIMELINE" and the pane's chip read the same, and only one of them
-/// is a control.
-Future<void> _tapDestination(WidgetTester tester, String label) async {
-  final target = find.text(label).evaluate().firstWhere((e) {
-    final box = e.renderObject! as RenderBox;
-    return box.localToGlobal(Offset.zero).dx < sidebarWidth;
-  });
-  await tester.tap(find.byElementPredicate((e) => identical(e, target)));
+/// Boots with a sync server configured but no account yet — enough to prove
+/// the control is reachable and opens the setup sheet, without a real backend.
+Future<void> _bootWithSync(WidgetTester tester, {required Size viewport}) async {
+  tester.view.physicalSize = viewport;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  final db = AppDatabase.forTesting(NativeDatabase.memory());
+  addTearDown(db.close);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+      ],
+      child: const PhoneApp(),
+    ),
+  );
   await settle(tester);
 }
-
-Offset _at(WidgetTester tester, Finder finder) => tester.getCenter(finder);
 
 /// Where the focused control sits, horizontally. Traversal order is a claim
 /// about the layout, so it is asked of the layout.
@@ -149,40 +158,58 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('a window with room for two shows Now beside the timeline', (tester) async {
+  testWidgets('at the widest viewport, selecting Timeline shows Timeline and not Now', (
+    tester,
+  ) async {
     await bootApp(tester, viewport: _wide, seed: _seed);
-
-    final now = tester.getTopLeft(find.byType(NowScreen));
-    final timeline = tester.getTopLeft(find.byType(TimelineScreen));
-    expect(timeline.dx, greaterThan(now.dx), reason: 'the timeline is not beside Now');
-    expect(timeline.dy, now.dy, reason: 'the panes do not start at the same height');
-
-    await disposeApp(tester);
-  });
-
-  testWidgets('a window without the room does not pair them', (tester) async {
-    // 900 has the sidebar but not two panes: the panes would each be narrower
-    // than the phone these screens were laid out for.
-    await bootApp(tester, viewport: const Size(900, 900), seed: _seed);
 
     expect(inScreen(NowScreen, find.text(_startNow)), findsOneWidget);
-    expect(find.text('≣ LIST'), findsNothing);
+    expect(inScreen(TimelineScreen, find.text('≣ LIST')), findsNothing);
+
+    await tester.tap(find.text('TIMELINE'));
+    await settle(tester);
+
+    expect(inScreen(TimelineScreen, find.text('≣ LIST')), findsOneWidget);
+    expect(inScreen(NowScreen, find.text(_startNow)), findsNothing);
 
     await disposeApp(tester);
   });
 
-  testWidgets('choosing between the paired screens marks one of them', (tester) async {
-    // Both are on show, so a destination click changes nothing in the body. The
-    // chip is what answers it — and what says which screen a scoped key means.
-    await bootApp(tester, viewport: _wide, seed: _seed);
+  testWidgets('sync is reachable from the chrome on a tab that is not Reports', (tester) async {
+    // Default tab is Now — the app-shell chrome is the point: reachable
+    // regardless of which screen is showing, not scoped to one of them.
+    await _bootWithSync(tester, viewport: _desktop);
 
-    expect(_chip('Now').brand, isTrue);
-    expect(_chip('Timeline').brand, isFalse);
+    expect(inScreen(ReportsScreen, find.text('↧ EXPORT CSV · ALL HISTORY')), findsNothing);
+    expect(find.text('SET UP SYNC'), findsNothing);
 
-    await _tapDestination(tester, 'TIMELINE');
+    await tester.tap(find.text('⟳ SYNC'));
+    await settle(tester);
 
-    expect(_chip('Now').brand, isFalse);
-    expect(_chip('Timeline').brand, isTrue);
+    expect(find.text('SET UP SYNC'), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the phone header keeps sync on the wordmark row', (tester) async {
+    // The controls live in a Wrap, so a header with one item too many for the
+    // width does not overflow and does not throw — it quietly takes a second
+    // row, on the screen with the least height to spare. Nothing else would
+    // catch that, so it is asserted as geometry.
+    //
+    // This is the un-authenticated shape: server configured, no account, so one
+    // button. The fullest header — sync, its gear and a status string — needs a
+    // live SyncService and is not covered here.
+    await _bootWithSync(tester, viewport: _phone);
+
+    final wordmark = tester.getCenter(find.text('[track]'));
+    final sync = tester.getCenter(find.text('⟳ SYNC'));
+
+    expect(
+      sync.dy,
+      moreOrLessEquals(wordmark.dy, epsilon: 4),
+      reason: 'the chrome wrapped onto a second row',
+    );
 
     await disposeApp(tester);
   });

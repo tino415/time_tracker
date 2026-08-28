@@ -39,6 +39,11 @@ const _desktop = Size(900, 800);
 /// the target the focus tests tab towards. `NeoButton` uppercases its label.
 const _startNow = '▶ START NOW · NAME IT LATER';
 
+/// The primary button `_FirstRunEmpty` offers when the database has no
+/// activities yet — the one case where the focus ring and the fill it sits on
+/// were once the same colour, so it is the control the ring test targets.
+const _newActivity = '+ NEW ACTIVITY';
+
 /// The activity seeded beside "Deep work", for the cases that need something to
 /// change *to*. Not bookmarked, so it stays off the Now screen until a sheet
 /// offers it.
@@ -609,6 +614,34 @@ void main() {
     await settle(tester);
 
     expect(inScreen(ReportsScreen, find.text('Payout')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('focus draws a brand ring, even on a brand-filled button', (tester) async {
+    // The primary button is the one case where the ring and the fill it sits
+    // on were the same colour — a plain button passing this would not have
+    // caught that regression.
+    await bootApp(tester, viewport: _desktop);
+
+    Finder pressableShadow() => find.descendant(
+      of: find.ancestor(of: find.text(_newActivity), matching: find.byType(NeoPressable)),
+      matching: find.byType(AnimatedContainer),
+    );
+    List<BoxShadow> shadows() =>
+        (tester.widget<AnimatedContainer>(pressableShadow()).decoration as BoxDecoration)
+            .boxShadow ??
+        const [];
+    final brand = neo(tester.element(find.byType(NowScreen))).brand;
+    // Spread, not merely offset, is what distinguishes the fix from the bug it
+    // replaces: a colour-swapped hard shadow would also carry a brand-coloured
+    // entry, but with no spread it draws no ring at all.
+    bool hasBrandRing() => shadows().any((s) => s.color == brand && s.spreadRadius > 0);
+
+    expect(hasBrandRing(), isFalse, reason: 'unfocused button carries no brand ring');
+
+    expect(await _tabTo(tester, _newActivity), isTrue);
+    expect(hasBrandRing(), isTrue, reason: 'focused button carries a brand ring');
 
     await disposeApp(tester);
   });

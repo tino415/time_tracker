@@ -364,9 +364,16 @@ class _ControlButton extends StatelessWidget {
 /// fill in both; only the alignment differs, because a bar centres four cells
 /// across a width and a sidebar reads as a list.
 ///
-/// Focus is drawn as an inset brand outline rather than [NeoPressable]'s brand
-/// shadow: these cells carry no shadow to recolour, and a *foreground* decoration
-/// paints over one without insetting its label the way a real border would.
+/// Focus is drawn as an inset two-tone outline rather than [NeoPressable]'s
+/// brand shadow: these cells carry no shadow to recolour, and a *foreground*
+/// decoration paints over the label instead of insetting it the way a real
+/// border would. A `BoxDecoration` only holds one border, so the two tones —
+/// same [NeoTokens.focusBandWidth]/[NeoTokens.focusRingWidth] the shadow
+/// version reads — are two nested `Container`s in an `IgnorePointer` overlay:
+/// a bordered `Container` insets its child by the border's width for free, so
+/// nesting one inside the other draws concentric rings without touching the
+/// label's own layout. The active tab is the case this exists for — its fill
+/// is `t.line`, the colour the ring measures worst against.
 class _TabButton extends StatefulWidget {
   const _TabButton({
     required this.label,
@@ -400,25 +407,41 @@ class _TabButtonState extends State<_TabButton> {
       child: GestureDetector(
         onTap: widget.onTap,
         behavior: HitTestBehavior.opaque,
-        child: Container(
-          color: widget.active ? t.line : t.surface,
-          foregroundDecoration: _focused
-              ? BoxDecoration(border: Border.all(color: t.brand, width: 3))
-              : null,
-          padding: widget.leftAligned
-              ? const EdgeInsets.fromLTRB(16, 14, 16, 14)
-              : const EdgeInsets.symmetric(vertical: 12),
-          alignment: widget.leftAligned ? Alignment.centerLeft : Alignment.center,
-          child: Text(
-            widget.label.toUpperCase(),
-            style: mono(
-              context,
-              size: 11,
-              weight: FontWeight.w800,
-              spacing: .6,
-              color: widget.active ? t.surface : t.muted,
+        child: Stack(
+          children: [
+            Container(
+              color: widget.active ? t.line : t.surface,
+              padding: widget.leftAligned
+                  ? const EdgeInsets.fromLTRB(16, 14, 16, 14)
+                  : const EdgeInsets.symmetric(vertical: 12),
+              alignment: widget.leftAligned ? Alignment.centerLeft : Alignment.center,
+              child: Text(
+                widget.label.toUpperCase(),
+                style: mono(
+                  context,
+                  size: 11,
+                  weight: FontWeight.w800,
+                  spacing: .6,
+                  color: widget.active ? t.surface : t.muted,
+                ),
+              ),
             ),
-          ),
+            if (_focused)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: t.bg, width: NeoTokens.focusBandWidth),
+                    ),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: t.brand, width: NeoTokens.focusRingWidth),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

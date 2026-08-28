@@ -56,12 +56,39 @@ class NeoTokens extends ThemeExtension<NeoTokens> {
   /// interactions collapse this to `[]` and translate by [offset].
   List<BoxShadow> hardShadow([double offset = 6]) => _hardShadow(shadow, offset);
 
-  /// The same shadow in [brand]: the keyboard focus ring.
+  /// Width of the [bg] band nearest the box in the two-tone focus ring —
+  /// shared with [focusRingWidth] by both renderers of it, shadow and border.
+  static const double focusBandWidth = 2;
+
+  /// Width of the visible [brand] layer, just outside the [focusBandWidth] band.
+  static const double focusRingWidth = 4;
+
+  /// The keyboard focus ring: [brand], held off whatever the box is drawn
+  /// against by a [focusBandWidth] band of [bg].
   ///
-  /// Drawn in the shadow rather than the border because it then costs no layout —
-  /// focus never nudges what it lands on — and because it still reads on a
-  /// brand-filled button, where a brand border would disappear into the fill.
-  List<BoxShadow> focusShadow([double offset = 6]) => _hardShadow(brand, offset);
+  /// A plain brand shadow was tried first and dropped: `brand` measures
+  /// 2.6:1 (light) / 1.9:1 (dark) against the `line` border a control usually
+  /// sits flush against, and 1:1 against a primary button's own `brand` fill
+  /// — invisible in exactly the case where a ring matters most. The `bg` band
+  /// gives brand a neighbour it clears at 6.2:1 / 10.1:1 regardless of what
+  /// the box itself is filled with.
+  ///
+  /// Drawn in the shadow rather than the border because it then costs no
+  /// layout — focus never nudges what it lands on. Spread, not blurred, so the
+  /// edge stays hard like every other shadow here: [focusRingWidth] out is
+  /// [brand], [focusBandWidth] out is [bg], between them is a flat colour
+  /// change rather than a fade.
+  ///
+  /// Flutter paints `boxShadow` bottom-to-top by list index — the opposite of
+  /// CSS, where the first entry is on top — so this list is built back to
+  /// front: the resting hard shadow on the bottom, the brand spread in the
+  /// middle, and the bg band last so it punches through the middle of the
+  /// brand spread instead of being buried under it.
+  List<BoxShadow> focusShadow([double offset = 6]) => [
+    ..._hardShadow(shadow, offset),
+    BoxShadow(color: brand, spreadRadius: focusBandWidth + focusRingWidth),
+    BoxShadow(color: bg, spreadRadius: focusBandWidth),
+  ];
 
   static List<BoxShadow> _hardShadow(Color color, double offset) => [
     BoxShadow(color: color, offset: Offset(offset, offset), blurRadius: 0),

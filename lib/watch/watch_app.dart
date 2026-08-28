@@ -37,14 +37,17 @@ class WatchApp extends StatelessWidget {
   }
 }
 
-/// Tapping a tile arms it; a second tap within [_confirmWindow] switches.
+/// A tile acts on a right-to-left drag across it, not on a tap.
 ///
 /// A watch is operated by feel, with 40px targets under a thumb — a misfire is
-/// easy and, unlike on the phone, neither visible nor easy to undo. Two taps is
-/// the cost; it stays one gesture-per-hand and needs no modal, which there is no
-/// room for anyway. Arming expires on its own so a stray tap does not leave the
-/// watch waiting.
-const _confirmWindow = Duration(seconds: 4);
+/// easy and, unlike on the phone, neither visible nor easy to undo. A drag is
+/// deliberate in a way a tap is not, so it carries the confirmation in the
+/// gesture instead of asking a question the wrist has to answer twice.
+///
+/// Right-to-left specifically, and never the other way: the reverse is Wear's
+/// own swipe-to-dismiss, and this app does not turn that off. So a horizontal
+/// direction means one thing here, and the system keeps the one it reserved.
+const _actDirection = DismissDirection.endToStart;
 
 class _WatchHome extends ConsumerStatefulWidget {
   const _WatchHome();
@@ -54,9 +57,6 @@ class _WatchHome extends ConsumerStatefulWidget {
 }
 
 class _WatchHomeState extends ConsumerState<_WatchHome> {
-  String? _armed;
-  Timer? _disarm;
-
   /// Whether the hero has been tapped open into the start-time / re-point
   /// panel. Only meaningful while a block is running — [build] treats it as
   /// false once [currentBlockProvider] goes null, since there is nothing left
@@ -65,27 +65,6 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
 
   /// Nudges run one at a time. See [_nudge] for why concurrent ones collapse.
   Future<void> _nudges = Future.value();
-
-  @override
-  void dispose() {
-    _disarm?.cancel();
-    super.dispose();
-  }
-
-  /// Returns true when the caller should go ahead.
-  bool _confirm(String key) {
-    if (_armed == key) {
-      _disarm?.cancel();
-      setState(() => _armed = null);
-      return true;
-    }
-    _disarm?.cancel();
-    setState(() => _armed = key);
-    _disarm = Timer(_confirmWindow, () {
-      if (mounted) setState(() => _armed = null);
-    });
-    return false;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -164,11 +143,7 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
           // Deliberately enabled while an unnamed block runs: two in a row are
           // two different things to name later, not one long one.
           selected: false,
-          armed: _armed == kUnsortedActivityId,
-          onTap: () {
-            if (!_confirm(kUnsortedActivityId)) return;
-            ref.read(wearSyncProvider).startUnsorted();
-          },
+          onSwipe: () => ref.read(wearSyncProvider).startUnsorted(),
         ),
         const SizedBox(height: 6),
         for (final a in bookmarked) ...[
@@ -177,16 +152,12 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
             name: a.name,
             color: parseHexColor(a.color),
             selected: a.syncId == currentId,
-            armed: _armed == a.syncId,
-            // Tapping what is already running would only split the block; the
-            // phone guards this too, but not offering it is clearer than a tap
-            // that does nothing.
-            onTap: a.syncId == currentId
+            // Switching to what is already running would only split the block;
+            // the phone guards this too, but not offering it is clearer than a
+            // gesture that does nothing.
+            onSwipe: a.syncId == currentId
                 ? null
-                : () {
-                    if (!_confirm(a.syncId)) return;
-                    ref.read(wearSyncProvider).requestSwitch(a.syncId);
-                  },
+                : () => ref.read(wearSyncProvider).requestSwitch(a.syncId),
           ),
           const SizedBox(height: 6),
         ],
@@ -247,16 +218,12 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
             name: a.name,
             color: parseHexColor(a.color),
             selected: false,
-            armed: _armed == 'repoint-${a.syncId}',
             // Unlike the nudges, this rewrites what is already recorded rather
-            // than adjusting it — the arm-then-tap-again gesture the switch
-            // list uses for the same reason applies here too.
-            onTap: () {
-              if (!_confirm('repoint-${a.syncId}')) return;
-              ref
-                  .read(wearSyncProvider)
-                  .requestAssign(changeSyncId: current.change.syncId, activityId: a.syncId);
-            },
+            // than adjusting it — the drag the switch list uses for the same
+            // reason applies here too.
+            onSwipe: () => ref
+                .read(wearSyncProvider)
+                .requestAssign(changeSyncId: current.change.syncId, activityId: a.syncId),
           ),
           const SizedBox(height: 6),
         ],
@@ -435,69 +402,84 @@ class _NoBookmarksHint extends ConsumerWidget {
 
 /// One switch target. Full-width and tall: on a watch the finger is the whole
 /// input device, so tiles are sized for a thumb rather than for density.
+///
+/// Acts on a drag rather than a tap — see [_actDirection]. [Dismissible] is the
+/// vehicle because it already owns the part worth not rewriting: a threshold
+/// measured against the tile's own width, the drag tracking the finger, and a
+/// spring back when it does not carry. Nothing is dismissed, so [confirmDismiss]
+/// fires the action and answers false; the tile returns to where it was and the
+/// list it lives in never changes length.
 class _ActivityTile extends StatelessWidget {
   const _ActivityTile({
     super.key,
     required this.name,
     required this.color,
     required this.selected,
-    required this.onTap,
-    this.armed = false,
+    required this.onSwipe,
   });
 
   final String name;
   final Color color;
   final bool selected;
-  final VoidCallback? onTap;
 
-  /// Tapped once and waiting for confirmation.
-  final bool armed;
+  /// Null for a tile with nothing to do — it then refuses the drag rather than
+  /// swallowing one that goes nowhere.
+  final VoidCallback? onSwipe;
 
   @override
   Widget build(BuildContext context) {
     final t = neo(context);
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
+    return Dismissible(
+      key: ValueKey('swipe-$name'),
+      direction: onSwipe == null ? DismissDirection.none : _actDirection,
+      confirmDismiss: (_) async {
+        onSwipe?.call();
+        return false;
+      },
+      // Uncovered as the tile slides off it, so the gesture says what it will do
+      // while it is still being made.
+      background: Container(
+        color: t.brand,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 12),
+        child: Text(
+          'go ✓',
+          style: mono(context, size: 12, weight: FontWeight.w800, color: t.brandInk),
+        ),
+      ),
       child: Container(
         height: 44,
         decoration: BoxDecoration(
-          // Armed is the loudest state on the screen on purpose: it is asking a
-          // question, and an unanswered one should not be mistakable for the
-          // running activity.
-          color: armed ? t.brand : (selected ? color.withValues(alpha: .30) : t.surface),
-          border: Border.all(
-            color: armed ? t.brand : (selected ? color : t.line),
-            width: armed || selected ? 3 : 2,
-          ),
+          color: selected ? color.withValues(alpha: .30) : t.surface,
+          border: Border.all(color: selected ? color : t.line, width: selected ? 3 : 2),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
           children: [
-            Container(width: 6, height: 22, color: armed ? t.brandInk : color),
+            Container(width: 6, height: 22, color: color),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                armed ? 'tap again' : name,
+                name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: mono(
                   context,
                   size: 13,
-                  weight: armed || selected ? FontWeight.w800 : FontWeight.w700,
-                  color: armed ? t.brandInk : t.ink,
+                  weight: selected ? FontWeight.w800 : FontWeight.w700,
+                  color: t.ink,
                 ),
               ),
             ),
-            if (armed)
-              Text(
-                '✓',
-                style: mono(context, size: 13, weight: FontWeight.w800, color: t.brandInk),
-              )
-            else if (selected)
+            if (selected)
               Text(
                 '●',
                 style: mono(context, size: 10, weight: FontWeight.w800, color: color),
+              )
+            else if (onSwipe != null)
+              Text(
+                '‹',
+                style: mono(context, size: 14, weight: FontWeight.w800, color: t.muted),
               ),
           ],
         ),

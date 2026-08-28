@@ -31,12 +31,13 @@ import '../test/support/flow_harness.dart';
 /// activity's name also appears in the hero above it, in the same scroll view.
 Finder tile(String syncId) => find.byKey(ValueKey('tile-$syncId'));
 
-/// Tiles arm on first tap and act on the second; a misfire on a wrist is
-/// neither visible nor easy to undo.
-Future<void> tapTile(WidgetTester tester, Finder finder) async {
-  await tester.tap(finder);
-  await settle(tester);
-  await tester.tap(finder);
+/// Tiles act on a right-to-left drag; a misfire on a wrist is neither visible
+/// nor easy to undo, and a drag is deliberate where a tap is not.
+///
+/// Right-to-left only: the reverse is Wear's swipe-to-dismiss, which this run
+/// would close the app with rather than switch anything.
+Future<void> swipeTile(WidgetTester tester, Finder finder) async {
+  await tester.drag(finder, const Offset(-400, 0));
   await settle(tester);
 }
 
@@ -121,7 +122,7 @@ void main() {
 
     // A tap has to do both halves: record locally so the watch is honest with
     // the phone out of range, and relay so the phone converges on the same row.
-    await tapTile(tester, tile('a'));
+    await swipeTile(tester, tile('a'));
 
     final rows = await DriftChangeRepository(db).loadChanges();
     expect(rows, hasLength(1));

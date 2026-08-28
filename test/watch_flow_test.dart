@@ -31,12 +31,14 @@ const _watch = Size(227, 227);
 /// the hero above, and both live in the same scroll view.
 Finder tile(String syncId) => find.byKey(ValueKey('tile-$syncId'));
 
-/// Tiles arm on first tap and act on the second — a watch is operated by feel,
-/// and a misfire there is neither visible nor easy to undo.
-Future<void> tapTile(WidgetTester tester, Finder finder) async {
-  await tester.tap(finder);
-  await settle(tester);
-  await tester.tap(finder);
+/// Tiles act on a right-to-left drag across them — a watch is operated by feel,
+/// and a misfire there is neither visible nor easy to undo, so the gesture
+/// carries the deliberateness a tap cannot.
+///
+/// Past Dismissible's own threshold, which is a fraction of the tile's width:
+/// a drag short of it springs back, which is the case [swipeTile] is not for.
+Future<void> swipeTile(WidgetTester tester, Finder finder) async {
+  await tester.drag(finder, const Offset(-400, 0));
   await settle(tester);
 }
 
@@ -141,12 +143,12 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('tapping a tile starts tracking it and relays the switch', (tester) async {
+  testWidgets('swiping a tile starts tracking it and relays the switch', (tester) async {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
 
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
 
     final changes = DriftChangeRepository(db);
     final rows = await changes.loadChanges();
@@ -161,16 +163,16 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the running activity is marked and not re-tappable', (tester) async {
+  testWidgets('the running activity is marked and refuses the swipe', (tester) async {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
 
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
     final before = (await DriftChangeRepository(db).loadChanges()).length;
 
-    // Tapping what is already running would only split the block.
-    await tapTile(tester, tile(deepWorkId));
+    // Switching to what is already running would only split the block.
+    await swipeTile(tester, tile(deepWorkId));
 
     expect((await DriftChangeRepository(db).loadChanges()).length, before);
 
@@ -188,7 +190,7 @@ void main() {
     expect(find.text('start now'), findsOneWidget);
     expect(find.textContaining('bookmark on the phone'), findsOneWidget);
 
-    await tapTile(tester, tile(kUnsortedActivityId));
+    await swipeTile(tester, tile(kUnsortedActivityId));
 
     // The catch-all is created locally — the phone only ever sends *bookmarked*
     // activities, and this one is not a bookmark.
@@ -211,7 +213,7 @@ void main() {
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
 
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
 
     final clock = find.textContaining(':');
     expect(clock, findsWidgets);
@@ -234,9 +236,10 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('one tap arms, it does not switch', (tester) async {
-    // A watch is operated by feel, with big targets under a thumb. A misfire
-    // there is neither visible nor easy to undo, so the first tap only asks.
+  testWidgets('a tap does not switch', (tester) async {
+    // A watch is operated by feel, with big targets under a thumb, and a
+    // misfire there is neither visible nor easy to undo. A brush against the
+    // screen is exactly that misfire, so the tile does not answer to one.
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
@@ -246,30 +249,52 @@ void main() {
 
     expect(await DriftChangeRepository(db).loadChanges(), isEmpty);
     expect(bridge.sent.whereType<SwitchRequest>(), isEmpty);
-    expect(find.text('tap again'), findsOneWidget);
 
-    await tester.tap(tile(deepWorkId));
+    await disposeApp(tester);
+  });
+
+  testWidgets('a drag that stops short springs back and switches nothing', (tester) async {
+    // The threshold is the other half of the gesture being deliberate: a finger
+    // that starts moving and thinks better of it has to be able to abandon.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    await tester.drag(tile(deepWorkId), const Offset(-12, 0));
     await settle(tester);
+
+    expect(await DriftChangeRepository(db).loadChanges(), isEmpty);
+    expect(bridge.sent.whereType<SwitchRequest>(), isEmpty);
+
+    // And the tile is still there to try again with.
+    await swipeTile(tester, tile(deepWorkId));
     expect(await DriftChangeRepository(db).loadChanges(), hasLength(1));
 
     await disposeApp(tester);
   });
 
-  testWidgets('arming one tile disarms another', (tester) async {
+  testWidgets('left-to-right is left to the system, which dismisses the app', (tester) async {
+    // Wear reserves that direction for swipe-to-dismiss and this app does not
+    // turn it off, so a tile must not act on it — the user would be leaving.
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
 
-    await tester.tap(tile(deepWorkId));
-    await settle(tester);
-    await tester.tap(tile(emailId));
+    await tester.drag(tile(deepWorkId), const Offset(400, 0));
     await settle(tester);
 
-    // Only one question at a time, and confirming Email must not switch to
-    // whatever was armed before it.
-    expect(find.text('tap again'), findsOneWidget);
-    await tester.tap(tile(emailId));
-    await settle(tester);
+    expect(await DriftChangeRepository(db).loadChanges(), isEmpty);
+    expect(bridge.sent.whereType<SwitchRequest>(), isEmpty);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the swipe acts on the tile it was made on', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    await swipeTile(tester, tile(emailId));
 
     final rows = await DriftChangeRepository(db).loadChanges();
     expect(rows, hasLength(1));
@@ -286,10 +311,10 @@ void main() {
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge);
 
-    await tapTile(tester, tile(kUnsortedActivityId));
+    await swipeTile(tester, tile(kUnsortedActivityId));
     expect(find.text('start another'), findsOneWidget);
 
-    await tapTile(tester, tile(kUnsortedActivityId));
+    await swipeTile(tester, tile(kUnsortedActivityId));
 
     final rows = await DriftChangeRepository(db).loadChanges();
     expect(rows, hasLength(2));
@@ -329,7 +354,7 @@ void main() {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
 
     await tester.tap(find.byKey(const ValueKey('hero')));
     await settle(tester);
@@ -357,7 +382,7 @@ void main() {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
     final changes = DriftChangeRepository(db);
     final before = (await changes.loadChanges()).single;
 
@@ -384,7 +409,7 @@ void main() {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
 
     await tester.tap(find.byKey(const ValueKey('hero')));
     await settle(tester);
@@ -416,7 +441,7 @@ void main() {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
     final changes = DriftChangeRepository(db);
     final before = (await changes.loadChanges()).single;
 
@@ -439,14 +464,15 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('a re-point needs the confirm gesture', (tester) async {
-    // Same arm-then-tap-again gesture as the switch list, and for the same
-    // reason: a watch is operated by feel, and a misfire re-pointing a block
-    // is neither visible nor easy to undo.
+  testWidgets('a re-point needs the same drag the switch list takes', (tester) async {
+    // One gesture for both lists, and for the same reason: a watch is operated
+    // by feel, and a misfire re-pointing a block is neither visible nor easy to
+    // undo. This is also where the two axes have to coexist — the panel is
+    // scrolled vertically to reach the tile that is then dragged sideways.
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
     final changes = DriftChangeRepository(db);
     final changeId = (await changes.loadChanges()).single.syncId;
 
@@ -463,8 +489,7 @@ void main() {
     expect(await changes.activityIdsForChange(changeId), [deepWorkId]);
     expect(bridge.sent.whereType<AssignRequest>(), isEmpty);
 
-    await tester.tap(repoint);
-    await settle(tester);
+    await swipeTile(tester, repoint);
 
     expect(await changes.activityIdsForChange(changeId), [emailId]);
     final relayed = bridge.sent.whereType<AssignRequest>().single;
@@ -480,7 +505,7 @@ void main() {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
-    await tapTile(tester, tile(deepWorkId));
+    await swipeTile(tester, tile(deepWorkId));
 
     await tester.tap(find.byKey(const ValueKey('hero')));
     await settle(tester);

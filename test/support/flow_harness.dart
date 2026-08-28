@@ -50,11 +50,16 @@ Finder inScreen(Type screen, Finder matching) =>
 /// phone-shaped surface (the widget-test default is a 800x600 landscape one);
 /// on a real device leave it null and use the device's own screen.
 ///
+/// [keyboard] raises a soft keyboard of that many logical pixels. The Scaffold
+/// takes the *greater* of this and the tab bar out of the body rather than their
+/// sum, so a value under the bar's 52 changes nothing.
+///
 /// [seed] runs against the database *before* the first frame, for tests that
 /// need existing history rather than history built through the UI.
 Future<AppDatabase> bootApp(
   WidgetTester tester, {
   Size? viewport,
+  double keyboard = 0,
   Future<void> Function(AppDatabase db)? seed,
 }) async {
   if (viewport != null) {
@@ -62,6 +67,13 @@ Future<AppDatabase> bootApp(
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
+  if (keyboard > 0) {
+    // Physical pixels, like physicalSize — the same as logical only because the
+    // ratio above is pinned to 1.
+    tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
+    addTearDown(tester.view.resetViewInsets);
   }
 
   final db = AppDatabase.forTesting(NativeDatabase.memory());

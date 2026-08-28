@@ -131,11 +131,16 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
               Row(
                 children: [
                   NeoChip(widget.title),
-                  const Spacer(),
+                  const SizedBox(width: 12),
                   if (widget.trailing != null)
-                    Text(
-                      widget.trailing!,
-                      style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+                    Expanded(
+                      child: Text(
+                        widget.trailing!,
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+                      ),
                     ),
                 ],
               ),

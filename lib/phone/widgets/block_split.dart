@@ -103,10 +103,15 @@ class _SplitSheetState extends ConsumerState<_SplitSheet> {
               Row(
                 children: [
                   NeoChip('Split at'),
-                  const Spacer(),
-                  Text(
-                    widget.block.activities.map((a) => a.name).join('  +  '),
-                    style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.block.activities.map((a) => a.name).join('  +  '),
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+                    ),
                   ),
                 ],
               ),

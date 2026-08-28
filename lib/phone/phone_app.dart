@@ -134,7 +134,20 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Row(children: [const _Wordmark(), const Spacer(), const _AppControls()]),
+      // The controls take what is left of the row rather than their natural
+      // width. A non-flexible child of a Row is measured against infinity, and a
+      // Wrap offered infinity has nowhere to wrap to — it laid out one run and
+      // ran off the edge, taking the sync status with it. A Spacer would not do:
+      // it is flexible too, so the remainder would be split in half.
+      child: Row(
+        children: [
+          const _Wordmark(),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Align(alignment: Alignment.centerRight, child: _AppControls()),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -224,7 +237,9 @@ class _Wordmark extends StatelessWidget {
 }
 
 /// The controls that belong to the app rather than to a screen. A [Wrap] so the
-/// same widget serves the header's wide strip and the sidebar's narrower foot.
+/// same widget serves the header's wide strip and the sidebar's narrower foot —
+/// which only works where the host hands it a width. The sidebar does so by
+/// being a stretched Column child; the header needs an [Expanded] to.
 class _AppControls extends ConsumerWidget {
   const _AppControls();
 
@@ -331,6 +346,11 @@ class _SyncControlsState extends ConsumerState<_SyncControls> {
         if (_status != null)
           Text(
             _status!,
+            // The one control sized by a result rather than by a label. The
+            // strip bounds it now, so this is only about how many lines a long
+            // one may take out of the body.
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted),
           ),
       ],

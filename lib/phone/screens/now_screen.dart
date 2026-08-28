@@ -30,42 +30,222 @@ final quickSwitchFocusProvider = Provider<FocusNode>((ref) {
 
 /// The live "Now" screen: the current-activity hero, a bookmarked quick-switch
 /// grid, and a paste/search field for switching to (or creating) any activity.
-class NowScreen extends ConsumerWidget {
+class NowScreen extends ConsumerStatefulWidget {
   const NowScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NowScreen> createState() => _NowScreenState();
+}
+
+class _NowScreenState extends ConsumerState<NowScreen> {
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _switchTo(String activityId) async {
+    await switchWithUndo(context, ref, activityId);
+    _search.clear();
+  }
+
+  Future<void> _createFromSearch() async {
+    final name = _search.text.trim();
+    if (name.isEmpty) return;
+    _search.clear();
+    await showActivityEditor(context, ref, initialName: name, switchToOnCreate: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final activities = ref.watch(activitiesStreamProvider).valueOrNull ?? const [];
     final current = ref.watch(currentBlockProvider);
-    final bookmarked = activities.where((a) => a.bookmarked).toList();
 
     if (activities.isEmpty) return const _FirstRunEmpty();
 
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+    // What grows with the data is the flexible child; what sits below it is one
+    // row of chrome whose height nothing typed can change. The matches used to
+    // be part of that lower half, and five of them plus the create row wanted
+    // more than a phone has left once the keyboard is up — a Column pushes its
+    // last child out first, and the last child was the field that raised the
+    // keyboard.
+    //
+    // The footer is measured against the body rather than against the infinity a
+    // Column hands a non-flexible child, and it scrolls from the bottom: a window
+    // too short even for those rows loses the start bar, not the field.
+    return LayoutBuilder(
+      builder: (context, body) => ValueListenableBuilder(
+        valueListenable: _search,
+        builder: (context, value, _) {
+          final query = value.text.trim();
+          return Column(
             children: [
-              _HeroCard(block: current),
-              const SizedBox(height: 18),
-              NeoSectionHeader('Switch to · bookmarked'),
-              const SizedBox(height: 12),
-              if (bookmarked.isEmpty)
-                Text(
-                  'no bookmarks yet — star an activity to pin it here',
-                  style: mono(context, color: neo(context).muted),
-                )
-              else
-                _SwitchGrid(activities: bookmarked, current: current),
+              Expanded(
+                child: query.isEmpty
+                    ? _Browse(activities: activities, current: current)
+                    : _Matches(
+                        matches: matchingActivities(activities, query),
+                        query: query,
+                        onSwitch: _switchTo,
+                        onCreate: _createFromSearch,
+                      ),
+              ),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: body.maxHeight),
+                child: SingleChildScrollView(
+                  reverse: true,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Nothing to start blind while you are reading matches,
+                      // and hiding it puts the results against the field they
+                      // came from.
+                      if (query.isEmpty) const _StartNowBar(),
+                      _QuickSwitchField(
+                        controller: _search,
+                        onSubmitted: () {
+                          final matches = matchingActivities(activities, query);
+                          if (matches.isEmpty) {
+                            _createFromSearch();
+                          } else {
+                            _switchTo(matches.first.syncId);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
-          ),
-        ),
-        const _StartNowBar(),
-        const _QuickSwitchField(),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// What the screen shows when nothing is typed.
+class _Browse extends StatelessWidget {
+  const _Browse({required this.activities, required this.current});
+
+  final List<Activity> activities;
+  final Block? current;
+
+  @override
+  Widget build(BuildContext context) {
+    final bookmarked = activities.where((a) => a.bookmarked).toList();
+    return ListView(
+      // Typing replaces this list and clearing brings it back; without a key
+      // that round trip returns you to the top of it.
+      key: const PageStorageKey('now-browse'),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      children: [
+        _HeroCard(block: current),
+        const SizedBox(height: 18),
+        NeoSectionHeader('Switch to · bookmarked'),
+        const SizedBox(height: 12),
+        if (bookmarked.isEmpty)
+          Text(
+            'no bookmarks yet — star an activity to pin it here',
+            style: mono(context, color: neo(context).muted),
+          )
+        else
+          _SwitchGrid(activities: bookmarked, current: current),
       ],
     );
   }
+}
+
+/// What the field matched, in the region the bookmarks otherwise hold.
+///
+/// Anchored to the bottom, near the field it came from, and scrolling: it used
+/// to be a rigid child below the field, and growing was how it pushed the field
+/// off the screen.
+class _Matches extends StatelessWidget {
+  const _Matches({
+    required this.matches,
+    required this.query,
+    required this.onSwitch,
+    required this.onCreate,
+  });
+
+  final List<Activity> matches;
+  final String query;
+  final ValueChanged<String> onSwitch;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    return SingleChildScrollView(
+      reverse: true,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final a in matches)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: NeoPressable(
+                onTap: () => onSwitch(a.syncId),
+                shadowOffset: 3,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  children: [
+                    NeoSwatch(parseHexColor(a.color), size: 14),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        a.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: mono(context, weight: FontWeight.w700),
+                      ),
+                    ),
+                    if (a.externalId != null)
+                      Text(a.externalId!, style: mono(context, size: 11, color: t.muted)),
+                  ],
+                ),
+              ),
+            ),
+          NeoPressable(
+            onTap: onCreate,
+            fill: t.brand,
+            shadowOffset: 3,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            child: Text(
+              '+ create & switch: "$query"',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: mono(context, weight: FontWeight.w800, color: t.brandInk),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Recency first, then alphabetical: the activity you just left is the one you
+/// are most likely coming back to. Five, because the create row sits below the
+/// last match and a list long enough to scroll is a list that hides it.
+List<Activity> matchingActivities(List<Activity> all, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return const [];
+  final matches =
+      all.where((a) {
+        return a.name.toLowerCase().contains(q) ||
+            (a.externalId?.toLowerCase().contains(q) ?? false);
+      }).toList()..sort((a, b) {
+        final la = a.lastUsedAt, lb = b.lastUsedAt;
+        if (la != null && lb != null) return lb.compareTo(la);
+        if (la != null) return -1;
+        if (lb != null) return 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+  return matches.take(5).toList();
 }
 
 /// One tap, no typing: open a boundary *now* and decide what it was afterwards.
@@ -451,128 +631,28 @@ class _SwitchGrid extends ConsumerWidget {
   }
 }
 
-/// Paste-a-task / search field with recency-ordered suggestions. Tapping a
-/// suggestion switches; the create row makes a new activity and switches to it.
-class _QuickSwitchField extends ConsumerStatefulWidget {
-  const _QuickSwitchField();
+/// The paste/search row, and nothing that grows with what it matched — that is
+/// the screen's region, above the start bar.
+class _QuickSwitchField extends ConsumerWidget {
+  const _QuickSwitchField({required this.controller, required this.onSubmitted});
+
+  final TextEditingController controller;
+  final VoidCallback onSubmitted;
 
   @override
-  ConsumerState<_QuickSwitchField> createState() => _QuickSwitchFieldState();
-}
-
-class _QuickSwitchFieldState extends ConsumerState<_QuickSwitchField> {
-  final _controller = TextEditingController();
-  String _query = '';
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  List<Activity> _suggestions(List<Activity> all) {
-    final q = _query.trim().toLowerCase();
-    final matches =
-        all.where((a) {
-          if (q.isEmpty) return true;
-          return a.name.toLowerCase().contains(q) ||
-              (a.externalId?.toLowerCase().contains(q) ?? false);
-        }).toList()..sort((a, b) {
-          final la = a.lastUsedAt, lb = b.lastUsedAt;
-          if (la != null && lb != null) return lb.compareTo(la);
-          if (la != null) return -1;
-          if (lb != null) return 1;
-          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        });
-    return matches.take(5).toList();
-  }
-
-  Future<void> _switch(String id) async {
-    await switchWithUndo(context, ref, id);
-    _controller.clear();
-    setState(() => _query = '');
-  }
-
-  Future<void> _create() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
-    _controller.clear();
-    setState(() => _query = '');
-    await showActivityEditor(context, ref, initialName: text, switchToOnCreate: true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
-    final all = ref.watch(activitiesStreamProvider).valueOrNull ?? const [];
-    final showSuggestions = _query.trim().isNotEmpty;
-    final suggestions = showSuggestions ? _suggestions(all) : const <Activity>[];
-
     return Container(
       decoration: BoxDecoration(
         color: t.surface,
         border: Border(top: BorderSide(color: t.line, width: 3)),
       ),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showSuggestions) ...[
-            for (final a in suggestions)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: NeoPressable(
-                  onTap: () => _switch(a.syncId),
-                  shadowOffset: 3,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  child: Row(
-                    children: [
-                      NeoSwatch(parseHexColor(a.color), size: 14),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          a.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: mono(context, weight: FontWeight.w700),
-                        ),
-                      ),
-                      if (a.externalId != null)
-                        Text(a.externalId!, style: mono(context, size: 11, color: t.muted)),
-                    ],
-                  ),
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: NeoPressable(
-                onTap: _create,
-                fill: t.brand,
-                shadowOffset: 3,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                child: Text(
-                  '+ create & switch: "${_controller.text.trim()}"',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mono(context, weight: FontWeight.w800, color: t.brandInk),
-                ),
-              ),
-            ),
-          ],
-          DottedField(
-            controller: _controller,
-            focusNode: ref.watch(quickSwitchFocusProvider),
-            hint: 'paste task id or search…',
-            onChanged: (v) => setState(() => _query = v),
-            onSubmitted: (_) {
-              if (suggestions.isNotEmpty) {
-                _switch(suggestions.first.syncId);
-              } else {
-                _create();
-              }
-            },
-          ),
-        ],
+      child: DottedField(
+        controller: controller,
+        focusNode: ref.watch(quickSwitchFocusProvider),
+        hint: 'paste task id or search…',
+        onSubmitted: (_) => onSubmitted(),
       ),
     );
   }
@@ -631,30 +711,35 @@ class _FirstRunEmpty extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'nothing tracked yet',
-              style: mono(context, size: 18, weight: FontWeight.w800),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'create your first activity to start tracking',
-              style: mono(context, color: t.muted),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            NeoButton(
-              label: '+ new activity',
-              primary: true,
-              onTap: () => showActivityEditor(context, ref, switchToOnCreate: true),
-            ),
-          ],
+    // Centred where it fits and scrolling where it does not: this is what the
+    // screen shows before the first stream emission, so it is laid out at every
+    // window size the app is ever opened at, short ones included.
+    return SingleChildScrollView(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'nothing tracked yet',
+                style: mono(context, size: 18, weight: FontWeight.w800),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'create your first activity to start tracking',
+                style: mono(context, color: t.muted),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              NeoButton(
+                label: '+ new activity',
+                primary: true,
+                onTap: () => showActivityEditor(context, ref, switchToOnCreate: true),
+              ),
+            ],
+          ),
         ),
       ),
     );

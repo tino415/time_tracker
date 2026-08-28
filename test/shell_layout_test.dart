@@ -14,6 +14,9 @@ import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
 import 'package:time_tracker/data/providers.dart';
 import 'package:time_tracker/data/sync_service.dart';
+import 'package:time_tracker/data/sync_store.dart';
+import 'package:time_tracker/data/sync_transport.dart';
+import 'package:time_tracker/domain/sync_protocol.dart';
 import 'package:time_tracker/phone/breakpoints.dart';
 import 'package:time_tracker/phone/phone_app.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
@@ -53,9 +56,33 @@ Future<void> _seedBookmarks(AppDatabase db) async {
 
 Offset _at(WidgetTester tester, Finder finder) => tester.getCenter(finder);
 
+/// Refuses everything it is pushed, which is how the longest status the app can
+/// print — `↑0 ↓0 · 1 superseded` — is produced without a server.
+class _RejectingTransport implements SyncTransport {
+  @override
+  Future<void> claimAccount() async {}
+
+  @override
+  Future<SyncResponse> exchange(SyncRequest request) async => SyncResponse(
+    cursor: '1',
+    rejected: [
+      for (final a in request.activities) a.syncId,
+      for (final c in request.changes) c.syncId,
+    ],
+  );
+}
+
 /// Boots with a sync server configured but no account yet — enough to prove
 /// the control is reachable and opens the setup sheet, without a real backend.
-Future<void> _bootWithSync(WidgetTester tester, {required Size viewport}) async {
+///
+/// Pass [service] for the authenticated shape instead: sync, its gear, and a
+/// status string once it has run.
+Future<AppDatabase> _bootWithSync(
+  WidgetTester tester, {
+  required Size viewport,
+  SyncService Function(AppDatabase db)? service,
+  Future<void> Function(AppDatabase db)? seed,
+}) async {
   tester.view.physicalSize = viewport;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
@@ -63,16 +90,19 @@ Future<void> _bootWithSync(WidgetTester tester, {required Size viewport}) async 
 
   final db = AppDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
+  if (seed != null) await seed(db);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         databaseProvider.overrideWithValue(db),
         syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+        if (service != null) syncServiceProvider.overrideWithValue(service(db)),
       ],
       child: const PhoneApp(),
     ),
   );
   await settle(tester);
+  return db;
 }
 
 /// Where the focused control sits, horizontally. Traversal order is a claim
@@ -193,13 +223,15 @@ void main() {
 
   testWidgets('the phone header keeps sync on the wordmark row', (tester) async {
     // The controls live in a Wrap, so a header with one item too many for the
-    // width does not overflow and does not throw — it quietly takes a second
-    // row, on the screen with the least height to spare. Nothing else would
-    // catch that, so it is asserted as geometry.
+    // width takes a second row rather than overflowing — and that is only true
+    // since the header started handing them a width. Measured against the
+    // infinity a Row gives a non-flexible child, the Wrap could not wrap at all,
+    // and this passed anyway because one button fits either way.
     //
-    // This is the un-authenticated shape: server configured, no account, so one
-    // button. The fullest header — sync, its gear and a status string — needs a
-    // live SyncService and is not covered here.
+    // Wrapping costs height on the screen with the least to spare, so the
+    // un-authenticated shape — server configured, no account, one button — is
+    // asserted to stay on the wordmark row. The fullest header is the test
+    // below.
     await _bootWithSync(tester, viewport: _phone);
 
     final wordmark = tester.getCenter(find.text('[track]'));
@@ -209,6 +241,31 @@ void main() {
       sync.dy,
       moreOrLessEquals(wordmark.dy, epsilon: 4),
       reason: 'the chrome wrapped onto a second row',
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a synced header keeps its status inside the window', (tester) async {
+    // The fullest the header gets: two buttons, a gear and a result string whose
+    // width comes from the sync rather than from a label. That string is what
+    // ran off the right edge, and it is the half of the header a user loses.
+    await _bootWithSync(
+      tester,
+      viewport: _phone,
+      seed: _seed,
+      service: (db) =>
+          SyncService(store: SyncStore(db), transport: _RejectingTransport(), backend: 'test'),
+    );
+
+    await tester.tap(find.text('⟳ SYNC'));
+    await settle(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getRect(find.textContaining('superseded')).right,
+      lessThanOrEqualTo(_phone.width - 16),
+      reason: 'the status is outside the header gutter',
     );
 
     await disposeApp(tester);
@@ -243,6 +300,32 @@ void main() {
     );
     expect(widest.width, lessThan(1600 * 0.5));
     expect(widest.center.dx, 800, reason: 'a sheet pinned to one edge reads wrong however narrow');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a long activity name does not overflow a sheet header', (tester) async {
+    // The sheet headers carry the running activity's name beside their label,
+    // and a name is as long as whoever named the task made it — a pasted ticket
+    // title, most of the time. Same defect as the app header, in a sheet.
+    await bootApp(
+      tester,
+      viewport: _phone,
+      seed: (db) async {
+        final activities = DriftActivityRepository(db);
+        final a = await activities.createActivity(
+          name: '869cqmt30: ETC a PR — retry pripojenie na relay',
+          color: '#4F8FEE',
+        );
+        await DriftChangeRepository(db).switchTo(a.syncId);
+      },
+    );
+
+    await tester.tap(inScreen(NowScreen, find.text('edit')));
+    await settle(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('STARTED AT'), findsOneWidget);
 
     await disposeApp(tester);
   });

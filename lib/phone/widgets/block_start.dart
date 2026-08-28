@@ -100,10 +100,18 @@ class _StartSheetState extends ConsumerState<_StartSheet> {
               Row(
                 children: [
                   NeoChip('Started at'),
-                  const Spacer(),
-                  Text(
-                    live.activities.map((a) => a.name).join('  +  '),
-                    style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+                  const SizedBox(width: 12),
+                  // Expanded rather than a Spacer: a pasted task name is as long
+                  // as whoever named the task made it, and a Row measures a
+                  // non-flexible child against infinity.
+                  Expanded(
+                    child: Text(
+                      live.activities.map((a) => a.name).join('  +  '),
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
+                    ),
                   ),
                 ],
               ),

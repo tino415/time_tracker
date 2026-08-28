@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two states share one layout: the name + running Chronometer when
+     `current` is a single activity, and `widget_empty` alone otherwise. The
+     provider toggles visibility rather than swapping layouts, so a mid-flight
+     RemoteViews update never leaves a stale Chronometer running under a
+     "nothing tracked" label. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="#FFFFFF"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone"/>
+
+        <Chronometer
+            android:id="@+id/widget_timer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="#CCFFFFFF"
+            android:visibility="gone"/>
+
+        <TextView
+            android:id="@+id/widget_empty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_nothing_tracked"
+            android:textSize="14sp"
+            android:textColor="#CCFFFFFF"
+            android:visibility="visible"/>
+    </LinearLayout>
+</FrameLayout>

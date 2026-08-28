@@ -44,6 +44,54 @@
             </intent-filter>
         </service>
 
+        <!-- Home-screen widget mirroring what CurrentStateCache last saw, with no
+             engine required to read it. APPWIDGET_UPDATE is the system's own
+             (30-minute-floor, hence useless here) refresh; CURRENT_CHANGED is
+             the real trigger, sent by CurrentStateCache.write. Harmless on a
+             watch — nothing there ever binds a phone home-screen widget. -->
+        <receiver
+            android:name=".CurrentActivityWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="com.otin.time_tracker.CURRENT_CHANGED"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/current_activity_widget_info"/>
+        </receiver>
+
+        <!-- Turns CurrentStateCache.write's broadcast into the one push a
+             complication data source is allowed to make: a request for the
+             system to re-bind CurrentActivityComplicationService. Package-scoped
+             (CurrentStateCache sets the package explicitly), so exported=false. -->
+        <receiver
+            android:name=".ComplicationUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.otin.time_tracker.CURRENT_CHANGED"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Wear OS watch-face complication showing the same thing the widget
+             shows on a phone. UPDATE_PERIOD_SECONDS is 0: refreshes are pushed
+             by ComplicationUpdateReceiver, not polled. Harmless on a phone —
+             nothing there ever queries a complication data source. -->
+        <service
+            android:name=".CurrentActivityComplicationService"
+            android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.watchface.complications.datasource.ACTION_COMPLICATION_UPDATE_REQUEST"/>
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.watchface.complications.datasource.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT"/>
+            <meta-data
+                android:name="androidx.wear.watchface.complications.datasource.UPDATE_PERIOD_SECONDS"
+                android:value="0"/>
+        </service>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

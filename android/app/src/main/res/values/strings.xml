@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- current is null both when nothing is tracked and when a block holds more
+         than one activity — the wire protocol declines to pick one rather than
+         guess, and the widget and complication inherit that by showing this
+         instead of a specific activity. -->
+    <string name="widget_nothing_tracked">Nothing tracked</string>
+</resources>

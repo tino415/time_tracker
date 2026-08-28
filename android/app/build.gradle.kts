@@ -24,7 +24,12 @@ android {
         applicationId = "com.otin.time_tracker"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Flutter's own default is 24. androidx.wear.watchface:watchface-complications-data-source
+        // declares 26 (Wear OS 2.0) and the manifest merger refuses to lower it —
+        // raising it here is a real, visible trade, not a suppression of that
+        // check: one unflavoured APK means this floor now applies to the phone
+        // build too, so Android 7.x devices (API 24-25) can no longer install.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -50,4 +55,8 @@ dependencies {
     // Lets the bridge `await()` the Play Services Tasks instead of nesting
     // callbacks.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    // Wear OS watch-face complication: ComplicationDataSourceService and
+    // TimeDifferenceComplicationText, the mechanism that lets the watch face
+    // render elapsed time itself instead of the app pushing one every tick.
+    implementation("androidx.wear.watchface:watchface-complications-data-source:1.2.1")
 }

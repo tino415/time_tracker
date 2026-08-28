@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database.dart';
+import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../domain/activity_tree.dart';
 import '../../format.dart';
@@ -21,6 +22,13 @@ class ActivitiesScreen extends ConsumerWidget {
     final t = neo(context);
     final tree = ref.watch(activityTreeProvider);
     final ids = tree.flattened();
+    final hasPointer = ref.watch(hasPointerProvider);
+    final catalogue = ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      itemCount: ids.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (_, i) => _ActivityRow(tree: tree, id: ids[i]),
+    );
 
     return Column(
       children: [
@@ -29,12 +37,13 @@ class ActivitiesScreen extends ConsumerWidget {
               ? Center(
                   child: Text('no activities yet', style: mono(context, color: t.muted)),
                 )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  itemCount: ids.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _ActivityRow(tree: tree, id: ids[i]),
-                ),
+              // Rows take a long-press for the row-actions sheet, which
+              // survives selection: `SelectionArea` claims mouse drags, and a
+              // long-press held still without moving loses the drag recognizer
+              // the arena, so the sheet still opens under a mouse.
+              : hasPointer
+              ? SelectionArea(child: catalogue)
+              : catalogue,
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),

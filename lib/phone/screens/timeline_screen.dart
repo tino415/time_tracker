@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
@@ -76,6 +77,7 @@ class _TimelineList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
     final blocks = ref.watch(blocksProvider);
+    final hasPointer = ref.watch(hasPointerProvider);
 
     if (blocks.isEmpty) {
       return Center(
@@ -108,7 +110,12 @@ class _TimelineList extends ConsumerWidget {
             ),
           );
         }
-        return ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), children: rows);
+        final list = ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 16), children: rows);
+        // Only the list, not `TimelineScreen` as a whole: the calendar this
+        // toggles to spends drags on retiming and long-press on splitting, so
+        // wrapping the screen instead of this widget would hand it a selection
+        // gesture on top of gestures it already needs for something else.
+        return hasPointer ? SelectionArea(child: list) : list;
       },
     );
   }

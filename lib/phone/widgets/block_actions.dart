@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database.dart';
+import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
@@ -32,6 +33,7 @@ Future<void> showBlockActions(
   bool canMerge = true,
 }) async {
   final t = neo(context);
+  final hasPointer = ref.read(hasPointerProvider);
   // This is the sheet that most needs the scroll control showNeoSheet gives
   // every one of them: change, tag, untag, split, retime, note and merge is
   // seven rows, past the 9/16 an unscrolled sheet is capped at.
@@ -46,140 +48,149 @@ Future<void> showBlockActions(
       ),
       padding: const EdgeInsets.all(14),
       child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            NeoChip('Block'),
-            const SizedBox(height: 12),
-            // The activities as a *list*, each row carrying its own actions.
-            //
-            // This replaced three verbs — change / tag / untag — that each opened
-            // a second sheet to ask which activity they applied to. On a
-            // multi-activity block that asked a question already answered in the
-            // user's head, about a list they could not see while answering.
-            // Acting on the row removes the question instead of improving it.
-            for (final a in block.activities)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _ActivityRow(
-                  block: block,
-                  activity: a,
-                  sheetContext: sheetContext,
-                  host: context,
-                  ref: ref,
+        child: _MaybeSelectable(
+          selectable: hasPointer,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              NeoChip('Block'),
+              const SizedBox(height: 12),
+              // The activities as a *list*, each row carrying its own actions.
+              //
+              // This replaced three verbs — change / tag / untag — that each opened
+              // a second sheet to ask which activity they applied to. On a
+              // multi-activity block that asked a question already answered in the
+              // user's head, about a list they could not see while answering.
+              // Acting on the row removes the question instead of improving it.
+              for (final a in block.activities)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ActivityRow(
+                    block: block,
+                    activity: a,
+                    sheetContext: sheetContext,
+                    host: context,
+                    ref: ref,
+                  ),
                 ),
-              ),
-            const SizedBox(height: 2),
-            NeoButton(
-              // Naming an unnamed block replaces the catch-all rather than
-              // joining it: "Unnamed + Email" would read as the forgot-to-switch
-              // case and halve the attribution.
-              label: isUnsortedSet(block.activities) ? '▸ what was this?' : '+ another activity',
-              primary: isUnsortedSet(block.activities),
-              onTap: () async {
-                Navigator.pop(sheetContext);
-                if (isUnsortedSet(block.activities)) {
-                  await assignBlockActivity(context, ref, block);
-                  return;
-                }
-                final id = await pickOrCreateActivity(
-                  context,
-                  ref,
-                  title: 'Tag with',
-                  exclude: block.activities.map((a) => a.syncId).toSet(),
-                );
-                if (id == null) return;
-                await ref
-                    .read(changeRepositoryProvider)
-                    .addActivityToChange(block.change.syncId, id);
-              },
-            ),
-            const SizedBox(height: 14),
-            // Resuming, not editing — so it sits apart from the verbs below,
-            // which all change the block you opened this from. Hidden on the
-            // running block: "track this again" for what is already tracking is
-            // a split, and re-picking it on Now is the gesture for that.
-            if (!block.isOpen && block.activities.isNotEmpty) ...[
+              const SizedBox(height: 2),
               NeoButton(
-                label: '▶ track this again',
+                // Naming an unnamed block replaces the catch-all rather than
+                // joining it: "Unnamed + Email" would read as the forgot-to-switch
+                // case and halve the attribution.
+                label: isUnsortedSet(block.activities) ? '▸ what was this?' : '+ another activity',
+                primary: isUnsortedSet(block.activities),
                 onTap: () async {
                   Navigator.pop(sheetContext);
-                  await ref.read(trackerControllerProvider).resumeBlock(block);
+                  if (isUnsortedSet(block.activities)) {
+                    await assignBlockActivity(context, ref, block);
+                    return;
+                  }
+                  final id = await pickOrCreateActivity(
+                    context,
+                    ref,
+                    title: 'Tag with',
+                    exclude: block.activities.map((a) => a.syncId).toSet(),
+                  );
+                  if (id == null) return;
+                  await ref
+                      .read(changeRepositoryProvider)
+                      .addActivityToChange(block.change.syncId, id);
                 },
               ),
-              const SizedBox(height: 10),
-            ],
-            // Hidden only when there is no legal cut: splitting needs a real
-            // half either side, so a block under two minutes has nowhere to go.
-            if (canSplit(block, DateTime.now())) ...[
+              const SizedBox(height: 14),
+              // Resuming, not editing — so it sits apart from the verbs below,
+              // which all change the block you opened this from. Hidden on the
+              // running block: "track this again" for what is already tracking is
+              // a split, and re-picking it on Now is the gesture for that.
+              if (!block.isOpen && block.activities.isNotEmpty) ...[
+                NeoButton(
+                  label: '▶ track this again',
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await ref.read(trackerControllerProvider).resumeBlock(block);
+                  },
+                ),
+                const SizedBox(height: 10),
+              ],
+              // Hidden only when there is no legal cut: splitting needs a real
+              // half either side, so a block under two minutes has nowhere to go.
+              if (canSplit(block, DateTime.now())) ...[
+                const SizedBox(height: 10),
+                NeoButton(
+                  // "at…", not "in half": the midpoint is the starting guess, not
+                  // the offer.
+                  label: '✂ split at…',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    promptSplit(context, ref, block);
+                  },
+                ),
+              ],
               const SizedBox(height: 10),
               NeoButton(
-                // "at…", not "in half": the midpoint is the starting guess, not
-                // the offer.
-                label: '✂ split at…',
+                label: 'edit start time',
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  promptSplit(context, ref, block);
+                  editBlockStart(context, ref, block);
                 },
               ),
-            ],
-            const SizedBox(height: 10),
-            NeoButton(
-              label: 'edit start time',
-              onTap: () {
-                Navigator.pop(sheetContext);
-                editBlockStart(context, ref, block);
-              },
-            ),
-            const SizedBox(height: 10),
-            NeoButton(
-              label: (block.comment == null || block.comment!.isEmpty)
-                  ? '✎ add a note'
-                  : '✎ edit note',
-              onTap: () {
-                Navigator.pop(sheetContext);
-                editBlockComment(context, ref, block);
-              },
-            ),
-            // Getting text back *out*. Names are routinely pasted in — the
-            // paste-to-create flow exists — so being unable to lift one into a
-            // commit message or a work tracker without retyping it is the
-            // asymmetry worth closing.
-            //
-            // An explicit action rather than selectable text: the block cards
-            // this sheet opens from are tap and long-press targets, and the
-            // calendar's are drag-to-retime, so a selection layer would take
-            // exactly the gestures the app already spends.
-            const SizedBox(height: 10),
-            NeoButton(
-              label: '⧉ copy name',
-              onTap: () {
-                Navigator.pop(sheetContext);
-                copyToClipboard(context, block.activities.map((a) => a.name).join(' + '), 'name');
-              },
-            ),
-            if (block.comment != null && block.comment!.isNotEmpty) ...[
               const SizedBox(height: 10),
               NeoButton(
-                label: '⧉ copy note',
+                label: (block.comment == null || block.comment!.isEmpty)
+                    ? '✎ add a note'
+                    : '✎ edit note',
                 onTap: () {
                   Navigator.pop(sheetContext);
-                  copyToClipboard(context, block.comment!, 'note');
+                  editBlockComment(context, ref, block);
                 },
               ),
-            ],
-            if (canMerge) ...[
+              // Getting text back *out*. Names are routinely pasted in — the
+              // paste-to-create flow exists — so being unable to lift one into a
+              // commit message or a work tracker without retyping it is the
+              // asymmetry worth closing.
+              //
+              // The button stays even where the sheet is also selectable
+              // (`_MaybeSelectable` above): picking out a long name precisely is
+              // worse than one click when the whole string is what you want.
+              // Without a mouse it stays the only way to get the text out at
+              // all — the block cards this sheet opens from are tap and
+              // long-press targets, and the calendar's are drag-to-retime, so a
+              // selection layer there would take exactly the gestures the app
+              // already spends.
               const SizedBox(height: 10),
               NeoButton(
-                label: 'merge into previous block',
-                onTap: () async {
+                label: '⧉ copy name',
+                onTap: () {
                   Navigator.pop(sheetContext);
-                  await ref.read(trackerControllerProvider).mergeIntoPrevious(block.change.syncId);
+                  copyToClipboard(context, block.activities.map((a) => a.name).join(' + '), 'name');
                 },
               ),
+              if (block.comment != null && block.comment!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                NeoButton(
+                  label: '⧉ copy note',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    copyToClipboard(context, block.comment!, 'note');
+                  },
+                ),
+              ],
+              if (canMerge) ...[
+                const SizedBox(height: 10),
+                NeoButton(
+                  label: 'merge into previous block',
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await ref
+                        .read(trackerControllerProvider)
+                        .mergeIntoPrevious(block.change.syncId);
+                  },
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     ),
@@ -306,6 +317,18 @@ class _RowAction extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A `SelectionArea` when [selectable], the bare [child] otherwise — the
+/// sheet's rows are plain buttons with no drag or long-press of their own, so
+/// there is nothing here for a mouse selection to compete with.
+class _MaybeSelectable extends StatelessWidget {
+  const _MaybeSelectable({required this.selectable, required this.child});
+  final bool selectable;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => selectable ? SelectionArea(child: child) : child;
 }
 
 /// Put [text] on the clipboard and say so.

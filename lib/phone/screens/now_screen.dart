@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/database.dart';
+import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
@@ -129,6 +130,14 @@ class _HeroCard extends ConsumerWidget {
     final tree = ref.watch(activityTreeProvider);
     final multi = acts.length > 1;
     final unnamed = isUnsortedSet(acts);
+    final hasPointer = ref.watch(hasPointerProvider);
+    final nameText = Text(
+      // No special case for the catch-all: its row is named for reading,
+      // so printing the activity's own name keeps this screen and the
+      // timeline saying the same word.
+      multi ? acts.map((a) => a.name).join('  +  ') : acts.first.name,
+      style: mono(context, size: 24, weight: FontWeight.w800, color: onFill, height: 1.1),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -187,13 +196,10 @@ class _HeroCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 14),
-          Text(
-            // No special case for the catch-all: its row is named for reading,
-            // so printing the activity's own name keeps this screen and the
-            // timeline saying the same word.
-            multi ? acts.map((a) => a.name).join('  +  ') : acts.first.name,
-            style: mono(context, size: 24, weight: FontWeight.w800, color: onFill, height: 1.1),
-          ),
+          // Selectable only with a mouse: the hero is otherwise a tap target
+          // (the buttons below it, the start-time row), and a drag has nothing
+          // to spend on a surface with no gestures of its own.
+          hasPointer ? SelectionArea(child: nameText) : nameText,
           const SizedBox(height: 10),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -295,6 +301,16 @@ class _CommentRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final comment = block.comment;
+    final noteText = Text(
+      comment == null || comment.isEmpty ? 'add a note…' : comment,
+      style: mono(
+        context,
+        size: 13,
+        weight: FontWeight.w700,
+        color: onFill,
+      ).copyWith(fontStyle: (comment == null || comment.isEmpty) ? FontStyle.italic : null),
+    );
+    final hasPointer = ref.watch(hasPointerProvider);
     return GestureDetector(
       onTap: () => editBlockComment(context, ref, block),
       behavior: HitTestBehavior.opaque,
@@ -305,17 +321,7 @@ class _CommentRow extends ConsumerWidget {
             '✎ ',
             style: mono(context, size: 13, weight: FontWeight.w800, color: onFill),
           ),
-          Expanded(
-            child: Text(
-              comment == null || comment.isEmpty ? 'add a note…' : comment,
-              style: mono(
-                context,
-                size: 13,
-                weight: FontWeight.w700,
-                color: onFill,
-              ).copyWith(fontStyle: (comment == null || comment.isEmpty) ? FontStyle.italic : null),
-            ),
-          ),
+          Expanded(child: hasPointer ? SelectionArea(child: noteText) : noteText),
         ],
       ),
     );

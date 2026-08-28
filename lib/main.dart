@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'data/auto_sync.dart';
+import 'data/pointer_probe.dart';
+import 'data/pointer_signal.dart';
 import 'data/wear_sync.dart';
 import 'phone/phone_app.dart';
 import 'watch/watch_app.dart';
@@ -42,9 +44,13 @@ void main() async {
   }
 
   final isWatch = await _detectIsWatch();
+  final hasPointer = probeHasPointer();
   runApp(
     ProviderScope(
-      overrides: [isWatchProvider.overrideWithValue(isWatch)],
+      overrides: [
+        isWatchProvider.overrideWithValue(isWatch),
+        hasPointerProvider.overrideWithValue(hasPointer),
+      ],
       child: TimeTrackerRoot(isWatch: isWatch),
     ),
   );

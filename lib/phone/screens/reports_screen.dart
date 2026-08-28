@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../build_info.dart';
+import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../data/sync_service.dart';
 import '../../domain/activity_tree.dart';
@@ -95,6 +96,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final t = neo(context);
     final blocks = ref.watch(blocksProvider);
     final tree = ref.watch(activityTreeProvider);
+    final hasPointer = ref.watch(hasPointerProvider);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -154,7 +156,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             style: mono(context, color: t.muted),
           )
         else
-          ..._rows(tree, totals, roots, max: maxRoot, depth: 0),
+          _categoryRows(hasPointer, tree, totals, roots, max: maxRoot, depth: 0),
         const SizedBox(height: 18),
         NeoButton(
           label: '↧ export csv · all history',
@@ -187,6 +189,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           dayWeekStart.difference(thisWeekStart).inDays ~/ 7;
     }
     ref.read(reportModeProvider.notifier).state = toDayMode;
+  }
+
+  /// The rows built by [_rows], selectable as one region when [hasPointer] —
+  /// the rows are `NeoPressable`s (tap to drill in), and a mouse drag has
+  /// nothing to spend against a tap.
+  Widget _categoryRows(
+    bool hasPointer,
+    ActivityTree tree,
+    ReportTotals totals,
+    List<String> ids, {
+    required Duration max,
+    required int depth,
+  }) {
+    final rows = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _rows(tree, totals, ids, max: max, depth: depth),
+    );
+    return hasPointer ? SelectionArea(child: rows) : rows;
   }
 
   /// One level of the drill-down: a bar per id in [ids], and — under any that is

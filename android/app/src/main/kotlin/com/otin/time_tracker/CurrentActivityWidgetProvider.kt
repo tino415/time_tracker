@@ -28,7 +28,13 @@ class CurrentActivityWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action != CurrentStateCache.ACTION_CHANGED) return
-        val manager = AppWidgetManager.getInstance(context)
+        // Wear OS has no app-widget host, so there is no AppWidgetManager to
+        // hand out — and this receiver still runs there, because the broadcast
+        // is package-scoped and one APK serves both form factors. It arrives in
+        // the watch app's own process, which an exception out of onReceive would
+        // take down with it: the app writes the cache on its first stream tick,
+        // so the crash landed one frame after launch.
+        val manager = AppWidgetManager.getInstance(context) ?: return
         val ids = manager.getAppWidgetIds(ComponentName(context, CurrentActivityWidgetProvider::class.java))
         onUpdate(context, manager, ids)
     }

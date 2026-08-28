@@ -47,8 +47,10 @@
         <!-- Home-screen widget mirroring what CurrentStateCache last saw, with no
              engine required to read it. APPWIDGET_UPDATE is the system's own
              (30-minute-floor, hence useless here) refresh; CURRENT_CHANGED is
-             the real trigger, sent by CurrentStateCache.write. Harmless on a
-             watch — nothing there ever binds a phone home-screen widget. -->
+             the real trigger, sent by CurrentStateCache.write. That broadcast is
+             package-scoped, so on a watch this receiver runs too — see
+             CurrentActivityWidgetProvider.onReceive, which returns there rather
+             than asking for an AppWidgetManager Wear OS does not have. -->
         <receiver
             android:name=".CurrentActivityWidgetProvider"
             android:exported="true">

@@ -213,10 +213,16 @@ async function handleSync(request, env, account) {
     .all();
 
   const rows = [...(outActivities.results ?? []), ...(outChanges.results ?? [])];
-  // The new cursor is the highest seq actually *sent*. Advancing past a row that
-  // was truncated by the page limit would skip it permanently; leaving the
-  // cursor short only costs a re-delivery.
-  const nextCursor = rows.length ? Math.max(...rows.map((r) => r.seq)) : cursor;
+  // The cursor may only advance to where *both* lists are complete. They page
+  // independently, so the highest seq sent can belong to the list that fitted
+  // while the other was cut off at the limit — and moving past a row that was
+  // truncated away skips it permanently, because the cursor only goes forward.
+  // Stopping short of one costs a re-delivery, which clients adopt idempotently.
+  const lastSeqIfTruncated = ({ results }) =>
+    (results ?? []).length === MAX_PAGE ? results[results.length - 1].seq : Infinity;
+  const complete = Math.min(lastSeqIfTruncated(outActivities), lastSeqIfTruncated(outChanges));
+  const highest = rows.length ? Math.max(...rows.map((r) => r.seq)) : cursor;
+  const nextCursor = Math.min(highest, complete);
 
   return json({
     cursor: String(nextCursor),

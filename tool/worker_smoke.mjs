@@ -212,6 +212,35 @@ try {
   const otherCsv = await fetch(`${ORIGIN}/export.csv?token=${OTHER_TOKEN}`);
   check('export is scoped to its account', (await otherCsv.text()).trim().split('\n').length === 1);
 
+  // --- a fresh device pulls the whole history ------------------------------
+  // The flow after a reinstall: an empty client walks the order from zero.
+  // Activities and changes page independently, so a cursor taken across both
+  // can land past changes this page truncated away — and nothing ever asks for
+  // them again, because the cursor only moves forward.
+  const BULK_TOKEN = 'smoke-test-token-cccccccccccc';
+  await claim(BULK_TOKEN);
+
+  const bulk = Array.from({ length: 600 }, (_, i) => ({
+    syncId: `bulk-${i}`,
+    changedAt: start + i * 60000,
+    version: 1,
+    activityIds: [],
+  }));
+  await sync({ cursor: null, activities: [activity('bulk-a', 'Bulk', 1)], changes: bulk }, BULK_TOKEN);
+  // Touched after all of them, so its seq sits past every change — which is
+  // what ordinary use does, each use rewriting `last_used_at`.
+  await sync({ cursor: null, activities: [activity('bulk-a', 'Bulk', 2)] }, BULK_TOKEN);
+
+  const seen = new Set();
+  let pullCursor = null;
+  for (let i = 0; i < 10; i++) {
+    const page = await (await sync({ cursor: pullCursor }, BULK_TOKEN)).json();
+    for (const c of page.changes ?? []) seen.add(c.syncId);
+    if (page.cursor === pullCursor) break;
+    pullCursor = page.cursor;
+  }
+  check('a fresh device pulls every change, not just the first page', seen.size === 600, `${seen.size}/600`);
+
   // --- unknown routes ------------------------------------------------------
   check('unknown route is 404', (await fetch(`${ORIGIN}/nope`, {
     headers: { authorization: `Bearer ${TOKEN}` },

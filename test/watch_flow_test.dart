@@ -3,6 +3,7 @@
 // that is the whole reason this shell exists — so these tests are as much about
 // "does it fit" as "does it work".
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -39,6 +40,72 @@ Future<void> tapTile(WidgetTester tester, Finder finder) async {
   await tester.tap(finder);
   await settle(tester);
 }
+
+/// Swipe [dx] across the shell — negative is right-to-left.
+///
+/// `tester.drag` cannot express this. With the default slop the recognizer
+/// swallows the first `kTouchSlop` (18px) before it reports any delta, so the
+/// gesture arrives a third short of the distance the shell is measuring.
+/// Overcoming the slop in a move of its own, then dragging, delivers exactly
+/// [dx] — and gives the horizontal recognizer a clean win in the arena.
+Future<void> swipe(WidgetTester tester, double dx) async {
+  final gesture = await tester.startGesture(shellCentre(tester));
+  await tester.pump();
+  final lead = dx.isNegative ? -(kTouchSlop + 1) : (kTouchSlop + 1);
+  await gesture.moveBy(Offset(lead, 0)); // accepted here
+  await tester.pump();
+  await gesture.moveBy(Offset(dx - lead, 0)); // reported in full
+  await tester.pump();
+  await gesture.up();
+  await settle(tester);
+}
+
+/// The same travel, spread over enough time to stay under the fling gate.
+Future<void> slowSwipe(WidgetTester tester, double dx) async {
+  const step = Duration(milliseconds: 50);
+  final gesture = await tester.startGesture(shellCentre(tester));
+  await tester.pump(step);
+  final lead = dx.isNegative ? -(kTouchSlop + 1) : (kTouchSlop + 1);
+  await gesture.moveBy(Offset(lead, 0));
+  await tester.pump(step);
+  for (var i = 0; i < 4; i++) {
+    await gesture.moveBy(Offset((dx - lead) / 4, 0));
+    await tester.pump(step);
+  }
+  await gesture.up();
+  await settle(tester);
+}
+
+Offset shellCentre(WidgetTester tester) =>
+    tester.getCenter(find.byKey(const ValueKey('watch-shell')));
+
+Future<void> openMenu(WidgetTester tester) => swipe(tester, -80);
+
+Future<void> openStartTime(WidgetTester tester) async {
+  await openMenu(tester);
+  await tester.tap(find.byKey(const ValueKey('menu-edit-start')));
+  await settle(tester);
+}
+
+Future<void> openSwap(WidgetTester tester) async {
+  await openMenu(tester);
+  await tester.tap(find.byKey(const ValueKey('menu-swap')));
+  await settle(tester);
+}
+
+/// Whether a back press would leave the app rather than unwind a pane.
+///
+/// By predicate and scoped to the shell: `find.byType` matches nothing for a
+/// generic widget class, and this must read the shell's own [PopScope] rather
+/// than whatever the app scaffolding wraps around it.
+bool backWouldExit(WidgetTester tester) => tester
+    .widget<PopScope>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('watch-shell')),
+        matching: find.byWidgetPredicate((w) => w is PopScope),
+      ),
+    )
+    .canPop;
 
 Future<AppDatabase> pumpWatch(
   WidgetTester tester,
@@ -321,34 +388,262 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, -120));
     await settle(tester);
     expect(tester.takeException(), isNull);
+    // And the shell's horizontal drag must not have taken the vertical one.
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsNothing);
 
     await disposeApp(tester);
   });
 
-  testWidgets('tapping the hero with a block running enters edit mode', (tester) async {
+  testWidgets('a right-to-left swipe opens the block menu', (tester) async {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
     await tapTile(tester, tile(deepWorkId));
 
-    await tester.tap(find.byKey(const ValueKey('hero')));
-    await settle(tester);
+    await openMenu(tester);
 
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsOneWidget);
+    expect(find.byKey(const ValueKey('menu-swap')), findsOneWidget);
+    // A pane, not an overlay: the switch list is gone while the menu is up.
+    expect(tile(deepWorkId), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the menu does not open with nothing tracked', (tester) async {
+    // Both its actions edit the running block, and an empty timeline has none.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    await openMenu(tester);
+
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsNothing);
+    expect(find.byKey(const ValueKey('menu-hint')), findsNothing);
+    expect(tile(deepWorkId), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a short slow swipe does not navigate', (tester) async {
+    // Under the distance gate and under the fling gate at once — a thumb
+    // resting across the glass on the way to a tile.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await slowSwipe(tester, -30);
+
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsNothing);
+    expect(tile(emailId), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a tap that drifts sideways still commits a tile', (tester) async {
+    // The gesture a wrist actually makes. If the shell's horizontal drag took
+    // the arena on any lateral movement, the tiles would stop working.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    for (var i = 0; i < 2; i++) {
+      final gesture = await tester.startGesture(tester.getCenter(tile(deepWorkId)));
+      await tester.pump();
+      await gesture.moveBy(const Offset(6, 0));
+      await tester.pump();
+      await gesture.up();
+      await settle(tester);
+    }
+
+    expect(await DriftChangeRepository(db).loadChanges(), hasLength(1));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the hint appears only when there is a block to edit', (tester) async {
+    // A swipe is invisible; the caret is the only thing on screen saying the
+    // menu is there.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    expect(find.byKey(const ValueKey('menu-hint')), findsNothing);
+
+    await tapTile(tester, tile(deepWorkId));
+
+    expect(find.byKey(const ValueKey('menu-hint')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the two menu options lead to their own screens', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await openStartTime(tester);
     for (final m in [-15, -5, -1, 1, 5, 15]) {
       expect(find.byKey(ValueKey('nudge-$m')), findsOneWidget, reason: 'nudge $m missing');
     }
-    // Deep work is running, so Email is what there is to re-point onto.
-    expect(find.byKey(ValueKey('repoint-$emailId')), findsOneWidget);
+    expect(find.textContaining('started'), findsOneWidget);
+    // Splitting the panel is the point: swapping is the other screen now.
+    expect(find.byKey(ValueKey('repoint-$emailId')), findsNothing);
 
-    // The done control sits below the fold on a 227px screen, and far enough
-    // down that the sliver has not even built it yet — ensureVisible needs the
-    // element to exist first, so this drags the list the way a thumb would.
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await swipe(tester, 80);
+    await tester.tap(find.byKey(const ValueKey('menu-swap')));
     await settle(tester);
-    await tester.tap(find.byKey(const ValueKey('edit-done')));
+
+    expect(find.byKey(ValueKey('repoint-$emailId')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nudge--5')), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('swap pins what is running above what it can become', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await openSwap(tester);
+
+    final pinned = find.byKey(const ValueKey('swap-current'));
+    final candidate = find.byKey(ValueKey('repoint-$emailId'));
+    expect(pinned, findsOneWidget);
+    expect(candidate, findsOneWidget);
+    // Swapping to what is already running would be a no-op the tap would have
+    // to be told is a no-op.
+    expect(find.byKey(ValueKey('repoint-$deepWorkId')), findsNothing);
+
+    expect(tester.getRect(pinned).bottom, lessThan(tester.getRect(candidate).top));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a committed swap returns home', (tester) async {
+    // Staying would reshuffle the rows under a finger still on the glass: the
+    // pinned tile and the candidate list both re-derive from what is running.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await openSwap(tester);
+    await tapTile(tester, find.byKey(ValueKey('repoint-$emailId')));
+
+    expect(find.byKey(const ValueKey('swap-current')), findsNothing);
+    expect(tile(deepWorkId), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a left-to-right swipe goes back one level at a time', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await openStartTime(tester);
+    await swipe(tester, 80);
+
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsOneWidget);
+    expect(find.byKey(const ValueKey('nudge--5')), findsNothing);
+
+    await swipe(tester, 80);
+
+    expect(tile(deepWorkId), findsOneWidget);
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a left-to-right swipe at home does nothing', (tester) async {
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await swipe(tester, 80);
+
+    expect(tile(emailId), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the physical back unwinds one level and only exits at home', (tester) async {
+    // The watch has a hardware button, and it must not drop out of the app from
+    // three screens in.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await openSwap(tester);
+    expect(backWouldExit(tester), isFalse);
+
+    await tester.binding.handlePopRoute();
+    await settle(tester);
+    expect(find.byKey(const ValueKey('menu-swap')), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await settle(tester);
+    expect(tile(deepWorkId), findsOneWidget);
+    expect(backWouldExit(tester), isTrue);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the block ending unwinds the whole stack', (tester) async {
+    // A one-level pop would land on a menu with nothing left to act on, and the
+    // swap pane names the running block from activities.first.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await openStartTime(tester);
+
+    final changes = DriftChangeRepository(db);
+    for (final c in await changes.loadChanges()) {
+      await changes.deleteChange(c.syncId);
+    }
     await settle(tester);
 
     expect(find.byKey(const ValueKey('nudge--5')), findsNothing);
+    expect(find.byKey(const ValueKey('menu-swap')), findsNothing);
+    expect(find.text('nothing tracked'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('arming does not survive leaving the screen it was started on', (tester) async {
+    // Otherwise a tile armed, navigated away from and returned to inside the
+    // four-second window commits on a single tap.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+    final changes = DriftChangeRepository(db);
+    final changeId = (await changes.loadChanges()).single.syncId;
+
+    await openSwap(tester);
+    await tester.tap(find.byKey(ValueKey('repoint-$emailId')));
+    await settle(tester);
+    expect(find.text('tap again'), findsOneWidget);
+
+    await swipe(tester, 80);
+    await tester.tap(find.byKey(const ValueKey('menu-swap')));
+    await settle(tester);
+
+    expect(find.text('tap again'), findsNothing);
+    await tester.tap(find.byKey(ValueKey('repoint-$emailId')));
+    await settle(tester);
+    expect(await changes.activityIdsForChange(changeId), [deepWorkId]);
 
     await disposeApp(tester);
   });
@@ -361,8 +656,7 @@ void main() {
     final changes = DriftChangeRepository(db);
     final before = (await changes.loadChanges()).single;
 
-    await tester.tap(find.byKey(const ValueKey('hero')));
-    await settle(tester);
+    await openStartTime(tester);
     await tester.tap(find.byKey(const ValueKey('nudge--5')));
     await settle(tester);
 
@@ -378,7 +672,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the hero follows the nudge, which is what makes no local preview state safe', (
+  testWidgets('the clock follows the nudge, which is what makes no local preview state safe', (
     tester,
   ) async {
     final bridge = FakeWearBridge();
@@ -386,16 +680,16 @@ void main() {
     await pumpWatch(tester, bridge, seed: seedBookmarks);
     await tapTile(tester, tile(deepWorkId));
 
-    await tester.tap(find.byKey(const ValueKey('hero')));
-    await settle(tester);
+    await openStartTime(tester);
     final before = (tester.widget<Text>(find.textContaining(':').first)).data;
 
     await tester.tap(find.byKey(const ValueKey('nudge--5')));
     await settle(tester);
     final after = (tester.widget<Text>(find.textContaining(':').first)).data;
 
-    // If the hero were reading a locally-held preview instead of the database,
-    // a tap that only writes and relays would leave the displayed clock alone.
+    // If the clock were reading a locally-held preview instead of the database,
+    // a tap that only writes and relays would leave it alone. It is also why
+    // this screen needs no save control.
     expect(after, isNot(before));
 
     await disposeApp(tester);
@@ -420,8 +714,7 @@ void main() {
     final changes = DriftChangeRepository(db);
     final before = (await changes.loadChanges()).single;
 
-    await tester.tap(find.byKey(const ValueKey('hero')));
-    await settle(tester);
+    await openStartTime(tester);
 
     final nudge = find.byKey(const ValueKey('nudge--1'));
     for (var i = 0; i < 5; i++) {
@@ -450,12 +743,8 @@ void main() {
     final changes = DriftChangeRepository(db);
     final changeId = (await changes.loadChanges()).single.syncId;
 
-    await tester.tap(find.byKey(const ValueKey('hero')));
-    await settle(tester);
+    await openSwap(tester);
     final repoint = find.byKey(ValueKey('repoint-$emailId'));
-    // Below the fold on a 227px screen, the same as the done control.
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
-    await settle(tester);
 
     await tester.tap(repoint);
     await settle(tester);
@@ -474,25 +763,62 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('nothing overflows or gets clipped on the round screen in edit mode', (tester) async {
-    // Six nudge buttons in two rows is the tightest thing this screen has had
-    // to fit — the same curve that clipped the clock is where this fails too.
+  testWidgets('every screen reaches its own controls without scrolling', (tester) async {
+    // What splitting the panel bought. The old single panel put the re-point
+    // tiles and the done control so far below the fold that two tests had to
+    // drag 400px to reach them — this is the assertion that would have caught
+    // it, applied to each screen the split produced.
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
     await tapTile(tester, tile(deepWorkId));
 
-    await tester.tap(find.byKey(const ValueKey('hero')));
+    const margin = 227 * 0.07;
+    void expectInside(Finder finder, String what) {
+      final rect = tester.getRect(finder);
+      expect(rect.top, greaterThan(margin), reason: '$what clipped by the top curve');
+      expect(rect.left, greaterThan(0), reason: '$what clipped by the left curve');
+      expect(rect.right, lessThan(227), reason: '$what clipped by the right curve');
+      expect(rect.bottom, lessThan(227 - margin), reason: '$what clipped by the bottom curve');
+    }
+
+    await openMenu(tester);
+    expect(tester.takeException(), isNull);
+    expectInside(find.byKey(const ValueKey('menu-edit-start')), 'edit start time');
+    expectInside(find.byKey(const ValueKey('menu-swap')), 'swap current action');
+
+    await tester.tap(find.byKey(const ValueKey('menu-edit-start')));
     await settle(tester);
     expect(tester.takeException(), isNull);
-
-    const margin = 227 * 0.07;
+    // Six nudge buttons in two rows is the tightest thing this screen has had
+    // to fit — the same curve that clipped the clock is where this fails too.
     for (final m in [-15, -5, -1, 1, 5, 15]) {
-      final rect = tester.getRect(find.byKey(ValueKey('nudge-$m')));
-      expect(rect.top, greaterThan(margin), reason: 'nudge $m clipped by the top curve');
-      expect(rect.left, greaterThan(0), reason: 'nudge $m clipped by the left curve');
-      expect(rect.right, lessThan(227), reason: 'nudge $m clipped by the right curve');
-      expect(rect.bottom, lessThan(227 - margin), reason: 'nudge $m clipped by the bottom curve');
+      expectInside(find.byKey(ValueKey('nudge-$m')), 'nudge $m');
+    }
+
+    await swipe(tester, 80);
+    await tester.tap(find.byKey(const ValueKey('menu-swap')));
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+    expectInside(find.byKey(const ValueKey('swap-current')), 'the running activity');
+    expectInside(find.byKey(ValueKey('repoint-$emailId')), 'the first swap candidate');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the clock is never inside something that scrolls', (tester) async {
+    // It is the reason to glance at a watch. The home screen already guards
+    // this; the start-time screen shows the same clock and must too.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await openStartTime(tester);
+
+    final clock = find.textContaining(':').first;
+    for (final scrollable in [find.byType(ListView), find.byType(SingleChildScrollView)]) {
+      expect(find.descendant(of: scrollable, matching: clock), findsNothing);
     }
 
     await disposeApp(tester);

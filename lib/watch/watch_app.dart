@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -46,6 +47,25 @@ class WatchApp extends StatelessWidget {
 /// watch waiting.
 const _confirmWindow = Duration(seconds: 4);
 
+/// What fills the shell. One at a time, and only [_WatchPane.home] survives
+/// having nothing to track.
+enum _WatchPane { home, menu, editStart, swap }
+
+/// Where a left-to-right swipe lands from each pane. Home is the floor.
+_WatchPane _paneBehind(_WatchPane pane) => switch (pane) {
+  _WatchPane.home || _WatchPane.menu => _WatchPane.home,
+  _WatchPane.editStart || _WatchPane.swap => _WatchPane.menu,
+};
+
+/// How far across the screen a swipe must carry to navigate, as a fraction of
+/// the width — or, failing that, how fast it was moving when it lifted.
+///
+/// Distance *or* velocity, because a wrist flicks short and quick: a gesture
+/// people actually make often never travels the ~50px a distance gate alone
+/// would demand.
+const _swipeFraction = 0.22;
+const _swipeVelocity = 320.0;
+
 class _WatchHome extends ConsumerStatefulWidget {
   const _WatchHome();
 
@@ -57,11 +77,11 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
   String? _armed;
   Timer? _disarm;
 
-  /// Whether the hero has been tapped open into the start-time / re-point
-  /// panel. Only meaningful while a block is running — [build] treats it as
-  /// false once [currentBlockProvider] goes null, since there is nothing left
-  /// to edit.
-  bool _editing = false;
+  _WatchPane _pane = _WatchPane.home;
+
+  /// Travel of the swipe in progress. Accumulated rather than read at the end,
+  /// because a drag reports deltas and only the total says which way it went.
+  double _dragX = 0;
 
   /// Nudges run one at a time. See [_nudge] for why concurrent ones collapse.
   Future<void> _nudges = Future.value();
@@ -87,6 +107,22 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
     return false;
   }
 
+  /// Every pane change goes through here, so that arming cannot outlive the
+  /// screen it was started on: a tile armed, left behind and returned to inside
+  /// the confirm window would otherwise commit on a single tap.
+  void _show(_WatchPane pane) {
+    _disarm?.cancel();
+    setState(() {
+      _armed = null;
+      _pane = pane;
+    });
+  }
+
+  void _back() {
+    if (_pane == _WatchPane.home) return;
+    _show(_paneBehind(_pane));
+  }
+
   @override
   Widget build(BuildContext context) {
     final activities = ref.watch(activitiesStreamProvider).valueOrNull ?? const [];
@@ -101,16 +137,19 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
 
     final unnamedRunning = current != null && isUnsortedSet(current.activities);
 
-    // A block that stopped running while the panel was open (a switch relayed
-    // from the phone, say) leaves nothing to edit. Corrected after the frame,
-    // not inline: this is a build method, and current is still needed below to
-    // decide which body to lay out this same pass.
-    if (_editing && current == null) {
+    // Every pane but home edits the running block, and the swap pane names it
+    // from activities.first — so an empty set is as unusable as no block at all,
+    // and it happens: the timeline fuses three streams, and a new change can
+    // arrive before its join row does. Corrected after the frame, not inline:
+    // this is a build method, and current is still needed below to lay out this
+    // same pass. Past this point, a pane other than home means current is there.
+    final editable = current != null && current.activities.isNotEmpty;
+    if (_pane != _WatchPane.home && !editable) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _editing = false);
+        if (mounted) _show(_WatchPane.home);
       });
     }
-    final editing = _editing && current != null;
+    final pane = editable ? _pane : _WatchPane.home;
 
     // The display is a circle, so the usable area narrows towards the top and
     // bottom and the corners are cut entirely. Insets are a fraction of the
@@ -120,39 +159,104 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
     final sideInset = size.width * 0.10;
     final topInset = size.height * 0.09;
 
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(sideInset, topInset, sideInset, 0),
-        child: Column(
-          children: [
-            // Fixed, not scrolled. The elapsed clock is the reason to look at
-            // the watch at all, so it must not be something you can scroll away
-            // from — and at the top of a scroll view it sat exactly where a
-            // round screen cuts. Tapping it opens the correction panel below in
-            // its place; there is nothing to correct when nothing is running.
-            GestureDetector(
-              key: const ValueKey('hero'),
-              behavior: HitTestBehavior.opaque,
-              onTap: current == null ? null : () => setState(() => _editing = true),
-              child: _NowHero(current: current),
+    return PopScope(
+      // Wear routes its own dismiss gesture here as a pop, so this is what
+      // makes that gesture unwind one pane rather than leave the app — and at
+      // home, where there is nothing to unwind, it still leaves. The physical
+      // button takes the same path.
+      canPop: pane == _WatchPane.home,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: GestureDetector(
+        key: const ValueKey('watch-shell'),
+        behavior: HitTestBehavior.opaque,
+        // The default resets the recognizer's origin when the drag is accepted,
+        // swallowing the first kTouchSlop — a third of the distance gate here.
+        dragStartBehavior: DragStartBehavior.down,
+        onHorizontalDragStart: (_) => _dragX = 0,
+        onHorizontalDragUpdate: (d) => _dragX += d.delta.dx,
+        onHorizontalDragCancel: () => _dragX = 0,
+        onHorizontalDragEnd: (d) => _swipeSettled(d.primaryVelocity ?? 0, size.width, editable),
+        // Outside the padding, so a swipe starting in the side gutter counts.
+        child: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(sideInset, topInset, sideInset, 0),
+            child: Column(
+              children: [
+                // Fixed, not scrolled. The elapsed clock is the reason to look
+                // at the watch at all, so it must not be something you can
+                // scroll away from — and at the top of a scroll view it sat
+                // exactly where a round screen cuts.
+                _fixedTop(pane, current),
+                const SizedBox(height: 8),
+                Expanded(child: _body(pane, current, bookmarked, currentId, unnamedRunning)),
+              ],
             ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: editing
-                  ? _editPanel(current, bookmarked, currentId)
-                  : _switchList(unnamedRunning, bookmarked, currentId),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
+  void _swipeSettled(double velocity, double width, bool editable) {
+    final dx = _dragX;
+    _dragX = 0;
+
+    final far = dx.abs() >= width * _swipeFraction;
+    final flicked =
+        velocity.abs() >= _swipeVelocity && dx.abs() > kTouchSlop && velocity.sign == dx.sign;
+    if (!far && !flicked) return;
+
+    if (dx < 0) {
+      if (_pane == _WatchPane.home && editable) _show(_WatchPane.menu);
+    } else {
+      _back();
+    }
+  }
+
+  Widget _fixedTop(_WatchPane pane, Block? current) {
+    switch (pane) {
+      case _WatchPane.home:
+        return _NowHero(key: const ValueKey('hero'), current: current, menuHint: current != null);
+      case _WatchPane.menu:
+        return _NowHero(key: const ValueKey('hero'), current: current, menuHint: false);
+      case _WatchPane.editStart:
+        return _ElapsedClock(current!);
+      case _WatchPane.swap:
+        return _runningTile(current!);
+    }
+  }
+
+  Widget _body(
+    _WatchPane pane,
+    Block? current,
+    List<Activity> bookmarked,
+    String? currentId,
+    bool unnamedRunning,
+  ) {
+    switch (pane) {
+      case _WatchPane.home:
+        return _switchList(unnamedRunning, bookmarked, currentId);
+      case _WatchPane.menu:
+        return _menu();
+      case _WatchPane.editStart:
+        return _startTimeBody(current!);
+      case _WatchPane.swap:
+        return _swapBody(current!, bookmarked, currentId);
+    }
+  }
+
+  /// Bottom padding, not an inset: the last row has to be scrollable clear of
+  /// the curve rather than permanently short of it.
+  EdgeInsets get _bodyPadding => EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14);
+
   Widget _switchList(bool unnamedRunning, List<Activity> bookmarked, String? currentId) {
     return ListView(
-      // Bottom padding, not an inset: the last tile has to be scrollable clear
-      // of the curve rather than permanently short of it.
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14),
+      // Home is left and re-entered often now, and the list is long enough to
+      // scroll, so where it was scrolled to is worth keeping.
+      key: const PageStorageKey('switch-list'),
+      padding: _bodyPadding,
       children: [
         _ActivityTile(
           // Keyed by identity, not label, so a test can find the tile without
@@ -205,43 +309,73 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
     );
   }
 
-  /// Replaces [_switchList] while the hero is tapped open: nudge the running
-  /// block's start, or re-point what it tracks. Same list, same screen — this
-  /// is a mode of the one shell, not a route or a sheet.
-  Widget _editPanel(Block current, List<Activity> bookmarked, String? currentId) {
+  /// What can be done to the running block. Rows navigate rather than change
+  /// anything, so unlike the tiles they act on the first tap.
+  Widget _menu() {
+    return ListView(
+      padding: _bodyPadding,
+      children: [
+        _MenuRow(
+          key: const ValueKey('menu-edit-start'),
+          label: 'edit start time',
+          onTap: () => _show(_WatchPane.editStart),
+        ),
+        const SizedBox(height: 6),
+        _MenuRow(
+          key: const ValueKey('menu-swap'),
+          label: 'swap current action',
+          onTap: () => _show(_WatchPane.swap),
+        ),
+      ],
+    );
+  }
+
+  /// Nudge the running block's start. The clock above is fixed and reads the
+  /// database, so it is the preview.
+  Widget _startTimeBody(Block current) {
+    return ListView(
+      padding: _bodyPadding,
+      children: [
+        Text(
+          'started ${formatTimeOfDay(current.start)}',
+          textAlign: TextAlign.center,
+          style: mono(context, size: 11, weight: FontWeight.w700, color: neo(context).muted),
+        ),
+        const SizedBox(height: 8),
+        // Two rows of three, not one of six: the usable width after the
+        // shell's side insets is ~207px, so three across lands at ~65px each,
+        // above the 44px thumb target the tiles use. Six across would put the
+        // outer two under the curve.
+        _nudgeRow(current, const [-15, -5, -1]),
+        const SizedBox(height: 6),
+        _nudgeRow(current, const [1, 5, 15]),
+      ],
+    );
+  }
+
+  /// Re-point the running block: same boundary, same clock, a different name on
+  /// the time already accrued. What it is now is pinned above, so the list is
+  /// read as "instead of that".
+  Widget _swapBody(Block current, List<Activity> bookmarked, String? currentId) {
     final t = neo(context);
-    // Re-pointing to what is already running would be a no-op the tap would
-    // have to be told is a no-op — simpler to just not offer it, as the switch
-    // list already does for the same reason.
-    final repointable = [
+    // Swapping to what is already running would be a no-op the tap would have
+    // to be told is a no-op — simpler to just not offer it, as the switch list
+    // already does for the same reason.
+    final candidates = [
       for (final a in bookmarked)
         if (a.syncId != currentId) a,
     ];
 
     return ListView(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14),
+      padding: _bodyPadding,
       children: [
-        Text(
-          'started ${formatTimeOfDay(current.start)}',
-          textAlign: TextAlign.center,
-          style: mono(context, size: 11, weight: FontWeight.w700, color: t.muted),
-        ),
-        const SizedBox(height: 8),
-        // Two rows of three, not one of six: the usable width after the
-        // shell's side insets is ~207px, so three across lands at ~65px each,
-        // above the 44px thumb target the tiles below use. Six across would put
-        // the outer two under the curve.
-        _nudgeRow(current, const [-15, -5, -1]),
-        const SizedBox(height: 6),
-        _nudgeRow(current, const [1, 5, 15]),
-        const SizedBox(height: 12),
         Text(
           'this is actually',
           textAlign: TextAlign.center,
           style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted, spacing: 1),
         ),
         const SizedBox(height: 6),
-        for (final a in repointable) ...[
+        for (final a in candidates) ...[
           _ActivityTile(
             key: ValueKey('repoint-${a.syncId}'),
             name: a.name,
@@ -256,11 +390,15 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
               ref
                   .read(wearSyncProvider)
                   .requestAssign(changeSyncId: current.change.syncId, activityId: a.syncId);
+              // Leaving is not politeness: once it commits, the pinned tile and
+              // the list both re-derive, so staying would reshuffle the rows
+              // under a finger still on the glass.
+              _show(_WatchPane.home);
             },
           ),
           const SizedBox(height: 6),
         ],
-        if (repointable.isEmpty)
+        if (candidates.isEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
@@ -269,23 +407,28 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
               style: mono(context, size: 9, weight: FontWeight.w700, color: t.muted),
             ),
           ),
-        const SizedBox(height: 6),
-        NeoButton(
-          key: const ValueKey('edit-done'),
-          label: '← done',
-          shadowOffset: 3,
-          onTap: () => setState(() => _editing = false),
-        ),
       ],
+    );
+  }
+
+  /// What the swap list is swapping away from, in the fixed region so it cannot
+  /// be scrolled apart from the choices below it.
+  Widget _runningTile(Block current) {
+    return _ActivityTile(
+      key: const ValueKey('swap-current'),
+      name: current.activities.map((a) => a.name).join(' + '),
+      color: parseHexColor(current.activities.first.color),
+      selected: true,
+      onTap: null,
     );
   }
 
   /// One row of three start-time nudges.
   ///
   /// No confirm step, unlike the tiles: a nudge adjusts what is recorded rather
-  /// than rewriting it, and the hero above shows the result immediately. Nor is
+  /// than rewriting it, and the clock above shows the result immediately. Nor is
   /// there a save — the phone's sheet batches nudges into one write, but each
-  /// tap here commits, so the database is what the hero and the "started" line
+  /// tap here commits, so the database is what the clock and the "started" line
   /// are reading. That is also why the taps have to be queued rather than
   /// fired: see [_nudge].
   Widget _nudgeRow(Block current, List<int> deltas) {
@@ -340,8 +483,12 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
 /// readable at arm's length without focusing, with the activity name as a label
 /// beneath it rather than a heading above.
 class _NowHero extends StatelessWidget {
-  const _NowHero({required this.current});
+  const _NowHero({super.key, required this.current, required this.menuHint});
   final Block? current;
+
+  /// Show the caret that says there is a menu one swipe to the left. A swipe is
+  /// invisible; this is the only thing on screen that says it exists.
+  final bool menuHint;
 
   @override
   Widget build(BuildContext context) {
@@ -363,17 +510,7 @@ class _NowHero extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SecondTicker(
-          builder: (context, now) => FittedBox(
-            // Shrinks rather than wraps once the clock reaches hours — a
-            // three-part time is wider than a 227px screen at this size.
-            fit: BoxFit.scaleDown,
-            child: Text(
-              formatElapsedClock(block.duration(now)),
-              style: mono(context, size: 34, weight: FontWeight.w800, color: t.brand, height: 1),
-            ),
-          ),
-        ),
+        _ElapsedClock(block),
         const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -405,9 +542,47 @@ class _NowHero extends StatelessWidget {
                 ),
               ),
             ),
+            if (menuHint) ...[
+              const SizedBox(width: 4),
+              Text(
+                // Pointing right, because a right-to-left swipe brings the menu
+                // in from the right.
+                '›',
+                key: const ValueKey('menu-hint'),
+                style: mono(context, size: 11, weight: FontWeight.w800, color: t.muted),
+              ),
+            ],
           ],
         ),
       ],
+    );
+  }
+}
+
+/// How long the block has been running, ticking.
+///
+/// Shrinks rather than wraps once it reaches hours — a three-part time is wider
+/// than a 227px screen at this size.
+class _ElapsedClock extends StatelessWidget {
+  const _ElapsedClock(this.block);
+  final Block block;
+
+  @override
+  Widget build(BuildContext context) {
+    return SecondTicker(
+      builder: (context, now) => FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          formatElapsedClock(block.duration(now)),
+          style: mono(
+            context,
+            size: 34,
+            weight: FontWeight.w800,
+            color: neo(context).brand,
+            height: 1,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -428,6 +603,37 @@ class _NoBookmarksHint extends ConsumerWidget {
         reachable ? 'waiting for the phone…' : 'bookmark on the phone',
         textAlign: TextAlign.center,
         style: mono(context, size: 9, weight: FontWeight.w700, color: t.muted),
+      ),
+    );
+  }
+}
+
+/// One way further in. Shaped unlike [_ActivityTile] on purpose: a row that only
+/// navigates must not read like one that changes what is recorded.
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({super.key, required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return NeoPressable(
+      shadowOffset: 3,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+      onTap: onTap,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: mono(context, size: 12, weight: FontWeight.w800),
+            ),
+          ),
+          Text('›', style: mono(context, size: 12, weight: FontWeight.w800)),
+        ],
       ),
     );
   }

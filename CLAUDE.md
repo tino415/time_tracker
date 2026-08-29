@@ -12,3 +12,9 @@ correctly. You should not need to open the Justfile to run something.
 Keep it that way: if using a recipe requires knowing something the listing does
 not say, the fix is to improve that recipe's `[doc]` line, not to document it in
 README.md or here.
+
+## Wrokflow
+
+- we branch features from master
+- when feature is done, it is going for pr
+- merged to master

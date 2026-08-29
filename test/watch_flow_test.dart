@@ -3,7 +3,6 @@
 // that is the whole reason this shell exists — so these tests are as much about
 // "does it fit" as "does it work".
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -41,38 +40,40 @@ Future<void> tapTile(WidgetTester tester, Finder finder) async {
   await settle(tester);
 }
 
-/// Swipe [dx] across the shell — negative is right-to-left.
+/// Swipe [dx] across the shell over [over] — negative is right-to-left.
 ///
-/// `tester.drag` cannot express this. With the default slop the recognizer
-/// swallows the first `kTouchSlop` (18px) before it reports any delta, so the
-/// gesture arrives a third short of the distance the shell is measuring.
-/// Overcoming the slop in a move of its own, then dragging, delivers exactly
-/// [dx] — and gives the horizontal recognizer a clean win in the arena.
-Future<void> swipe(WidgetTester tester, double dx) async {
+/// The shell reads travel *and* lift-off velocity, so a swipe has to be moved
+/// the way a thumb moves: evenly, over stated time. Two things this gets right
+/// that the obvious spellings do not.
+///
+/// [over] is stamped on the pointer events, not merely pumped between them.
+/// Velocity comes from event timestamps, which default to zero however far the
+/// clock is advanced — unstamped, every swipe lifts at 0px/s and the fling gate
+/// goes untested.
+///
+/// And the travel is spread evenly rather than led by one jump clearing
+/// `kTouchSlop`. A big first move followed by small ones fits a decelerating
+/// curve, which for a short swipe reports a velocity that is far too low or
+/// outright the wrong sign. `DragStartBehavior.down` hands back the offsets
+/// banked before the recognizer was accepted, so an even drag still delivers
+/// exactly [dx].
+Future<void> swipe(
+  WidgetTester tester,
+  double dx, {
+  Duration over = const Duration(milliseconds: 100),
+}) async {
+  const steps = 8;
+  final step = Duration(microseconds: over.inMicroseconds ~/ steps);
   final gesture = await tester.startGesture(shellCentre(tester));
   await tester.pump();
-  final lead = dx.isNegative ? -(kTouchSlop + 1) : (kTouchSlop + 1);
-  await gesture.moveBy(Offset(lead, 0)); // accepted here
-  await tester.pump();
-  await gesture.moveBy(Offset(dx - lead, 0)); // reported in full
-  await tester.pump();
-  await gesture.up();
-  await settle(tester);
-}
 
-/// The same travel, spread over enough time to stay under the fling gate.
-Future<void> slowSwipe(WidgetTester tester, double dx) async {
-  const step = Duration(milliseconds: 50);
-  final gesture = await tester.startGesture(shellCentre(tester));
-  await tester.pump(step);
-  final lead = dx.isNegative ? -(kTouchSlop + 1) : (kTouchSlop + 1);
-  await gesture.moveBy(Offset(lead, 0));
-  await tester.pump(step);
-  for (var i = 0; i < 4; i++) {
-    await gesture.moveBy(Offset((dx - lead) / 4, 0));
+  var at = Duration.zero;
+  for (var i = 0; i < steps; i++) {
+    at += step;
+    await gesture.moveBy(Offset(dx / steps, 0), timeStamp: at);
     await tester.pump(step);
   }
-  await gesture.up();
+  await gesture.up(timeStamp: at);
   await settle(tester);
 }
 
@@ -425,18 +426,39 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('a short slow swipe does not navigate', (tester) async {
-    // Under the distance gate and under the fling gate at once — a thumb
-    // resting across the glass on the way to a tile.
+  testWidgets('a short swipe dawdles its way out of navigating', (tester) async {
+    // The same 40px the flick below navigates on, taken slowly: short of the
+    // distance gate, so only speed is left to carry it, and it has none. A
+    // thumb dragged across the glass on the way to a tile.
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
     await tapTile(tester, tile(deepWorkId));
 
-    await slowSwipe(tester, -30);
+    await swipe(tester, -40, over: const Duration(milliseconds: 200));
 
     expect(find.byKey(const ValueKey('menu-edit-start')), findsNothing);
     expect(tile(emailId), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a flick navigates only once it outruns what a tap can wander', (tester) async {
+    // Both of these are far short of the distance gate, so the fling gate is
+    // what decides them. A tap is rejected at kTouchSlop, which is about how
+    // far a thumb rolls coming off a tile — so the flick has to want it more
+    // than that, or the misfire the two-tap arming exists to catch becomes a
+    // navigation instead.
+    final bridge = FakeWearBridge();
+    addTearDown(bridge.dispose);
+    await pumpWatch(tester, bridge, seed: seedBookmarks);
+    await tapTile(tester, tile(deepWorkId));
+
+    await swipe(tester, -20, over: const Duration(milliseconds: 40));
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsNothing);
+
+    await swipe(tester, -40, over: const Duration(milliseconds: 60));
+    expect(find.byKey(const ValueKey('menu-edit-start')), findsOneWidget);
 
     await disposeApp(tester);
   });

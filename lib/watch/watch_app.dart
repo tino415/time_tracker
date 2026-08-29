@@ -66,6 +66,14 @@ _WatchPane _paneBehind(_WatchPane pane) => switch (pane) {
 const _swipeFraction = 0.22;
 const _swipeVelocity = 320.0;
 
+/// The travel a flick still has to clear, however fast it was going.
+///
+/// A tap is rejected once it wanders [kTouchSlop], so a thumb rolling off a tile
+/// covers about that much at speed. Gating the flick one pixel past it would
+/// turn exactly the misfire the two-tap arming exists to catch into a
+/// navigation instead.
+const _swipeFloor = 2 * kTouchSlop;
+
 class _WatchHome extends ConsumerStatefulWidget {
   const _WatchHome();
 
@@ -188,7 +196,7 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
                 // at the watch at all, so it must not be something you can
                 // scroll away from — and at the top of a scroll view it sat
                 // exactly where a round screen cuts.
-                _fixedTop(pane, current),
+                _fixedTop(pane, current, editable),
                 const SizedBox(height: 8),
                 Expanded(child: _body(pane, current, bookmarked, currentId, unnamedRunning)),
               ],
@@ -205,7 +213,7 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
 
     final far = dx.abs() >= width * _swipeFraction;
     final flicked =
-        velocity.abs() >= _swipeVelocity && dx.abs() > kTouchSlop && velocity.sign == dx.sign;
+        velocity.abs() >= _swipeVelocity && dx.abs() >= _swipeFloor && velocity.sign == dx.sign;
     if (!far && !flicked) return;
 
     if (dx < 0) {
@@ -215,10 +223,12 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
     }
   }
 
-  Widget _fixedTop(_WatchPane pane, Block? current) {
+  Widget _fixedTop(_WatchPane pane, Block? current, bool editable) {
     switch (pane) {
       case _WatchPane.home:
-        return _NowHero(key: const ValueKey('hero'), current: current, menuHint: current != null);
+        // The same condition the swipe is gated on, so the caret cannot promise
+        // a menu that will not open.
+        return _NowHero(key: const ValueKey('hero'), current: current, menuHint: editable);
       case _WatchPane.menu:
         return _NowHero(key: const ValueKey('hero'), current: current, menuHint: false);
       case _WatchPane.editStart:

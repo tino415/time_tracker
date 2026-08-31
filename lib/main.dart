@@ -84,7 +84,14 @@ class _TimeTrackerRootState extends ConsumerState<TimeTrackerRoot> with WidgetsB
 
     // Null unless a sync backend is configured. Same contract as the Wear
     // bridge: it must not delay the first frame, and its failures are inert.
-    ref.read(autoSyncProvider)?.start();
+    //
+    // Listened rather than read once, because "configured" is not knowable at
+    // the first frame: the token comes from a drift stream that has not emitted
+    // yet, and on the watch it arrives later still, over the Wear relay. A
+    // one-shot read here sees null every time and starts nothing, ever. The
+    // subscription is also what keeps the provider alive to be recomputed when
+    // the token does land; start() is idempotent, so a rebuild costs nothing.
+    ref.listenManual(autoSyncProvider, (_, service) => service?.start(), fireImmediately: true);
   }
 
   @override

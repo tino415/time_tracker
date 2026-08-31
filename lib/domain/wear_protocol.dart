@@ -252,48 +252,76 @@ class SwitchRequest extends WearMessage {
   }
 }
 
-/// Watch → phone: "the block I'm already running is actually [activityId]".
+/// Watch → phone: "the block I'm already running is actually [activityId], and
+/// my row for it is now at [version]".
 ///
-/// [changeSyncId] names the boundary already open, not a new one — this is the
-/// re-point `TrackerController.assignBlock` does, relayed, so it answers an
-/// unnamed block or corrects a mis-pointed one without touching its start.
+/// [changeSyncId] names the boundary already open, not a new one. A statement
+/// rather than an instruction, which is what makes it safe to replay: see
+/// [RetimeRequest] for why the version is on the wire.
 class AssignRequest extends WearMessage {
-  const AssignRequest({required this.changeSyncId, required this.activityId});
+  const AssignRequest({
+    required this.changeSyncId,
+    required this.activityId,
+    required this.version,
+  });
 
   static const kind = 'assign';
 
   final String changeSyncId;
   final String activityId;
 
+  /// The sender's row version *after* it made this edit. See [RetimeRequest].
+  final int version;
+
   @override
   String get type => kind;
 
   @override
-  Map<String, Object?> toPayload() => {'changeSyncId': changeSyncId, 'activityId': activityId};
+  Map<String, Object?> toPayload() => {
+    'changeSyncId': changeSyncId,
+    'activityId': activityId,
+    'version': version,
+  };
 
   static AssignRequest? fromPayload(Map<Object?, Object?> payload) {
     final changeSyncId = payload['changeSyncId'];
     final activityId = payload['activityId'];
+    final version = payload['version'];
     if (changeSyncId is! String || changeSyncId.isEmpty) return null;
     if (activityId is! String || activityId.isEmpty) return null;
-    return AssignRequest(changeSyncId: changeSyncId, activityId: activityId);
+    if (version is! int) return null;
+    return AssignRequest(changeSyncId: changeSyncId, activityId: activityId, version: version);
   }
 }
 
-/// Watch → phone: "the block I'm already running actually started at [at]".
+/// Watch → phone: "the block I'm already running started at [at], and my row
+/// for it is now at [version]".
 ///
-/// [at] is the desired instant, not the final one — both sides clamp it against
-/// the block's neighbours via `TrackerController.moveBoundary`, so what lands
-/// may differ from what was sent. [changeSyncId] is the boundary being retimed,
-/// the same idempotency [SwitchRequest] relies on: a relay delivered twice
-/// retimes the same row rather than drifting it twice.
+/// Read it as a statement of the sender's answer, not a request to compute one.
+/// [at] is what the sender actually landed on after its own clamping, so the
+/// receiver adopts it the way it adopts a row pulled from the sync server —
+/// version compared, value taken as-is, no re-clamping and no version bump.
+///
+/// That is the whole reason [version] is here. Applying a correction as a
+/// *local edit* bumps the row past whatever it was, so a stale one replayed
+/// from the outbox after a disconnect would outrank a newer edit made on the
+/// receiving side and win everywhere. Carrying the version makes the relay obey
+/// the same rule as the sync leg: strictly newer is adopted, a tie against
+/// unpushed local work is refused, and a duplicate delivery is a no-op.
+///
+/// A payload without a version is rejected rather than guessed at — an older
+/// peer's correction is ignored, which is the protocol's existing stance on
+/// anything it cannot read.
 class RetimeRequest extends WearMessage {
-  const RetimeRequest({required this.changeSyncId, required this.at});
+  const RetimeRequest({required this.changeSyncId, required this.at, required this.version});
 
   static const kind = 'retime';
 
   final String changeSyncId;
   final DateTime at;
+
+  /// The sender's row version *after* it made this edit.
+  final int version;
 
   @override
   String get type => kind;
@@ -303,14 +331,21 @@ class RetimeRequest extends WearMessage {
     'changeSyncId': changeSyncId,
     // Epoch millis, matching how the boundary is stored.
     'at': at.millisecondsSinceEpoch,
+    'version': version,
   };
 
   static RetimeRequest? fromPayload(Map<Object?, Object?> payload) {
     final changeSyncId = payload['changeSyncId'];
     final at = payload['at'];
+    final version = payload['version'];
     if (changeSyncId is! String || changeSyncId.isEmpty) return null;
     if (at is! int) return null;
-    return RetimeRequest(changeSyncId: changeSyncId, at: DateTime.fromMillisecondsSinceEpoch(at));
+    if (version is! int) return null;
+    return RetimeRequest(
+      changeSyncId: changeSyncId,
+      at: DateTime.fromMillisecondsSinceEpoch(at),
+      version: version,
+    );
   }
 }
 

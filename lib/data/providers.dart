@@ -7,6 +7,7 @@ import 'drift_repositories.dart';
 import 'repositories.dart';
 import 'storage_probe.dart';
 import 'storage_status.dart';
+import 'wear_outbox.dart';
 
 /// Where the local database lives, and whether the browser has promised to keep
 /// it. Resolved once at startup; the app works regardless of the answer, so this
@@ -25,6 +26,11 @@ final activityRepositoryProvider = Provider<ActivityRepository>((ref) {
 
 final changeRepositoryProvider = Provider<ChangeRepository>((ref) {
   return DriftChangeRepository(ref.watch(databaseProvider));
+});
+
+/// Relay messages waiting for the peer to be reachable again.
+final wearOutboxProvider = Provider<WearOutboxStore>((ref) {
+  return WearOutboxStore(ref.watch(databaseProvider));
 });
 
 /// Live activity catalogue (non-tombstoned, name order).

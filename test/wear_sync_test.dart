@@ -3,11 +3,13 @@
 // seam: everything either side *decides* is exercised here, and only the
 // delivery itself is left to the manual pass.
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
 import 'package:time_tracker/data/sync_store.dart';
+import 'package:time_tracker/data/wear_outbox.dart';
 import 'package:time_tracker/data/wear_sync.dart';
 import 'package:time_tracker/domain/unsorted.dart';
 import 'package:time_tracker/domain/wear_protocol.dart';
@@ -37,6 +39,7 @@ void main() {
     activities: activities,
     changes: changes,
     syncStore: SyncStore(db),
+    outbox: WearOutboxStore(db),
     isWatch: isWatch,
   );
 
@@ -143,7 +146,9 @@ void main() {
       final service = serviceFor(isWatch: false);
       await service.start();
 
-      await bridge.receive(AssignRequest(changeSyncId: change.syncId, activityId: b.syncId));
+      await bridge.receive(
+        AssignRequest(changeSyncId: change.syncId, activityId: b.syncId, version: 2),
+      );
 
       expect(await changes.activityIdsForChange(change.syncId), [b.syncId]);
       service.dispose();
@@ -159,7 +164,7 @@ void main() {
       await service.start();
 
       final at = DateTime.fromMillisecondsSinceEpoch(1770000300000);
-      await bridge.receive(RetimeRequest(changeSyncId: change.syncId, at: at));
+      await bridge.receive(RetimeRequest(changeSyncId: change.syncId, at: at, version: 2));
 
       expect((await changes.loadChanges()).single.changedAt, at);
       service.dispose();
@@ -185,6 +190,7 @@ void main() {
         RetimeRequest(
           changeSyncId: second.syncId,
           at: DateTime.fromMillisecondsSinceEpoch(1769999000000),
+          version: 2,
         ),
       );
 
@@ -202,7 +208,7 @@ void main() {
       final service = serviceFor(isWatch: false);
       await service.start();
 
-      final request = AssignRequest(changeSyncId: change.syncId, activityId: b.syncId);
+      final request = AssignRequest(changeSyncId: change.syncId, activityId: b.syncId, version: 2);
       await bridge.receive(request);
       await bridge.receive(request);
 
@@ -224,6 +230,7 @@ void main() {
       final request = RetimeRequest(
         changeSyncId: change.syncId,
         at: DateTime.fromMillisecondsSinceEpoch(1770000300000),
+        version: 2,
       );
       await bridge.receive(request);
       await bridge.receive(request);
@@ -240,7 +247,9 @@ void main() {
       final service = serviceFor(isWatch: false);
       await service.start();
 
-      await bridge.receive(AssignRequest(changeSyncId: 'missing', activityId: a.syncId));
+      await bridge.receive(
+        AssignRequest(changeSyncId: 'missing', activityId: a.syncId, version: 2),
+      );
 
       expect(await changes.loadChanges(), isEmpty);
       service.dispose();
@@ -254,6 +263,7 @@ void main() {
         RetimeRequest(
           changeSyncId: 'missing',
           at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+          version: 2,
         ),
       );
 
@@ -785,6 +795,268 @@ void main() {
       await bridge.pump();
 
       expect((await activities.loadActivities()).single.syncId, 'a');
+      service.dispose();
+    });
+  });
+
+  // What happens to a tap made out of range. Before the outbox these were
+  // written locally and then dropped on the floor: `send` reported them
+  // undelivered and every caller ignored the answer. On a pair with no sync
+  // account — which is every pair until someone makes one — the relay is the
+  // only route between the two databases, so dropped meant lost.
+  group('watch side, out of range', () {
+    late WearOutboxStore outbox;
+
+    setUp(() => outbox = WearOutboxStore(db));
+
+    /// A started watch service with the peer already gone.
+    Future<WearSyncService> unreachableWatch() async {
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.pump();
+      bridge.deliverable = false;
+      bridge.sent.clear();
+      return service;
+    }
+
+    test('a switch made with nobody listening is parked, not lost', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final service = await unreachableWatch();
+
+      await service.requestSwitch(a.syncId);
+
+      expect(bridge.sent, isEmpty, reason: 'there was nobody to send it to');
+      expect(await outbox.pending(), hasLength(1));
+      // And it is already true locally — the watch's own screen was never
+      // waiting on the phone.
+      expect((await changes.loadChanges()).single.syncId, isNotEmpty);
+      service.dispose();
+    });
+
+    test('the backlog goes out when the peer comes back', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final service = await unreachableWatch();
+      await service.requestSwitch(a.syncId);
+
+      bridge.deliverable = true;
+      await bridge.becomes(WearReachability.reachable);
+
+      expect(bridge.sent.whereType<SwitchRequest>(), hasLength(1));
+      expect(await outbox.pending(), isEmpty, reason: 'delivered, so no longer parked');
+      service.dispose();
+    });
+
+    test('a second reconnect does not send it again', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final service = await unreachableWatch();
+      await service.requestSwitch(a.syncId);
+
+      bridge.deliverable = true;
+      await bridge.becomes(WearReachability.reachable);
+      await bridge.becomes(WearReachability.reachable);
+
+      expect(bridge.sent.whereType<SwitchRequest>(), hasLength(1));
+      service.dispose();
+    });
+
+    test('two taps made out of range arrive in the order they were made', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final b = await activities.createActivity(name: 'B', color: '#222222', bookmarked: true);
+      final service = await unreachableWatch();
+
+      await service.requestSwitch(a.syncId, at: DateTime.fromMillisecondsSinceEpoch(1770000000000));
+      await service.requestSwitch(b.syncId, at: DateTime.fromMillisecondsSinceEpoch(1770000060000));
+
+      bridge.deliverable = true;
+      await bridge.becomes(WearReachability.reachable);
+
+      final relayed = bridge.sent.whereType<SwitchRequest>().toList();
+      expect(relayed.map((m) => m.activityId), [a.syncId, b.syncId]);
+      service.dispose();
+    });
+
+    test('a peer that disappears mid-drain leaves the rest parked', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final service = await unreachableWatch();
+      await service.requestSwitch(a.syncId, at: DateTime.fromMillisecondsSinceEpoch(1770000000000));
+      await service.requestSwitch(a.syncId, at: DateTime.fromMillisecondsSinceEpoch(1770000060000));
+      expect(await outbox.pending(), hasLength(2));
+
+      // Reachable long enough for one message, then gone again.
+      bridge.deliverable = true;
+      bridge.deliverableCount = 1;
+      await bridge.becomes(WearReachability.reachable);
+
+      expect(bridge.sent.whereType<SwitchRequest>(), hasLength(1));
+      expect(await outbox.pending(), hasLength(1), reason: 'the second is still waiting');
+      service.dispose();
+    });
+
+    test('a backlog from a previous run goes out on start', () async {
+      // The watch app is killed constantly. A backlog that only drains on a
+      // reachability event would sit there until the next disconnect.
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      await outbox.add(
+        SwitchRequest(
+          changeSyncId: 'from-last-run',
+          activityId: a.syncId,
+          at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+        ),
+      );
+
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.pump();
+
+      expect(bridge.sent.whereType<SwitchRequest>().single.changeSyncId, 'from-last-run');
+      service.dispose();
+    });
+
+    test('only the newest correction to a block is kept while waiting', () async {
+      // Nudging the start a few times out of range should relay where it ended
+      // up, not every step it took to get there.
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(
+        a.syncId,
+        at: DateTime.fromMillisecondsSinceEpoch(1770000600000),
+      );
+      final service = await unreachableWatch();
+
+      await service.requestNudge(changeSyncId: change.syncId, by: const Duration(minutes: -1));
+      await service.requestNudge(changeSyncId: change.syncId, by: const Duration(minutes: -1));
+      await service.requestNudge(changeSyncId: change.syncId, by: const Duration(minutes: -1));
+
+      expect(await outbox.pending(), hasLength(1));
+
+      bridge.deliverable = true;
+      await bridge.becomes(WearReachability.reachable);
+
+      final relayed = bridge.sent.whereType<RetimeRequest>().single;
+      // Three minutes earlier, in one message.
+      expect(relayed.at, DateTime.fromMillisecondsSinceEpoch(1770000420000));
+      service.dispose();
+    });
+  });
+
+  // The rule that makes replaying a correction safe. A correction says "set it
+  // to this", which is a valid thing to say twice and about a row that keeps
+  // moving — so the receiver compares versions the way it does for a row pulled
+  // from the sync server, rather than applying it as a fresh local edit.
+  group('a relayed correction is adopted, not re-applied', () {
+    late DateTime start;
+
+    setUp(() => start = DateTime.fromMillisecondsSinceEpoch(1770000000000));
+
+    test('a stale correction loses to an unpushed newer one made here', () async {
+      // The case the outbox introduces: the watch corrected the block while out
+      // of range, the phone corrected it too, and the watch's version arrives
+      // late. Re-applying it would bump it past the phone's and win everywhere.
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(a.syncId, at: start);
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      // The phone's own correction: version 2, not yet pushed anywhere.
+      await changes.setChangedAt(change.syncId, start.add(const Duration(minutes: 10)));
+      expect((await changes.changeById(change.syncId))!.version, 2);
+
+      // The watch's, made independently from the same starting point, so it
+      // carries the same version.
+      await bridge.receive(
+        RetimeRequest(
+          changeSyncId: change.syncId,
+          at: start.add(const Duration(minutes: 5)),
+          version: 2,
+        ),
+      );
+
+      final row = (await changes.changeById(change.syncId))!;
+      expect(row.changedAt, start.add(const Duration(minutes: 10)), reason: 'ours stands');
+      expect(row.version, 2, reason: 'and was not bumped past by the loser');
+      service.dispose();
+    });
+
+    test('a strictly newer correction is adopted, at the version it came with', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(a.syncId, at: start);
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      await bridge.receive(
+        RetimeRequest(
+          changeSyncId: change.syncId,
+          at: start.add(const Duration(minutes: 5)),
+          version: 4,
+        ),
+      );
+
+      final row = (await changes.changeById(change.syncId))!;
+      expect(row.changedAt, start.add(const Duration(minutes: 5)));
+      // Taken as-is rather than bumped to 5. Bumping is what would make an old
+      // value outrank a new one just by passing through this device.
+      expect(row.version, 4);
+      service.dispose();
+    });
+
+    test('an adopted correction is still owed to the server', () async {
+      // Unlike a row pulled from the server, this value has never been there —
+      // and on a pair with no account it never will be unless it stays dirty.
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(a.syncId, at: start);
+      await db
+          .update(db.activityChanges)
+          .write(const ActivityChangesCompanion(dirty: Value(false)));
+
+      final service = serviceFor(isWatch: false);
+      await service.start();
+      await bridge.receive(
+        RetimeRequest(
+          changeSyncId: change.syncId,
+          at: start.add(const Duration(minutes: 5)),
+          version: 4,
+        ),
+      );
+
+      expect((await changes.changeById(change.syncId))!.dirty, isTrue);
+      service.dispose();
+    });
+
+    test('the same correction delivered twice changes nothing the second time', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(a.syncId, at: start);
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      final request = RetimeRequest(
+        changeSyncId: change.syncId,
+        at: start.add(const Duration(minutes: 5)),
+        version: 4,
+      );
+      await bridge.receive(request);
+      await bridge.receive(request);
+
+      final row = (await changes.changeById(change.syncId))!;
+      expect(row.changedAt, start.add(const Duration(minutes: 5)));
+      expect(row.version, 4, reason: 'a replay is a no-op, not a second edit');
+      service.dispose();
+    });
+
+    test('a stale assign loses too, leaving the block pointing where it was', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final b = await activities.createActivity(name: 'B', color: '#222222', bookmarked: true);
+      final c = await activities.createActivity(name: 'C', color: '#333333', bookmarked: true);
+      final change = await changes.switchTo(a.syncId, at: start);
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      await changes.setChangeActivity(change.syncId, c.syncId);
+      expect((await changes.changeById(change.syncId))!.version, 2);
+
+      await bridge.receive(
+        AssignRequest(changeSyncId: change.syncId, activityId: b.syncId, version: 2),
+      );
+
+      expect(await changes.activityIdsForChange(change.syncId), [c.syncId]);
       service.dispose();
     });
   });

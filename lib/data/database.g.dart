@@ -1509,6 +1509,314 @@ class SyncMetaCompanion extends UpdateCompanion<SyncMetaData> {
   }
 }
 
+class $WearOutboxTable extends WearOutbox
+    with TableInfo<$WearOutboxTable, WearOutboxData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WearOutboxTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _typeMeta = const VerificationMeta('type');
+  @override
+  late final GeneratedColumn<String> type = GeneratedColumn<String>(
+    'type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _collapseKeyMeta = const VerificationMeta(
+    'collapseKey',
+  );
+  @override
+  late final GeneratedColumn<String> collapseKey = GeneratedColumn<String>(
+    'collapse_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, type, payload, collapseKey];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'wear_outbox';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WearOutboxData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('type')) {
+      context.handle(
+        _typeMeta,
+        type.isAcceptableOrUnknown(data['type']!, _typeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_typeMeta);
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    if (data.containsKey('collapse_key')) {
+      context.handle(
+        _collapseKeyMeta,
+        collapseKey.isAcceptableOrUnknown(
+          data['collapse_key']!,
+          _collapseKeyMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  WearOutboxData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WearOutboxData(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      type: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}type'],
+      )!,
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+      collapseKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}collapse_key'],
+      ),
+    );
+  }
+
+  @override
+  $WearOutboxTable createAlias(String alias) {
+    return $WearOutboxTable(attachedDatabase, alias);
+  }
+}
+
+class WearOutboxData extends DataClass implements Insertable<WearOutboxData> {
+  final int id;
+
+  /// [WearMessage.type], and [payload] is its `toPayload()` as JSON.
+  final String type;
+  final String payload;
+
+  /// Null keeps every entry; otherwise a new entry replaces the one it matches.
+  final String? collapseKey;
+  const WearOutboxData({
+    required this.id,
+    required this.type,
+    required this.payload,
+    this.collapseKey,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['type'] = Variable<String>(type);
+    map['payload'] = Variable<String>(payload);
+    if (!nullToAbsent || collapseKey != null) {
+      map['collapse_key'] = Variable<String>(collapseKey);
+    }
+    return map;
+  }
+
+  WearOutboxCompanion toCompanion(bool nullToAbsent) {
+    return WearOutboxCompanion(
+      id: Value(id),
+      type: Value(type),
+      payload: Value(payload),
+      collapseKey: collapseKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(collapseKey),
+    );
+  }
+
+  factory WearOutboxData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WearOutboxData(
+      id: serializer.fromJson<int>(json['id']),
+      type: serializer.fromJson<String>(json['type']),
+      payload: serializer.fromJson<String>(json['payload']),
+      collapseKey: serializer.fromJson<String?>(json['collapseKey']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'type': serializer.toJson<String>(type),
+      'payload': serializer.toJson<String>(payload),
+      'collapseKey': serializer.toJson<String?>(collapseKey),
+    };
+  }
+
+  WearOutboxData copyWith({
+    int? id,
+    String? type,
+    String? payload,
+    Value<String?> collapseKey = const Value.absent(),
+  }) => WearOutboxData(
+    id: id ?? this.id,
+    type: type ?? this.type,
+    payload: payload ?? this.payload,
+    collapseKey: collapseKey.present ? collapseKey.value : this.collapseKey,
+  );
+  WearOutboxData copyWithCompanion(WearOutboxCompanion data) {
+    return WearOutboxData(
+      id: data.id.present ? data.id.value : this.id,
+      type: data.type.present ? data.type.value : this.type,
+      payload: data.payload.present ? data.payload.value : this.payload,
+      collapseKey: data.collapseKey.present
+          ? data.collapseKey.value
+          : this.collapseKey,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WearOutboxData(')
+          ..write('id: $id, ')
+          ..write('type: $type, ')
+          ..write('payload: $payload, ')
+          ..write('collapseKey: $collapseKey')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, type, payload, collapseKey);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WearOutboxData &&
+          other.id == this.id &&
+          other.type == this.type &&
+          other.payload == this.payload &&
+          other.collapseKey == this.collapseKey);
+}
+
+class WearOutboxCompanion extends UpdateCompanion<WearOutboxData> {
+  final Value<int> id;
+  final Value<String> type;
+  final Value<String> payload;
+  final Value<String?> collapseKey;
+  const WearOutboxCompanion({
+    this.id = const Value.absent(),
+    this.type = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.collapseKey = const Value.absent(),
+  });
+  WearOutboxCompanion.insert({
+    this.id = const Value.absent(),
+    required String type,
+    required String payload,
+    this.collapseKey = const Value.absent(),
+  }) : type = Value(type),
+       payload = Value(payload);
+  static Insertable<WearOutboxData> custom({
+    Expression<int>? id,
+    Expression<String>? type,
+    Expression<String>? payload,
+    Expression<String>? collapseKey,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (type != null) 'type': type,
+      if (payload != null) 'payload': payload,
+      if (collapseKey != null) 'collapse_key': collapseKey,
+    });
+  }
+
+  WearOutboxCompanion copyWith({
+    Value<int>? id,
+    Value<String>? type,
+    Value<String>? payload,
+    Value<String?>? collapseKey,
+  }) {
+    return WearOutboxCompanion(
+      id: id ?? this.id,
+      type: type ?? this.type,
+      payload: payload ?? this.payload,
+      collapseKey: collapseKey ?? this.collapseKey,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (type.present) {
+      map['type'] = Variable<String>(type.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (collapseKey.present) {
+      map['collapse_key'] = Variable<String>(collapseKey.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WearOutboxCompanion(')
+          ..write('id: $id, ')
+          ..write('type: $type, ')
+          ..write('payload: $payload, ')
+          ..write('collapseKey: $collapseKey')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1519,6 +1827,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ActivityChangeActivitiesTable activityChangeActivities =
       $ActivityChangeActivitiesTable(this);
   late final $SyncMetaTable syncMeta = $SyncMetaTable(this);
+  late final $WearOutboxTable wearOutbox = $WearOutboxTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1528,6 +1837,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     activityChanges,
     activityChangeActivities,
     syncMeta,
+    wearOutbox,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -2955,6 +3265,183 @@ typedef $$SyncMetaTableProcessedTableManager =
       SyncMetaData,
       PrefetchHooks Function()
     >;
+typedef $$WearOutboxTableCreateCompanionBuilder =
+    WearOutboxCompanion Function({
+      Value<int> id,
+      required String type,
+      required String payload,
+      Value<String?> collapseKey,
+    });
+typedef $$WearOutboxTableUpdateCompanionBuilder =
+    WearOutboxCompanion Function({
+      Value<int> id,
+      Value<String> type,
+      Value<String> payload,
+      Value<String?> collapseKey,
+    });
+
+class $$WearOutboxTableFilterComposer
+    extends Composer<_$AppDatabase, $WearOutboxTable> {
+  $$WearOutboxTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get type => $composableBuilder(
+    column: $table.type,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get collapseKey => $composableBuilder(
+    column: $table.collapseKey,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$WearOutboxTableOrderingComposer
+    extends Composer<_$AppDatabase, $WearOutboxTable> {
+  $$WearOutboxTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get type => $composableBuilder(
+    column: $table.type,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get collapseKey => $composableBuilder(
+    column: $table.collapseKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$WearOutboxTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WearOutboxTable> {
+  $$WearOutboxTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get type =>
+      $composableBuilder(column: $table.type, builder: (column) => column);
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+
+  GeneratedColumn<String> get collapseKey => $composableBuilder(
+    column: $table.collapseKey,
+    builder: (column) => column,
+  );
+}
+
+class $$WearOutboxTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WearOutboxTable,
+          WearOutboxData,
+          $$WearOutboxTableFilterComposer,
+          $$WearOutboxTableOrderingComposer,
+          $$WearOutboxTableAnnotationComposer,
+          $$WearOutboxTableCreateCompanionBuilder,
+          $$WearOutboxTableUpdateCompanionBuilder,
+          (
+            WearOutboxData,
+            BaseReferences<_$AppDatabase, $WearOutboxTable, WearOutboxData>,
+          ),
+          WearOutboxData,
+          PrefetchHooks Function()
+        > {
+  $$WearOutboxTableTableManager(_$AppDatabase db, $WearOutboxTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WearOutboxTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WearOutboxTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WearOutboxTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> type = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<String?> collapseKey = const Value.absent(),
+              }) => WearOutboxCompanion(
+                id: id,
+                type: type,
+                payload: payload,
+                collapseKey: collapseKey,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String type,
+                required String payload,
+                Value<String?> collapseKey = const Value.absent(),
+              }) => WearOutboxCompanion.insert(
+                id: id,
+                type: type,
+                payload: payload,
+                collapseKey: collapseKey,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$WearOutboxTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WearOutboxTable,
+      WearOutboxData,
+      $$WearOutboxTableFilterComposer,
+      $$WearOutboxTableOrderingComposer,
+      $$WearOutboxTableAnnotationComposer,
+      $$WearOutboxTableCreateCompanionBuilder,
+      $$WearOutboxTableUpdateCompanionBuilder,
+      (
+        WearOutboxData,
+        BaseReferences<_$AppDatabase, $WearOutboxTable, WearOutboxData>,
+      ),
+      WearOutboxData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2970,4 +3457,6 @@ class $AppDatabaseManager {
       );
   $$SyncMetaTableTableManager get syncMeta =>
       $$SyncMetaTableTableManager(_db, _db.syncMeta);
+  $$WearOutboxTableTableManager get wearOutbox =>
+      $$WearOutboxTableTableManager(_db, _db.wearOutbox);
 }

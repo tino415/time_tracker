@@ -3,7 +3,7 @@
 // seam: everything either side *decides* is exercised here, and only the
 // delivery itself is left to the manual pass.
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
@@ -17,6 +17,11 @@ import 'package:time_tracker/domain/wear_protocol.dart';
 import 'support/fake_wear_bridge.dart';
 
 void main() {
+  // One test pairs a watch database with a phone one, each on its own executor,
+  // so drift's shared-executor warning does not apply. Same reason as
+  // sync_service_test.
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+
   late AppDatabase db;
   late DriftActivityRepository activities;
   late DriftChangeRepository changes;
@@ -85,6 +90,26 @@ void main() {
       await bridge.receive(const SnapshotRequest());
       expect(bridge.sent.whereType<BookmarkSnapshot>().last.current, isNull);
 
+      service.dispose();
+    });
+
+    test('the snapshot carries the block\'s version, not just its instant', () async {
+      final a = await activities.createActivity(name: 'A', color: '#111111', bookmarked: true);
+      final change = await changes.switchTo(a.syncId);
+      // A block the phone has already worked on, so its version is somewhere
+      // the watch could not have guessed.
+      for (var i = 0; i < 5; i++) {
+        await changes.setComment(change.syncId, 'note $i');
+      }
+      final stored = (await changes.changeById(change.syncId))!;
+
+      final service = serviceFor(isWatch: false);
+      await service.start();
+      await bridge.receive(const SnapshotRequest());
+
+      final sent = bridge.sent.whereType<BookmarkSnapshot>().last.current!;
+      expect(stored.version, greaterThan(1));
+      expect(sent.version, stored.version);
       service.dispose();
     });
 
@@ -543,6 +568,127 @@ void main() {
       final rows = await changes.loadChanges();
       expect(rows, hasLength(1));
       expect(rows.single.changedAt, DateTime.fromMillisecondsSinceEpoch(1770000600000));
+      service.dispose();
+    });
+
+    test('seeds the block on the sender\'s version, not the column default', () async {
+      final service = serviceFor(isWatch: true);
+      await service.start();
+
+      await bridge.receive(
+        BookmarkSnapshot(
+          activities: const [],
+          current: CurrentBlock(
+            changeId: 'phone-change',
+            startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+            version: 7,
+            activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+          ),
+        ),
+      );
+
+      expect((await changes.changeById('phone-change'))!.version, 7);
+      service.dispose();
+    });
+
+    test('a later snapshot raises the version, an older one does not lower it', () async {
+      final service = serviceFor(isWatch: true);
+      await service.start();
+
+      CurrentBlock at(int version) => CurrentBlock(
+        changeId: 'phone-change',
+        startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+        version: version,
+        activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+      );
+
+      await bridge.receive(BookmarkSnapshot(activities: const [], current: at(3)));
+      await bridge.receive(BookmarkSnapshot(activities: const [], current: at(5)));
+      expect((await changes.changeById('phone-change'))!.version, 5);
+
+      // A snapshot that crossed with a correction made here is behind it, and
+      // must not cost that correction its rank before it has been relayed.
+      await bridge.receive(BookmarkSnapshot(activities: const [], current: at(4)));
+      expect((await changes.changeById('phone-change'))!.version, 5);
+
+      service.dispose();
+    });
+
+    test('a snapshot from a peer that sends no version leaves the version alone', () async {
+      // An older phone against a newer watch: the snapshot is still worth
+      // drawing, so the block is taken without one rather than refused.
+      final service = serviceFor(isWatch: true);
+      await service.start();
+
+      await bridge.receive(
+        BookmarkSnapshot(
+          activities: const [],
+          current: CurrentBlock(
+            changeId: 'phone-change',
+            startedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+            activity: const WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE'),
+          ),
+        ),
+      );
+
+      final row = (await changes.changeById('phone-change'))!;
+      expect(row.changedAt, DateTime.fromMillisecondsSinceEpoch(1770000000000));
+      expect(row.version, 1);
+      service.dispose();
+    });
+
+    test('a correction to a block learned from a snapshot is not refused as stale', () async {
+      // The whole point of seeding the version. The phone is at 6 on a block it
+      // has been editing; the watch learns that block from a snapshot and
+      // nudges its start. Seeded at the column default the watch would relay
+      // version 2, the phone would read it as five edits behind its own, and
+      // the correction would be dropped — every time, for good.
+      final phoneDb = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(phoneDb.close);
+      final phoneActivities = DriftActivityRepository(phoneDb);
+      final phoneChanges = DriftChangeRepository(phoneDb);
+
+      final work = await phoneActivities.createActivity(name: 'Deep work', color: '#4F8FEE');
+      final onPhone = await phoneChanges.switchTo(
+        work.syncId,
+        at: DateTime.fromMillisecondsSinceEpoch(1770000000000),
+      );
+      for (var i = 0; i < 5; i++) {
+        await phoneChanges.setComment(onPhone.syncId, 'note $i');
+      }
+      final before = (await phoneChanges.changeById(onPhone.syncId))!;
+
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.receive(
+        BookmarkSnapshot(
+          activities: const [],
+          current: CurrentBlock(
+            changeId: before.syncId,
+            startedAt: before.changedAt,
+            version: before.version,
+            activity: WearActivity(syncId: work.syncId, name: 'Deep work', color: '#4F8FEE'),
+          ),
+        ),
+      );
+      bridge.sent.clear();
+
+      final nudged = before.changedAt.subtract(const Duration(minutes: 5));
+      await service.requestRetime(changeSyncId: before.syncId, at: nudged);
+
+      final relayed = bridge.sent.whereType<RetimeRequest>().single;
+      expect(relayed.version, before.version + 1);
+
+      // The phone's own rows are dirty on a pair with no account, so an equal
+      // version would lose the tie. Only a genuinely newer one gets through.
+      final adopted = await phoneChanges.applyRelayedRetime(
+        changeSyncId: relayed.changeSyncId,
+        at: relayed.at,
+        version: relayed.version,
+      );
+      expect(adopted, isTrue);
+      expect((await phoneChanges.changeById(onPhone.syncId))!.changedAt, nudged);
+
       service.dispose();
     });
 

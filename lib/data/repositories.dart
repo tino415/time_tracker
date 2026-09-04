@@ -84,10 +84,15 @@ abstract class ChangeRepository {
   ///
   /// Idempotent in the sense that matters: applying the same snapshot twice
   /// writes nothing the second time.
+  ///
+  /// [version] is the sender's, and seeds this device's copy so the two
+  /// counters can be compared afterwards. Null from a peer that does not send
+  /// one, which leaves the local version alone.
   Future<void> applyPeerCurrentBlock({
     required String changeSyncId,
     required String activityId,
     required DateTime at,
+    required int? version,
   });
 
   /// Apply a switch relayed from a peer, under an id the peer minted.

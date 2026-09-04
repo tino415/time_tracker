@@ -424,6 +424,7 @@ class DriftChangeRepository implements ChangeRepository {
     required String changeSyncId,
     required String activityId,
     required DateTime at,
+    required int? version,
   }) async {
     await _db.transaction(() async {
       // The activity must exist locally or the join row would break its foreign
@@ -438,16 +439,36 @@ class DriftChangeRepository implements ChangeRepository {
         _db.activityChanges,
       )..where((t) => t.syncId.equals(changeSyncId))).getSingleOrNull();
 
+      // The sender's number, not a bump: adopting a peer's state is not a local
+      // edit, same rule as SyncStore. Taking it is what makes the two counters
+      // comparable at all — a row seeded here at the column default sits below
+      // whatever the sender has already reached, and every correction relayed
+      // back from this device would then read as stale and be refused for good.
       if (existing == null) {
         await _db
             .into(_db.activityChanges)
-            .insert(ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at));
-      } else if (existing.changedAt != at) {
-        // Adopting a peer's state is not a local edit, so no version bump —
-        // same rule as SyncStore, for the same reason.
-        await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(changeSyncId))).write(
-          ActivityChangesCompanion(changedAt: Value(at)),
-        );
+            .insert(
+              ActivityChangesCompanion.insert(
+                syncId: changeSyncId,
+                changedAt: at,
+                version: version == null ? const Value.absent() : Value(version),
+              ),
+            );
+      } else {
+        // Only upwards. A snapshot that crossed with a local correction is
+        // behind it, and lowering the version here would drop that correction's
+        // rank before it has been relayed.
+        final ahead = version != null && version > existing.version ? version : null;
+        if (existing.changedAt != at || ahead != null) {
+          await (_db.update(
+            _db.activityChanges,
+          )..where((t) => t.syncId.equals(changeSyncId))).write(
+            ActivityChangesCompanion(
+              changedAt: Value(at),
+              version: ahead == null ? const Value.absent() : Value(ahead),
+            ),
+          );
+        }
       }
 
       final links = await (_db.select(

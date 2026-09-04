@@ -331,6 +331,7 @@ class WearSyncService {
             changeSyncId: current.changeId,
             activityId: current.activity.syncId,
             at: current.startedAt,
+            version: current.version,
           );
         }
 
@@ -397,6 +398,7 @@ class WearSyncService {
           current = CurrentBlock(
             changeId: change.syncId,
             startedAt: change.changedAt,
+            version: change.version,
             activity: WearActivity(
               syncId: tracked.syncId,
               name: tracked.name,

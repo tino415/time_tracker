@@ -125,22 +125,39 @@ class SyncCredential extends WearMessage {
 /// watch writes the same boundary rather than a second one — and can run a live
 /// elapsed clock instead of guessing when it started.
 class CurrentBlock {
-  const CurrentBlock({required this.changeId, required this.startedAt, required this.activity});
+  const CurrentBlock({
+    required this.changeId,
+    required this.startedAt,
+    required this.activity,
+    this.version,
+  });
 
   final String changeId;
   final DateTime startedAt;
   final WearActivity activity;
 
+  /// The sender's version of this change row, so the receiver's copy lands on
+  /// the sender's counter instead of the column default. Two devices can only
+  /// compare versions if they started from the same one.
+  ///
+  /// Optional, unlike the version on [AssignRequest] and [RetimeRequest]:
+  /// refusing a snapshot from a peer too old to send it would leave the watch
+  /// with nothing to draw, where refusing one correction loses only that
+  /// correction.
+  final int? version;
+
   Map<String, Object?> toPayload() => {
     'changeId': changeId,
     'startedAt': startedAt.millisecondsSinceEpoch,
     'activity': activity.toPayload(),
+    'version': version,
   };
 
   static CurrentBlock? fromPayload(Object? raw) {
     if (raw is! Map) return null;
     final changeId = raw['changeId'];
     final startedAt = raw['startedAt'];
+    final version = raw['version'];
     final activity = WearActivity.fromPayload(raw['activity']);
     if (changeId is! String || changeId.isEmpty) return null;
     if (startedAt is! int || activity == null) return null;
@@ -148,6 +165,7 @@ class CurrentBlock {
       changeId: changeId,
       startedAt: DateTime.fromMillisecondsSinceEpoch(startedAt),
       activity: activity,
+      version: version is int ? version : null,
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../domain/calendar.dart';
+import '../domain/sync_protocol.dart';
 import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
 import 'database.dart';
@@ -296,6 +298,108 @@ class DriftChangeRepository implements ChangeRepository {
   }
 
   @override
+  Future<ActivityChange?> changeById(String syncId) {
+    return (_db.select(
+      _db.activityChanges,
+    )..where((t) => t.syncId.equals(syncId))).getSingleOrNull();
+  }
+
+  @override
+  Future<bool> applyRelayedRetime({
+    required String changeSyncId,
+    required DateTime at,
+    required int version,
+    DateTime Function()? clock,
+  }) {
+    return _db.transaction(() async {
+      final existing = await changeById(changeSyncId);
+      if (existing == null || !_adopts(existing, version)) return false;
+
+      // Still clamped against *this* device's neighbours, even though the value
+      // is being adopted rather than computed. Version says whose answer is
+      // newer; it says nothing about whether that answer fits here, and the
+      // sender may have been working from a stale snapshot that did not know
+      // about a boundary already on the record. A relay must not be able to
+      // reorder two blocks.
+      //
+      // The gap that opens when the two devices clamp differently is closed the
+      // way it already was: the phone's next snapshot carries its own answer and
+      // applyPeerCurrentBlock re-points the watch onto it.
+      final ascending = (await loadChanges()).reversed.toList();
+      final i = ascending.indexWhere((c) => c.syncId == changeSyncId);
+      if (i < 0) return false;
+      final target = clampBoundary(
+        desired: at,
+        previous: i > 0 ? ascending[i - 1].changedAt : null,
+        next: i + 1 < ascending.length ? ascending[i + 1].changedAt : null,
+        notAfter: (clock ?? DateTime.now)(),
+      );
+      // No instant this boundary could legally occupy — refuse outright rather
+      // than take the version without the value it stands for.
+      if (target == null) return false;
+
+      await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(changeSyncId))).write(
+        ActivityChangesCompanion(
+          changedAt: Value(target),
+          version: Value(version),
+          dirty: _unpushed,
+        ),
+      );
+      return true;
+    });
+  }
+
+  @override
+  Future<bool> applyRelayedAssign({
+    required String changeSyncId,
+    required String activityId,
+    required int version,
+  }) {
+    return _db.transaction(() async {
+      final existing = await changeById(changeSyncId);
+      if (existing == null || !_adopts(existing, version)) return false;
+
+      final activity = await (_db.select(
+        _db.activities,
+      )..where((t) => t.syncId.equals(activityId))).getSingleOrNull();
+      if (activity == null) return false;
+
+      await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(changeSyncId))).write(
+        ActivityChangesCompanion(version: Value(version), dirty: _unpushed),
+      );
+      // Re-pointing replaces the whole set, like assignBlock: a corrected block
+      // tracks the one activity named, not that one plus whatever was there.
+      await (_db.delete(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.equals(changeSyncId))).go();
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
+            ActivityChangeActivitiesCompanion.insert(
+              activityChangeId: changeSyncId,
+              activityId: activityId,
+            ),
+          );
+      return true;
+    });
+  }
+
+  /// The rule `SyncStore` applies to a pulled row, applied to a relayed one.
+  bool _adopts(ActivityChange local, int incomingVersion) =>
+      decideIncoming(
+        localVersion: local.version,
+        remoteVersion: incomingVersion,
+        localDirty: local.dirty,
+      ) ==
+      SyncDecision.adopt;
+
+  /// Adopted, but *not* clean — unlike a pulled row, which is on the server by
+  /// definition. This value arrived over the relay and may never have been
+  /// anywhere else; on a pair with no account the relay is the only route it
+  /// has. Leaving it dirty is what gets it pushed if an account appears later.
+  static const _unpushed = Value(true);
+
+  @override
   Future<ActivityChange> switchTo(String activityId, {DateTime? at}) async {
     return _db.transaction(() async {
       final change = await _db
@@ -320,6 +424,7 @@ class DriftChangeRepository implements ChangeRepository {
     required String changeSyncId,
     required String activityId,
     required DateTime at,
+    required int? version,
   }) async {
     await _db.transaction(() async {
       // The activity must exist locally or the join row would break its foreign
@@ -334,16 +439,36 @@ class DriftChangeRepository implements ChangeRepository {
         _db.activityChanges,
       )..where((t) => t.syncId.equals(changeSyncId))).getSingleOrNull();
 
+      // The sender's number, not a bump: adopting a peer's state is not a local
+      // edit, same rule as SyncStore. Taking it is what makes the two counters
+      // comparable at all — a row seeded here at the column default sits below
+      // whatever the sender has already reached, and every correction relayed
+      // back from this device would then read as stale and be refused for good.
       if (existing == null) {
         await _db
             .into(_db.activityChanges)
-            .insert(ActivityChangesCompanion.insert(syncId: changeSyncId, changedAt: at));
-      } else if (existing.changedAt != at) {
-        // Adopting a peer's state is not a local edit, so no version bump —
-        // same rule as SyncStore, for the same reason.
-        await (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(changeSyncId))).write(
-          ActivityChangesCompanion(changedAt: Value(at)),
-        );
+            .insert(
+              ActivityChangesCompanion.insert(
+                syncId: changeSyncId,
+                changedAt: at,
+                version: version == null ? const Value.absent() : Value(version),
+              ),
+            );
+      } else {
+        // Only upwards. A snapshot that crossed with a local correction is
+        // behind it, and lowering the version here would drop that correction's
+        // rank before it has been relayed.
+        final ahead = version != null && version > existing.version ? version : null;
+        if (existing.changedAt != at || ahead != null) {
+          await (_db.update(
+            _db.activityChanges,
+          )..where((t) => t.syncId.equals(changeSyncId))).write(
+            ActivityChangesCompanion(
+              changedAt: Value(at),
+              version: ahead == null ? const Value.absent() : Value(ahead),
+            ),
+          );
+        }
       }
 
       final links = await (_db.select(

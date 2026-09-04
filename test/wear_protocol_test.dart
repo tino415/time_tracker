@@ -120,42 +120,65 @@ void main() {
   });
 
   group('AssignRequest', () {
-    test('round-trips the change and the activity', () {
+    test('round-trips the change, the activity and the version', () {
       final decoded =
-          roundTrip(const AssignRequest(changeSyncId: 'change-1', activityId: 'a'))
+          roundTrip(const AssignRequest(changeSyncId: 'change-1', activityId: 'a', version: 7))
               as AssignRequest;
 
       expect(decoded.changeSyncId, 'change-1');
       expect(decoded.activityId, 'a');
+      expect(decoded.version, 7);
     });
 
     test('is rejected when any field is missing or empty', () {
-      expect(AssignRequest.fromPayload({'activityId': 'a'}), isNull);
-      expect(AssignRequest.fromPayload({'changeSyncId': 'c'}), isNull);
-      expect(AssignRequest.fromPayload({'changeSyncId': '', 'activityId': 'a'}), isNull);
-      expect(AssignRequest.fromPayload({'changeSyncId': 'c', 'activityId': ''}), isNull);
+      expect(AssignRequest.fromPayload({'activityId': 'a', 'version': 1}), isNull);
+      expect(AssignRequest.fromPayload({'changeSyncId': 'c', 'version': 1}), isNull);
+      expect(
+        AssignRequest.fromPayload({'changeSyncId': '', 'activityId': 'a', 'version': 1}),
+        isNull,
+      );
+      expect(
+        AssignRequest.fromPayload({'changeSyncId': 'c', 'activityId': '', 'version': 1}),
+        isNull,
+      );
+    });
+
+    test('a payload with no version is rejected rather than guessed at', () {
+      // An older peer's correction. Refusing it is the protocol's existing
+      // stance on anything it cannot read, and here it is also the safe one: a
+      // guessed version is exactly what would let a stale value outrank a newer.
+      expect(AssignRequest.fromPayload({'changeSyncId': 'c', 'activityId': 'a'}), isNull);
     });
   });
 
   group('RetimeRequest', () {
     test('round-trips, keeping the instant exact', () {
       final at = DateTime.fromMillisecondsSinceEpoch(1770000000123);
-      final decoded = roundTrip(RetimeRequest(changeSyncId: 'change-1', at: at)) as RetimeRequest;
+      final decoded =
+          roundTrip(RetimeRequest(changeSyncId: 'change-1', at: at, version: 7)) as RetimeRequest;
 
       expect(decoded.changeSyncId, 'change-1');
       // Millisecond precision matters for the same reason SwitchRequest's does:
       // it is the boundary's identity on the timeline.
       expect(decoded.at, at);
       expect(decoded.at.millisecondsSinceEpoch, 1770000000123);
+      // The version is what lets the receiver adopt this rather than re-apply
+      // it, which is what makes replaying one from the outbox safe.
+      expect(decoded.version, 7);
     });
 
     test('is rejected when any field is missing or the wrong type', () {
-      expect(RetimeRequest.fromPayload({'at': 1}), isNull);
-      expect(RetimeRequest.fromPayload({'changeSyncId': 'c'}), isNull);
-      expect(RetimeRequest.fromPayload({'changeSyncId': '', 'at': 1}), isNull);
+      expect(RetimeRequest.fromPayload({'at': 1, 'version': 1}), isNull);
+      expect(RetimeRequest.fromPayload({'changeSyncId': 'c', 'version': 1}), isNull);
+      expect(RetimeRequest.fromPayload({'changeSyncId': '', 'at': 1, 'version': 1}), isNull);
       // A String where an int belongs: a peer on an older or newer build must
       // not be able to crash this one by sending the wrong shape.
-      expect(RetimeRequest.fromPayload({'changeSyncId': 'c', 'at': '1'}), isNull);
+      expect(RetimeRequest.fromPayload({'changeSyncId': 'c', 'at': '1', 'version': 1}), isNull);
+      expect(RetimeRequest.fromPayload({'changeSyncId': 'c', 'at': 1, 'version': '1'}), isNull);
+    });
+
+    test('a payload with no version is rejected rather than guessed at', () {
+      expect(RetimeRequest.fromPayload({'changeSyncId': 'c', 'at': 1}), isNull);
     });
   });
 

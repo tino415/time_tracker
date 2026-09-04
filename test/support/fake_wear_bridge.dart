@@ -33,9 +33,19 @@ class FakeWearBridge implements WearBridge {
   /// the sender must notice rather than assume delivered.
   bool deliverable = true;
 
+  /// How many more sends succeed before the peer goes away again. Null is
+  /// unlimited; it exists to model a walk out of range *mid-drain*, which is
+  /// the case where a backlog can be half-delivered.
+  int? deliverableCount;
+
   @override
   Future<bool> send(WearMessage message) async {
     if (!deliverable) return false;
+    final budget = deliverableCount;
+    if (budget != null) {
+      if (budget <= 0) return false;
+      deliverableCount = budget - 1;
+    }
     sent.add(message);
     return true;
   }

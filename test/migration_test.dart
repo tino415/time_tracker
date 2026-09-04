@@ -6,6 +6,8 @@
 //             millis, so boundaries inside the same second stay ordered.
 //   v2 -> v3  sync bookkeeping: a `dirty` flag on both syncable tables and the
 //             sync_meta table holding the server cursor.
+//   v3 -> v4  the wear_outbox table, holding relay messages the peer was not
+//             there to receive.
 
 import 'dart:io';
 
@@ -110,5 +112,20 @@ void main() {
     final links = await db.select(db.activityChangeActivities).get();
     expect(links.single.activityChangeId, 'c1');
     expect(links.single.activityId, 'a1');
+  });
+
+  test('v3 -> v4 adds the relay outbox, empty', () async {
+    // Purely additive, and nothing to backfill: an empty outbox is the same as
+    // not having one. Anything the watch failed to relay before this upgrade
+    // was dropped at the time and cannot be recovered from an older database.
+    final db = AppDatabase.forTesting(NativeDatabase(_writeV1(dir, DateTime(2026, 1, 5, 9))));
+    addTearDown(db.close);
+
+    expect(await db.select(db.wearOutbox).get(), isEmpty);
+
+    // Usable, not merely present — an autoincrement primary key that did not
+    // survive the migration would only show up on the first parked message.
+    await db.into(db.wearOutbox).insert(WearOutboxCompanion.insert(type: 'switch', payload: '{}'));
+    expect((await db.select(db.wearOutbox).getSingle()).id, isPositive);
   });
 }

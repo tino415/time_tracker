@@ -11,6 +11,7 @@ import 'sync_service.dart';
 import 'sync_store.dart';
 import 'tracker_controller.dart';
 import 'wear_bridge.dart';
+import 'wear_outbox.dart';
 
 const _uuid = Uuid();
 
@@ -33,11 +34,13 @@ class WearSyncService {
     required ActivityRepository activities,
     required ChangeRepository changes,
     required SyncStore syncStore,
+    required WearOutboxStore outbox,
     required bool isWatch,
   }) : _bridge = bridge,
        _activities = activities,
        _changes = changes,
        _syncStore = syncStore,
+       _outbox = outbox,
        _isWatch = isWatch,
        // Built from the same two repositories rather than passed in: assign and
        // retime are edits of an existing boundary, exactly what TrackerController
@@ -54,7 +57,14 @@ class WearSyncService {
   /// an account at all.
   final SyncStore _syncStore;
 
+  /// Where an undelivered relay waits for the peer to come back.
+  final WearOutboxStore _outbox;
+
   final bool _isWatch;
+
+  /// One drain at a time. Reachability can flip twice in a second at the edge
+  /// of range, and two drains would read the same entry and send it twice.
+  bool _draining = false;
 
   final _subscriptions = <StreamSubscription<Object?>>[];
 
@@ -74,12 +84,53 @@ class WearSyncService {
     // Anything the listener service parked while no engine was running.
     await _bridge.drainPending();
 
+    // And anything *this* device failed to send before it was last killed. Not
+    // gated on the form factor: only the watch relays today, but the outbox
+    // belongs to whichever side could not deliver, and a phone with an empty one
+    // pays a single query for the symmetry.
+    await _drainOutbox();
+
     if (_isWatch) {
       _beginRequestingSnapshot();
       _subscriptions.addAll(_cacheOwnCatalogue());
     } else {
       _subscriptions.addAll(_watchCatalogue());
     }
+  }
+
+  /// Send what was parked while the peer was away, oldest first.
+  ///
+  /// Stops at the first failure rather than working through the rest: they all
+  /// go to the same peer, so one undelivered message means the next will be too,
+  /// and stopping keeps the backlog in the order it was made.
+  Future<void> _drainOutbox() async {
+    if (_draining) return;
+    _draining = true;
+    try {
+      for (final entry in await _outbox.pending()) {
+        final message = WearOutboxStore.decode(entry);
+        // Unreadable, so it will not become readable. Drop it rather than
+        // blocking everything behind it forever.
+        if (message == null) {
+          await _outbox.remove(entry.id);
+          continue;
+        }
+        if (!await _bridge.send(message)) return;
+        await _outbox.remove(entry.id);
+      }
+    } finally {
+      _draining = false;
+    }
+  }
+
+  /// Relay [message], parking it if the peer is not there.
+  ///
+  /// The one place the watch's three requests go out, so the answer `send`
+  /// already returns cannot be dropped on the floor at one call site and
+  /// honoured at another.
+  Future<void> _relay(WearMessage message) async {
+    if (await _bridge.send(message)) return;
+    await _outbox.add(message);
   }
 
   /// Watch side: ask for a snapshot until one arrives.
@@ -203,6 +254,10 @@ class WearSyncService {
 
   void _onReachability(WearReachability state) {
     if (state != WearReachability.reachable) return;
+    // The backlog first, and on both sides for the same reason it drains on
+    // start: it is older than anything the snapshot below will say, so sending
+    // it first means the snapshot already accounts for it.
+    unawaited(_drainOutbox());
     // Reconnected. The watch asks again from scratch; the phone volunteers one,
     // since the watch may have been away while bookmarks changed.
     if (_isWatch) {
@@ -276,6 +331,7 @@ class WearSyncService {
             changeSyncId: current.changeId,
             activityId: current.activity.syncId,
             at: current.startedAt,
+            version: current.version,
           );
         }
 
@@ -294,20 +350,27 @@ class WearSyncService {
           if (!_isWatch) await _pushSnapshot(force: true);
         }
 
-      case AssignRequest(:final changeSyncId, :final activityId):
-        await _controller.assignBlock(changeSyncId, activityId);
-        // Mirrors SwitchRequest: the peer's view of "what is tracking" just
-        // changed, so tell it — this is also how a watch that sent the request
-        // finds out its own name for the activity was accepted.
+      case AssignRequest(:final changeSyncId, :final activityId, :final version):
+        // Adopted by version rather than re-applied as a local edit. See
+        // ChangeRepository.applyRelayedRetime for why that distinction is the
+        // whole safety argument for replaying a correction at all.
+        await _changes.applyRelayedAssign(
+          changeSyncId: changeSyncId,
+          activityId: activityId,
+          version: version,
+        );
+        // Pushed even when the correction was refused: a refusal means this
+        // device holds the newer answer, which is exactly when the peer most
+        // needs to hear it. On acceptance it is the mirror of SwitchRequest —
+        // how the sender learns its correction was taken.
         if (!_isWatch) await _pushSnapshot(force: true);
 
-      case RetimeRequest(:final changeSyncId, :final at):
-        await _controller.moveBoundary(changeSyncId, at);
-        // Not a courtesy push: the phone clamps against its own authoritative
-        // neighbours, so its moveBoundary result can differ from the watch's.
-        // CurrentBlock carries startedAt, and applyPeerCurrentBlock re-points and
-        // retimes the same change id, so this snapshot is what converges the
-        // watch onto the phone's answer rather than leaving the two disagreeing.
+      case RetimeRequest(:final changeSyncId, :final at, :final version):
+        await _changes.applyRelayedRetime(changeSyncId: changeSyncId, at: at, version: version);
+        // Same reasoning as above, and the mechanism that settles a
+        // disagreement: CurrentBlock carries startedAt, and applyPeerCurrentBlock
+        // re-points and retimes the same change id, so a refused correction
+        // comes back to the sender as this device's answer.
         if (!_isWatch) await _pushSnapshot(force: true);
     }
   }
@@ -335,6 +398,7 @@ class WearSyncService {
           current = CurrentBlock(
             changeId: change.syncId,
             startedAt: change.changedAt,
+            version: change.version,
             activity: WearActivity(
               syncId: tracked.syncId,
               name: tracked.name,
@@ -401,7 +465,7 @@ class WearSyncService {
     await _changes.applyRelayedSwitch(changeSyncId: changeSyncId, activityId: activityId, at: when);
     await _activities.touchUsed(activityId, when);
 
-    await _bridge.send(SwitchRequest(changeSyncId: changeSyncId, activityId: activityId, at: when));
+    await _relay(SwitchRequest(changeSyncId: changeSyncId, activityId: activityId, at: when));
   }
 
   /// Watch side: re-point the running block at [activityId] without opening a
@@ -410,20 +474,27 @@ class WearSyncService {
   /// Written locally first, same write-then-relay shape as [requestSwitch].
   Future<void> requestAssign({required String changeSyncId, required String activityId}) async {
     await _controller.assignBlock(changeSyncId, activityId);
-    await _bridge.send(AssignRequest(changeSyncId: changeSyncId, activityId: activityId));
+    final landed = await _changes.changeById(changeSyncId);
+    if (landed == null) return;
+    await _relay(
+      AssignRequest(changeSyncId: changeSyncId, activityId: activityId, version: landed.version),
+    );
   }
 
   /// Watch side: correct when the running block started.
   ///
-  /// [at] is only ever a request. `moveBoundary` clamps it against the block's
-  /// neighbours, so the value this device actually lands on can differ from
-  /// what is sent here — and, since the phone's neighbours are the authoritative
-  /// ones, from what the phone lands on too. That gap is closed on the receiving
-  /// end, not here: the phone's next [BookmarkSnapshot] carries its own answer,
-  /// and applying it re-points the watch's copy of this same change onto it.
+  /// [at] is only ever a request *here*. `moveBoundary` clamps it against this
+  /// device's neighbours, and what goes on the wire is where it actually landed,
+  /// not what was asked for — the receiver adopts that value rather than
+  /// re-deriving one, so sending the raw request would mean the two devices
+  /// clamped against different neighbours and disagreed about the answer.
   Future<void> requestRetime({required String changeSyncId, required DateTime at}) async {
     await _controller.moveBoundary(changeSyncId, at);
-    await _bridge.send(RetimeRequest(changeSyncId: changeSyncId, at: at));
+    final landed = await _changes.changeById(changeSyncId);
+    if (landed == null) return;
+    await _relay(
+      RetimeRequest(changeSyncId: changeSyncId, at: landed.changedAt, version: landed.version),
+    );
   }
 
   /// Move the boundary by [by], reading where it currently is rather than being
@@ -462,6 +533,7 @@ final wearSyncProvider = Provider<WearSyncService>((ref) {
     activities: ref.watch(activityRepositoryProvider),
     changes: ref.watch(changeRepositoryProvider),
     syncStore: ref.watch(syncStoreProvider),
+    outbox: ref.watch(wearOutboxProvider),
     isWatch: ref.watch(isWatchProvider),
   );
   ref.onDispose(service.dispose);

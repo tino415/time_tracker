@@ -114,13 +114,39 @@ class ActivityChangeActivities extends Table {
   Set<Column> get primaryKey => {activityChangeId, activityId};
 }
 
-@DriftDatabase(tables: [Activities, ActivityChanges, ActivityChangeActivities, SyncMeta])
+/// Relay messages this device could not deliver, kept until the peer is back.
+///
+/// The counterpart to the *inbound* queue in `WearQueue.kt`, and deliberately
+/// not its mirror image: that one is native because its writer is native — the
+/// listener service runs with no Flutter engine and cannot reach Drift. This
+/// one is written and drained from Dart while the app is running, so a native
+/// queue would cost two channel hops and every test that can be written against
+/// it.
+///
+/// [collapseKey] is what bounds the table semantically rather than by age. A
+/// correction states the sender's whole answer for one boundary, so only the
+/// newest per boundary is worth keeping; a switch is a distinct event and
+/// carries a null key, so every one survives.
+class WearOutbox extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// [WearMessage.type], and [payload] is its `toPayload()` as JSON.
+  TextColumn get type => text()();
+  TextColumn get payload => text()();
+
+  /// Null keeps every entry; otherwise a new entry replaces the one it matches.
+  TextColumn get collapseKey => text().nullable()();
+}
+
+@DriftDatabase(
+  tables: [Activities, ActivityChanges, ActivityChangeActivities, SyncMeta, WearOutbox],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -138,6 +164,12 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(activities, activities.dirty);
         await m.addColumn(activityChanges, activityChanges.dirty);
         await m.createTable(syncMeta);
+      }
+      if (from < 4) {
+        // Purely additive: an empty outbox is the same as not having one, so
+        // there is nothing to backfill. Anything the watch failed to relay
+        // before this upgrade was already dropped and cannot be recovered.
+        await m.createTable(wearOutbox);
       }
     },
     beforeOpen: (details) async {

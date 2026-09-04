@@ -84,10 +84,15 @@ abstract class ChangeRepository {
   ///
   /// Idempotent in the sense that matters: applying the same snapshot twice
   /// writes nothing the second time.
+  ///
+  /// [version] is the sender's, and seeds this device's copy so the two
+  /// counters can be compared afterwards. Null from a peer that does not send
+  /// one, which leaves the local version alone.
   Future<void> applyPeerCurrentBlock({
     required String changeSyncId,
     required String activityId,
     required DateTime at,
+    required int? version,
   });
 
   /// Apply a switch relayed from a peer, under an id the peer minted.
@@ -100,6 +105,49 @@ abstract class ChangeRepository {
     required String changeSyncId,
     required String activityId,
     required DateTime at,
+  });
+
+  /// One change by its id, or null. Callers that need a row's *version* — the
+  /// relay puts it on the wire — read it here rather than scanning
+  /// [loadChanges].
+  Future<ActivityChange?> changeById(String syncId);
+
+  /// Adopt a peer's correction to a boundary both devices already have.
+  ///
+  /// The counterpart to [applyRelayedSwitch] for edits rather than events, and
+  /// the reason the two cannot share a path: a switch is idempotent because a
+  /// known id is skipped, while "the start is X" is a valid thing to say twice
+  /// and about a row that keeps changing. So these compare versions instead,
+  /// with exactly the rule `SyncStore` applies to a row pulled from the server:
+  /// strictly newer is adopted, an equal version loses to unpushed local work,
+  /// and the value is written *at the version it arrived with* rather than
+  /// bumped past it.
+  ///
+  /// That last part is the point. Applying a relayed correction as a local edit
+  /// bumps it above whatever the receiver had, so a stale one — replayed from
+  /// the outbox after a disconnect — would beat a newer local edit and then
+  /// propagate that stale value through the next sync.
+  ///
+  /// Returns whether the correction was adopted. Both no-op on a change this
+  /// device does not have: a correction names a boundary, it cannot open one.
+  ///
+  /// [at] is still clamped against *this* device's neighbours. Adopting a
+  /// version settles whose answer is newer, not whether that answer fits here —
+  /// the sender may have been working from a snapshot that predates a boundary
+  /// already on the record, and no relay may reorder two blocks.
+  Future<bool> applyRelayedRetime({
+    required String changeSyncId,
+    required DateTime at,
+    required int version,
+    DateTime Function()? clock,
+  });
+
+  /// See [applyRelayedRetime]. No-op too when [activityId] is unknown here,
+  /// which would otherwise break the join row's foreign key.
+  Future<bool> applyRelayedAssign({
+    required String changeSyncId,
+    required String activityId,
+    required int version,
   });
 
   /// Live join rows across all changes (change id -> activity id). Combined with

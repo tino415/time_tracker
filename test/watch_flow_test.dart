@@ -24,12 +24,11 @@ import 'support/flow_harness.dart';
 /// The Wear emulator's logical size.
 const _watch = Size(227, 227);
 
-/// A tile in the switch list. Scoped, because once an activity is running its
-/// name also appears in the header — the two are different affordances.
 /// A switch tile, by the activity it switches to.
 ///
 /// Keyed rather than found by text: the running activity's name also appears in
-/// the hero above, and both live in the same scroll view.
+/// the hero above, and both live in the same scroll view. The two are different
+/// affordances, and only one of them switches.
 Finder tile(String syncId) => find.byKey(ValueKey('tile-$syncId'));
 
 /// Tiles arm on first tap and act on the second — a watch is operated by feel,
@@ -164,9 +163,15 @@ void main() {
     await pumpWatch(tester, bridge, seed: seedBookmarks);
 
     expect(find.text('Deep work'), findsOneWidget);
-    expect(find.text('Email'), findsOneWidget);
-    expect(find.text('Admin'), findsNothing);
     expect(find.text('nothing tracked'), findsOneWidget);
+
+    // A 227px circle fits the hero and about two rows, so the rest of the list
+    // is a scroll away rather than absent.
+    await tester.scrollUntilVisible(tile(emailId), 40);
+    expect(find.text('Email'), findsOneWidget);
+
+    // Not scrolled past — never built at all.
+    expect(find.text('Admin', skipOffstage: false), findsNothing);
     expect(tester.takeException(), isNull);
 
     await disposeApp(tester);
@@ -271,12 +276,11 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the timer stays clear of the round screen edge, and does not scroll', (
-    tester,
-  ) async {
+  testWidgets('the timer starts clear of the round screen edge, and scrolls away', (tester) async {
     // Reported: the clock was invisible, cut off by the curve. A circular
     // display narrows towards the top, and the hero had been sitting at the top
-    // of a scroll view — flush against exactly where it cuts.
+    // of a scroll view — flush against exactly where it cuts. What fixed that
+    // is the inset above the scroll view, not pinning; the hero rides the list.
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);
@@ -294,11 +298,26 @@ void main() {
     expect(rect.left, greaterThan(0));
     expect(rect.right, lessThan(227));
 
-    // And it is not inside the scrollable, so it cannot be scrolled away from.
     expect(
       find.descendant(of: find.byType(ListView), matching: clock.first),
-      findsNothing,
-      reason: 'the clock is the reason to glance at a watch; it must stay put',
+      findsOneWidget,
+      reason: 'at rest the hero reads as the top of the screen, but it is a list row',
+    );
+
+    // The point of making it one: scrolling carries it off, and the tiles take
+    // the band it was holding at rest.
+    await tester.drag(find.byType(ListView), const Offset(0, -80));
+    await settle(tester);
+
+    expect(
+      tester.getRect(clock.first).top,
+      lessThan(margin),
+      reason: 'the hero stayed put; it is meant to travel like any other row',
+    );
+    expect(
+      tester.getRect(tile(kUnsortedActivityId)).top,
+      lessThan(rect.top),
+      reason: 'the tiles did not rise into the band the hero holds at rest',
     );
 
     await disposeApp(tester);
@@ -329,6 +348,10 @@ void main() {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
+
+    // Both tiles have to be on screen at once for "the other one disarms" to
+    // mean anything, and at rest the second bookmark is below the fold.
+    await tester.scrollUntilVisible(tile(emailId), 40);
 
     await tester.tap(tile(deepWorkId));
     await settle(tester);
@@ -830,9 +853,10 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the clock is never inside something that scrolls', (tester) async {
-    // It is the reason to glance at a watch. The home screen already guards
-    // this; the start-time screen shows the same clock and must too.
+  testWidgets('the start-time clock is not inside something that scrolls', (tester) async {
+    // Here the clock is the preview of the nudge below it, so the two have to
+    // stay on screen together — unlike home, where it is only a readout and is
+    // free to scroll away.
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     await pumpWatch(tester, bridge, seed: seedBookmarks);

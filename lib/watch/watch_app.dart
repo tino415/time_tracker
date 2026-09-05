@@ -167,6 +167,8 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
     final sideInset = size.width * 0.10;
     final topInset = size.height * 0.09;
 
+    final fixedTop = _fixedTop(pane, current, editable);
+
     return PopScope(
       // Wear routes its own dismiss gesture here as a pop, so this is what
       // makes that gesture unwind one pane rather than leave the app — and at
@@ -192,13 +194,16 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
             padding: EdgeInsets.fromLTRB(sideInset, topInset, sideInset, 0),
             child: Column(
               children: [
-                // Fixed, not scrolled. The elapsed clock is the reason to look
-                // at the watch at all, so it must not be something you can
-                // scroll away from — and at the top of a scroll view it sat
-                // exactly where a round screen cuts.
-                _fixedTop(pane, current, editable),
-                const SizedBox(height: 8),
-                Expanded(child: _body(pane, current, bookmarked, currentId, unnamedRunning)),
+                // The top inset is outside the scroll view, so whatever starts
+                // at the top of it starts clear of the curve — which is what
+                // the clock needed, not a pin. Scrolling may carry it off.
+                // What stays here stays because its pane edits it: the
+                // start-time and swap screens are read as "this, instead of
+                // that", so the thing being changed has to stay in view.
+                if (fixedTop != null) ...[fixedTop, const SizedBox(height: 8)],
+                Expanded(
+                  child: _body(pane, current, editable, bookmarked, currentId, unnamedRunning),
+                ),
               ],
             ),
           ),
@@ -223,12 +228,11 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
     }
   }
 
-  Widget _fixedTop(_WatchPane pane, Block? current, bool editable) {
+  /// Null where the pane wants nothing pinned and scrolls everything instead.
+  Widget? _fixedTop(_WatchPane pane, Block? current, bool editable) {
     switch (pane) {
       case _WatchPane.home:
-        // The same condition the swipe is gated on, so the caret cannot promise
-        // a menu that will not open.
-        return _NowHero(key: const ValueKey('hero'), current: current, menuHint: editable);
+        return null;
       case _WatchPane.menu:
         return _NowHero(key: const ValueKey('hero'), current: current, menuHint: false);
       case _WatchPane.editStart:
@@ -241,13 +245,14 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
   Widget _body(
     _WatchPane pane,
     Block? current,
+    bool editable,
     List<Activity> bookmarked,
     String? currentId,
     bool unnamedRunning,
   ) {
     switch (pane) {
       case _WatchPane.home:
-        return _switchList(unnamedRunning, bookmarked, currentId);
+        return _switchList(current, editable, unnamedRunning, bookmarked, currentId);
       case _WatchPane.menu:
         return _menu();
       case _WatchPane.editStart:
@@ -261,13 +266,27 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
   /// the curve rather than permanently short of it.
   EdgeInsets get _bodyPadding => EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14);
 
-  Widget _switchList(bool unnamedRunning, List<Activity> bookmarked, String? currentId) {
+  Widget _switchList(
+    Block? current,
+    bool editable,
+    bool unnamedRunning,
+    List<Activity> bookmarked,
+    String? currentId,
+  ) {
     return ListView(
       // Home is left and re-entered often now, and the list is long enough to
       // scroll, so where it was scrolled to is worth keeping.
       key: const PageStorageKey('switch-list'),
       padding: _bodyPadding,
       children: [
+        // Enough space above the hero that at rest it reads as the top of the
+        // screen rather than the first row of a list, and the tile below it
+        // still shows the list continuing.
+        const SizedBox(height: 50),
+        // menuHint takes the same condition the swipe is gated on, so the caret
+        // cannot promise a menu that will not open.
+        _NowHero(key: const ValueKey('hero'), current: current, menuHint: editable),
+        const SizedBox(height: 8),
         _ActivityTile(
           // Keyed by identity, not label, so a test can find the tile without
           // depending on wording — and without matching the same name in the

@@ -306,13 +306,27 @@ void main() {
 
     // The point of making it one: scrolling carries it off, and the tiles take
     // the band it was holding at rest.
+    //
+    // Bound to the one clock on screen before the drag, so that if the hero ever
+    // stops being built the finder fails here rather than silently rebinding to
+    // another ':' — the start time on a tile reads the same to a text matcher.
+    final heroClock = clock.first;
+    final tileTop = tester.getRect(tile(kUnsortedActivityId)).top;
+
     await tester.drag(find.byType(ListView), const Offset(0, -80));
     await settle(tester);
 
+    // Measured against a tile rather than against the drag: touch slop eats an
+    // unspecified part of the gesture, but whatever the list travels the hero
+    // must travel with it, one pixel per pixel. Anything less means it is being
+    // held somewhere.
+    final heroTravel = rect.top - tester.getRect(heroClock).top;
+    final tileTravel = tileTop - tester.getRect(tile(kUnsortedActivityId)).top;
+    expect(heroTravel, greaterThan(0), reason: 'the list did not scroll at all');
     expect(
-      tester.getRect(clock.first).top,
-      lessThan(margin),
-      reason: 'the hero stayed put; it is meant to travel like any other row',
+      heroTravel,
+      moreOrLessEquals(tileTravel, epsilon: 0.5),
+      reason: 'the hero did not travel with the list; it is meant to be a row like any other',
     );
     expect(
       tester.getRect(tile(kUnsortedActivityId)).top,

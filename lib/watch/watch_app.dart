@@ -266,6 +266,11 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
   /// the curve rather than permanently short of it.
   EdgeInsets get _bodyPadding => EdgeInsets.only(bottom: MediaQuery.of(context).size.height * 0.14);
 
+  /// Space above the hero, so at rest it reads as the top of the screen rather
+  /// than the first row of a list. A fraction of the diameter for the same
+  /// reason the insets are: it is the geometry that scales, not the device.
+  double get _heroLead => MediaQuery.of(context).size.height * 0.22;
+
   Widget _switchList(
     Block? current,
     bool editable,
@@ -273,16 +278,14 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
     List<Activity> bookmarked,
     String? currentId,
   ) {
+    // No PageStorageKey: the clock is the first row now, so restoring an offset
+    // would re-enter home with the one thing worth glancing at already scrolled
+    // off. Opening at the top costs a long list its remembered position, which
+    // is the cheaper of the two.
     return ListView(
-      // Home is left and re-entered often now, and the list is long enough to
-      // scroll, so where it was scrolled to is worth keeping.
-      key: const PageStorageKey('switch-list'),
       padding: _bodyPadding,
       children: [
-        // Enough space above the hero that at rest it reads as the top of the
-        // screen rather than the first row of a list, and the tile below it
-        // still shows the list continuing.
-        const SizedBox(height: 50),
+        SizedBox(height: _heroLead),
         // menuHint takes the same condition the swipe is gated on, so the caret
         // cannot promise a menu that will not open.
         _NowHero(key: const ValueKey('hero'), current: current, menuHint: editable),

@@ -667,6 +667,7 @@ class DottedField extends StatelessWidget {
     this.focusNode,
     this.onChanged,
     this.onSubmitted,
+    this.autofocus = false,
   });
 
   final TextEditingController controller;
@@ -674,6 +675,15 @@ class DottedField extends StatelessWidget {
   final FocusNode? focusNode;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
+
+  /// Take the keyboard as soon as this is on screen. For a field that *is* the
+  /// surface it opened with — asking someone to click the only thing in a dialog
+  /// before they can use it is a step with no purpose.
+  ///
+  /// The framework's own flag rather than a `requestFocus` after the first
+  /// frame: a route animating in moves focus itself as its scope settles, and a
+  /// post-frame request races that and loses about as often as it wins.
+  final bool autofocus;
 
   @override
   Widget build(BuildContext context) {
@@ -688,6 +698,7 @@ class DottedField extends StatelessWidget {
         child: TextField(
           controller: controller,
           focusNode: focusNode,
+          autofocus: autofocus,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
           textInputAction: TextInputAction.go,

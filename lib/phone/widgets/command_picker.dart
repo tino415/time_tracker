@@ -132,6 +132,9 @@ class _CommandPickerState extends ConsumerState<_CommandPicker> {
               child: DottedField(
                 controller: _query,
                 focusNode: _field,
+                // The picker is a field and a list, and you arrive at it
+                // mid-keystroke — there is nothing else here to focus first.
+                autofocus: true,
                 hint: 'what do you want to do?',
                 // The cursor goes home on every edit: it points at a position in
                 // a list that has just been rebuilt, so keeping it would leave it

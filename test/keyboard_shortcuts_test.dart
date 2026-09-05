@@ -656,6 +656,25 @@ void main() {
       await disposeApp(tester);
     });
 
+    testWidgets('the field has the keyboard the moment it opens', (tester) async {
+      // You arrive here mid-keystroke, so the field has to be live already —
+      // opening a picker you then have to click before typing is worse than no
+      // picker. `enterText` sets text whether or not anything is focused, which
+      // is exactly why the tests below did not notice this was broken.
+      await bootApp(tester, viewport: _desktop, seed: _seed);
+
+      await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK);
+
+      final focused = FocusManager.instance.primaryFocus?.context;
+      expect(
+        focused?.findAncestorWidgetOfExactType<EditableText>(),
+        isNotNull,
+        reason: 'the keyboard is not in the picker field',
+      );
+
+      await disposeApp(tester);
+    });
+
     testWidgets('Cmd rather than Ctrl where the platform says Cmd', (tester) async {
       // The modifier follows the platform, not the keyboard: binding both
       // everywhere would swallow Ctrl+K on a Mac, where every text field treats
@@ -948,13 +967,7 @@ void main() {
     await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
 
     expect(_syncStatus(tester), _refused);
-
-    // And it is still there to be read once the controls are opened. This is the
-    // half the move to a menu put at risk: the outcome of a sync you asked for
-    // by key must not depend on a surface having been open at the time.
-    await tester.tap(find.text('⚙ MENU'));
-    await settle(tester);
-    expect(find.text(_refused), findsOneWidget, reason: 'the menu shows what the key did');
+    expect(find.text(_refused), findsOneWidget, reason: 'the controls show what the key did');
 
     await disposeApp(tester);
   });

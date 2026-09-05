@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/data/manual_sync.dart';
 import 'package:time_tracker/data/providers.dart';
 import 'package:time_tracker/data/sync_service.dart';
 import 'package:time_tracker/data/sync_store.dart';
@@ -105,12 +106,10 @@ Future<AppDatabase> _bootWithSync(
   return db;
 }
 
-/// Open the wide shell's controls. They hang off a trigger at the top right
-/// now, rather than sitting exposed at the foot of the sidebar.
-Future<void> _openMenu(WidgetTester tester) async {
-  await tester.tap(find.text('⚙ MENU'));
-  await settle(tester);
-}
+/// What the last sync came to, read where the three ways of asking all report.
+String? _syncStatus(WidgetTester tester) => ProviderScope.containerOf(
+  tester.element(find.byType(PhoneApp)),
+).read(manualSyncProvider).status;
 
 /// Where the focused control sits, horizontally. Traversal order is a claim
 /// about the layout, so it is asked of the layout.
@@ -163,8 +162,10 @@ void main() {
     expect(_at(tester, find.text('[track]')).dx, lessThan(body.dx));
     // The controls go the other way, and that is the point: at the foot of the
     // sidebar they sat bottom left, the furthest corner from where a desktop
-    // user looks for them.
-    expect(_at(tester, find.text('⚙ MENU')).dx, greaterThan(body.dx));
+    // user looks for them. Shown rather than behind anything — there is width
+    // here for all four, which is what a phone does not have.
+    expect(_at(tester, find.text('◑ THEME')).dx, greaterThan(body.dx));
+    expect(_at(tester, find.text('◑ THEME')).dy, lessThan(body.dy));
 
     await disposeApp(tester);
   });
@@ -223,7 +224,6 @@ void main() {
     expect(inScreen(ReportsScreen, find.text('↧ EXPORT CSV · ALL HISTORY')), findsNothing);
     expect(find.text('SET UP SYNC'), findsNothing);
 
-    await _openMenu(tester);
     await tester.tap(find.text('⟳ SYNC'));
     await settle(tester);
 
@@ -250,6 +250,36 @@ void main() {
     await tester.tap(more);
     await settle(tester);
     expect(find.text('⟳ SYNC'), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('pulling down on the phone runs a sync', (tester) async {
+    // The gesture every other phone app has taught. Additive: the button in the
+    // sheet stays, because a pull needs a thumb and a list already at its top,
+    // and the web build runs this same shell at phone width in a browser window
+    // where there is neither.
+    await _bootWithSync(
+      tester,
+      viewport: _phone,
+      seed: _seed,
+      service: (db) =>
+          SyncService(store: SyncStore(db), transport: _RejectingTransport(), backend: 'test'),
+    );
+
+    await tester.fling(find.byType(RefreshIndicator), const Offset(0, 400), 1000);
+    await settle(tester);
+
+    expect(_syncStatus(tester), contains('superseded'));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('nothing to sync to, nothing to pull', (tester) async {
+    // A gesture that spins and reports nothing is worse than one not offered.
+    await bootApp(tester, viewport: _phone, seed: _seed);
+
+    expect(find.byType(RefreshIndicator), findsNothing);
 
     await disposeApp(tester);
   });

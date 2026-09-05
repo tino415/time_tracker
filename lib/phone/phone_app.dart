@@ -88,7 +88,9 @@ class _Home extends ConsumerWidget {
           children: [
             const _Header(),
             Expanded(
-              child: IndexedStack(index: tab, children: [for (final tt in _tabs) tt.screen]),
+              child: _PullToSync(
+                child: IndexedStack(index: tab, children: [for (final tt in _tabs) tt.screen]),
+              ),
             ),
           ],
         ),
@@ -101,18 +103,30 @@ class _Home extends ConsumerWidget {
   /// a second copy never carries its own state and its own database
   /// subscriptions.
   ///
-  /// The menu trigger rides above them rather than beside them: a strip spanning
-  /// both columns would interleave the focus ring, and Tab is meant to exhaust
-  /// the sidebar before it enters the content. Inside this column it is simply
-  /// one more content stop.
+  /// The controls sit above them, at the top right of this column.
+  ///
+  /// A strip rather than an overlay: at this width the screens still want their
+  /// full rectangle, and a floating cluster would sit on top of the Reports
+  /// header and the calendar's first hour. Vertical space is what a desktop has
+  /// most of, which is exactly what makes the trade the other way round from the
+  /// phone's.
+  ///
+  /// Inside this column rather than spanning both, so the focus ring does not
+  /// interleave: Tab is meant to exhaust the sidebar before it enters the
+  /// content, and here these are simply the content's first stops.
   Widget _wideBody(int tab) {
-    return Stack(
+    return Column(
       children: [
-        IndexedStack(
-          index: tab,
-          children: [for (final tt in _tabs) _ReadableWidth(child: tt.screen)],
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Align(alignment: Alignment.centerRight, child: _AppControls()),
         ),
-        const Positioned(top: 12, right: 12, child: _MenuTrigger()),
+        Expanded(
+          child: IndexedStack(
+            index: tab,
+            children: [for (final tt in _tabs) _ReadableWidth(child: tt.screen)],
+          ),
+        ),
       ],
     );
   }
@@ -201,6 +215,42 @@ class _TabBar extends ConsumerWidget {
   }
 }
 
+/// Pull down to sync — the gesture every other app on the phone has taught.
+///
+/// Additive, not a replacement: the button stays in the sheet. A pull needs a
+/// list already at its top and a thumb to do it with, and neither is a given —
+/// the web build runs this same shell at phone width in a browser window, where
+/// there is a mouse and no swipe, and a screen whose content does not fill it
+/// has nothing to overscroll.
+///
+/// Absent when there is no account, rather than spinning and reporting nothing:
+/// a gesture that appears to work and does not is worse than one that is not
+/// offered.
+class _PullToSync extends ConsumerWidget {
+  const _PullToSync({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = neo(context);
+    if (ref.watch(syncServiceProvider) == null) return child;
+
+    return RefreshIndicator(
+      // Material's spinner in this app's colours. The shape is not ours, and
+      // deliberately: the gesture is only obvious because it looks like every
+      // other pull-to-refresh, and a neobrutalist reinvention would be a puzzle.
+      color: t.brand,
+      backgroundColor: t.surface,
+      // The same call the button and `r` make, so all three report through
+      // [manualSyncProvider] and the outcome is readable in the sheet afterwards
+      // whichever one asked for it.
+      onRefresh: ref.read(manualSyncProvider.notifier).run,
+      child: child,
+    );
+  }
+}
+
 /// The app's own controls, under the thumb.
 ///
 /// A sheet rather than a popup: it is the frame every other sheet in the app
@@ -284,28 +334,6 @@ class _Sidebar extends ConsumerWidget {
           const Spacer(),
         ],
       ),
-    );
-  }
-}
-
-/// The wide shell's way into the app's controls: top right, where a desktop
-/// looks for them.
-///
-/// They used to sit at the foot of the sidebar, because that is where the
-/// header folds in at this width — bottom left, which is the furthest point on
-/// the screen from where anyone goes looking for settings.
-///
-/// Deliberately not the phone's gesture. A bottom sheet beside a mouse arrives
-/// from the wrong edge, and the two shells already differ in every other way
-/// they present the same four things.
-class _MenuTrigger extends ConsumerWidget {
-  const _MenuTrigger();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return _ControlButton(
-      label: '⚙ MENU',
-      onTap: () => showNeoMenu<void>(context, (_) => const _AppControls()),
     );
   }
 }

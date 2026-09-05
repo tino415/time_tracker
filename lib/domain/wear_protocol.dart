@@ -60,6 +60,7 @@ sealed class WearMessage {
       AssignRequest.kind => AssignRequest.fromPayload(map),
       RetimeRequest.kind => RetimeRequest.fromPayload(map),
       SnapshotRequest.kind => SnapshotRequest.fromPayload(map),
+      SyncNowRequest.kind => SyncNowRequest.fromPayload(map),
       SyncCredential.kind => SyncCredential.fromPayload(map),
       _ => null,
     };
@@ -396,6 +397,32 @@ class SnapshotRequest extends WearMessage {
     // which is the old behaviour, and the safe direction to be wrong in.
     return SnapshotRequest(credentialVersion: version is int ? version : 0);
   }
+}
+
+/// Watch → phone: "sync for me, I could not reach the server myself".
+///
+/// Not the watch's first choice. It holds the account token precisely so it can
+/// talk to the backend directly, and does — this is what is left when it has no
+/// route out: a Bluetooth-only watch off the wrist's wifi, where the phone is
+/// the only device on a network.
+///
+/// Carries nothing. What to sync is never in question, only when — and the
+/// phone syncs its whole database anyway, which after the relay is the watch's
+/// too. Delivery is the outbox's problem, so a request made out of range waits
+/// rather than being lost; arriving late costs nothing, because asking twice to
+/// sync is asking once.
+class SyncNowRequest extends WearMessage {
+  const SyncNowRequest();
+
+  static const kind = 'sync_now';
+
+  @override
+  String get type => kind;
+
+  @override
+  Map<String, Object?> toPayload() => const {};
+
+  static SyncNowRequest fromPayload(Map<Object?, Object?> payload) => const SyncNowRequest();
 }
 
 /// How the peer device can be reached, as reported by the capability client.

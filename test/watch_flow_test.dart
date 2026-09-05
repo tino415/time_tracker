@@ -9,7 +9,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/data/sync_service.dart';
 import 'package:time_tracker/data/sync_store.dart';
+import 'package:time_tracker/data/sync_transport.dart';
 import 'package:time_tracker/data/wear_outbox.dart';
 import 'package:time_tracker/data/providers.dart';
 import 'package:time_tracker/data/wear_bridge.dart';
@@ -112,6 +114,7 @@ Future<AppDatabase> pumpWatch(
   WidgetTester tester,
   FakeWearBridge bridge, {
   Future<void> Function(AppDatabase db)? seed,
+  List<Override> overrides = const [],
 }) async {
   tester.view.physicalSize = _watch;
   tester.view.devicePixelRatio = 1.0;
@@ -128,6 +131,7 @@ Future<AppDatabase> pumpWatch(
         databaseProvider.overrideWithValue(db),
         wearBridgeProvider.overrideWithValue(bridge),
         isWatchProvider.overrideWithValue(true),
+        ...overrides,
       ],
       child: const WatchApp(),
     ),
@@ -885,4 +889,150 @@ void main() {
 
     await disposeApp(tester);
   });
+
+  group('syncing from the wrist', () {
+    final syncRow = find.byKey(const ValueKey('sync-now'));
+
+    /// Home's list, scrolled to its foot, where the rows that belong to the app
+    /// rather than to an activity live.
+    ///
+    /// Dragged rather than `scrollUntilVisible`, because half of these tests
+    /// assert the row is *not* there: a finder that never matches would make
+    /// that helper run to its limit and throw, and one that is merely below the
+    /// fold would read as absent. Reaching the end first makes present and
+    /// absent mean what they say.
+    Future<void> scrollToFoot(WidgetTester tester) async {
+      for (var i = 0; i < 4; i++) {
+        await tester.drag(find.byType(ListView), const Offset(0, -200));
+        await settle(tester);
+      }
+    }
+
+    testWidgets('a build with no backend offers nothing to sync to', (tester) async {
+      final bridge = FakeWearBridge();
+      addTearDown(bridge.dispose);
+      await pumpWatch(tester, bridge, seed: seedBookmarks);
+      await scrollToFoot(tester);
+
+      expect(syncRow, findsNothing);
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('a backend with no account yet offers nothing either', (tester) async {
+      // The phone relays the token after startup, so this is the state every
+      // watch begins in — and unlike the phone there is no setup sheet to open
+      // instead, because the account cannot be made here.
+      final bridge = FakeWearBridge();
+      addTearDown(bridge.dispose);
+      await pumpWatch(
+        tester,
+        bridge,
+        seed: seedBookmarks,
+        overrides: [
+          syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+        ],
+      );
+      await scrollToFoot(tester);
+
+      expect(syncRow, findsNothing);
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('a sync the watch can make itself reports what it came to', (tester) async {
+      final bridge = FakeWearBridge();
+      addTearDown(bridge.dispose);
+      await pumpWatch(
+        tester,
+        bridge,
+        seed: seedBookmarks,
+        overrides: [
+          syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+          syncServiceProvider.overrideWithValue(_FakeSync()),
+        ],
+      );
+
+      await scrollToFoot(tester);
+      await tester.tap(syncRow);
+      await settle(tester);
+
+      expect(find.text('↑2 ↓1'), findsOneWidget);
+      // It reached the server, so the phone was never asked to do it instead.
+      expect(bridge.sent.whereType<SyncNowRequest>(), isEmpty);
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('a watch with no route out asks the phone instead', (tester) async {
+      // The fallback the direct path exists to avoid: a Bluetooth-only watch off
+      // wifi has no network of its own, and the phone is the only device that
+      // does. Relayed rather than dropped, so the outbox carries it when the
+      // phone is also out of range.
+      final bridge = FakeWearBridge();
+      addTearDown(bridge.dispose);
+      await pumpWatch(
+        tester,
+        bridge,
+        seed: seedBookmarks,
+        overrides: [
+          syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+          syncServiceProvider.overrideWithValue(_FakeSync(fails: const SyncException('offline'))),
+        ],
+      );
+
+      await scrollToFoot(tester);
+      await tester.tap(syncRow);
+      await settle(tester);
+
+      expect(find.text('offline'), findsOneWidget);
+      expect(bridge.sent.whereType<SyncNowRequest>(), hasLength(1));
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('a refused token is not handed to the phone to be refused again', (tester) async {
+      final bridge = FakeWearBridge();
+      addTearDown(bridge.dispose);
+      await pumpWatch(
+        tester,
+        bridge,
+        seed: seedBookmarks,
+        overrides: [
+          syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+          syncServiceProvider.overrideWithValue(
+            _FakeSync(fails: const SyncException('no', unauthorized: true)),
+          ),
+        ],
+      );
+
+      await scrollToFoot(tester);
+      await tester.tap(syncRow);
+      await settle(tester);
+
+      expect(find.text('token rejected'), findsOneWidget);
+      // Both devices share the account, so the phone would be told the same
+      // thing — and only the person can fix it.
+      expect(bridge.sent.whereType<SyncNowRequest>(), isEmpty);
+
+      await disposeApp(tester);
+    });
+  });
+}
+
+/// Stands in for a round trip, so these tests are about what the shell does with
+/// the outcome rather than about the exchange.
+class _FakeSync implements SyncService {
+  _FakeSync({this.fails});
+
+  final SyncException? fails;
+
+  @override
+  Future<SyncResult> syncNow() async {
+    if (fails != null) throw fails!;
+    return const SyncResult(pushed: 2, pulled: 1, rejected: 0);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

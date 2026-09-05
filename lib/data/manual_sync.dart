@@ -22,30 +22,35 @@ class ManualSync extends Notifier<ManualSyncState> {
   /// Silent without an account, and while one is already running: a second run
   /// would collapse inside [SyncService.syncNow] and come back '↑0 ↓0', writing
   /// over the result still on screen.
-  Future<void> run() async {
+  ///
+  /// Returns whether the server was reached — answered, not necessarily
+  /// agreeably. The watch reads it to decide whether to ask the phone to sync
+  /// instead; the phone has nowhere to fall back to and ignores it.
+  Future<bool> run() async {
     final service = ref.read(syncServiceProvider);
-    if (service == null || state.running) return;
+    if (service == null || state.running) return false;
 
     state = (running: true, status: null);
     String? status;
-    try {
-      status = await _outcome(service);
-    } finally {
-      state = (running: false, status: status);
-    }
-  }
-
-  Future<String> _outcome(SyncService service) async {
+    var reached = false;
     try {
       final result = await service.syncNow();
-      return '↑${result.pushed} ↓${result.pulled}'
+      status =
+          '↑${result.pushed} ↓${result.pulled}'
           '${result.rejected > 0 ? " · ${result.rejected} superseded" : ""}';
+      reached = true;
     } on SyncException catch (e) {
       // Being offline is the normal state for this app, not a failure worth
       // alarming about; a bad token is worth naming, because only the user
       // can fix it.
-      return e.unauthorized ? 'token rejected' : 'offline';
+      status = e.unauthorized ? 'token rejected' : 'offline';
+      // A refusal is an answer. Handing that to the other device would only
+      // have it refused again, by the account both of them share.
+      reached = e.unauthorized;
+    } finally {
+      state = (running: false, status: status);
     }
+    return reached;
   }
 }
 

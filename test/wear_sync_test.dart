@@ -39,16 +39,44 @@ void main() {
     await db.close();
   });
 
-  WearSyncService serviceFor({required bool isWatch}) => WearSyncService(
-    bridge: bridge,
-    activities: activities,
-    changes: changes,
-    syncStore: SyncStore(db),
-    outbox: WearOutboxStore(db),
-    isWatch: isWatch,
-  );
+  WearSyncService serviceFor({required bool isWatch, Future<void> Function()? onSyncRequested}) =>
+      WearSyncService(
+        bridge: bridge,
+        activities: activities,
+        changes: changes,
+        syncStore: SyncStore(db),
+        outbox: WearOutboxStore(db),
+        isWatch: isWatch,
+        onSyncRequested: onSyncRequested,
+      );
 
   group('phone side', () {
+    test('syncs when the watch asks it to', () async {
+      // The watch's fallback for having no network of its own. The phone runs
+      // the round trip its own manual button would.
+      var runs = 0;
+      final service = serviceFor(isWatch: false, onSyncRequested: () async => runs++);
+      await service.start();
+
+      await bridge.receive(const SyncNowRequest());
+
+      expect(runs, 1);
+      service.dispose();
+    });
+
+    test('a sync request on a build with no backend is inert', () async {
+      // Nothing to sync to, so no handler is wired in. Arriving anyway has to be
+      // survivable rather than fatal — the peer may be a build that has one.
+      final service = serviceFor(isWatch: false);
+      await service.start();
+
+      await bridge.receive(const SyncNowRequest());
+
+      // Absorbed: nothing is sent in reply, and nothing is thrown.
+      expect(bridge.sent.whereType<SyncNowRequest>(), isEmpty);
+      service.dispose();
+    });
+
     test('answers a snapshot request with the bookmarked set', () async {
       final work = await activities.createActivity(
         name: 'Deep work',
@@ -470,6 +498,32 @@ void main() {
 
       final pending = await SyncStore(db).pendingActivities();
       expect(pending.map((a) => a.syncId), isNot(contains('a')));
+      service.dispose();
+    });
+
+    test('asks the phone to sync when it has no route out', () async {
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.pump(); // the snapshot request start() sends
+      bridge.sent.clear();
+
+      await service.requestSyncNow();
+
+      expect(bridge.sent.whereType<SyncNowRequest>(), hasLength(1));
+      service.dispose();
+    });
+
+    test('ignores a sync request, rather than bouncing it back', () async {
+      // The watch is the device least likely to have a network. Honouring the
+      // request here would hand the round trip to it, which is the wrong way
+      // round and would loop against a phone doing the same.
+      var runs = 0;
+      final service = serviceFor(isWatch: true, onSyncRequested: () async => runs++);
+      await service.start();
+
+      await bridge.receive(const SyncNowRequest());
+
+      expect(runs, 0);
       service.dispose();
     });
 

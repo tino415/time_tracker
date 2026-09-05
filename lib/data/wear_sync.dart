@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
+import 'manual_sync.dart';
 import 'providers.dart';
 import 'repositories.dart';
 import 'sync_service.dart';
@@ -36,7 +37,9 @@ class WearSyncService {
     required SyncStore syncStore,
     required WearOutboxStore outbox,
     required bool isWatch,
+    Future<void> Function()? onSyncRequested,
   }) : _bridge = bridge,
+       _onSyncRequested = onSyncRequested,
        _activities = activities,
        _changes = changes,
        _syncStore = syncStore,
@@ -59,6 +62,12 @@ class WearSyncService {
 
   /// Where an undelivered relay waits for the peer to come back.
   final WearOutboxStore _outbox;
+
+  /// Run a sync on this device's behalf. Injected rather than built here: the
+  /// round trip belongs to [SyncService], which this class has no business
+  /// knowing about — it moves messages between two devices, not to a server.
+  /// Null on a build with no backend, where the request cannot be honoured.
+  final Future<void> Function()? _onSyncRequested;
 
   final bool _isWatch;
 
@@ -290,6 +299,13 @@ class WearSyncService {
           await _pushCredential(await _syncStore.token(), mine);
         }
 
+      case SyncNowRequest():
+        // Watch → phone only. The watch asking is the whole point; a phone
+        // asking the watch would hand the round trip to the device least likely
+        // to have a route out.
+        if (_isWatch) return;
+        await _onSyncRequested?.call();
+
       case SyncCredential(:final token, :final version):
         // Phone → watch only. A watch cannot hand the phone an account, and
         // honouring it in that direction would let a lost watch dictate which
@@ -472,6 +488,14 @@ class WearSyncService {
     await _relay(SwitchRequest(changeSyncId: changeSyncId, activityId: activityId, at: when));
   }
 
+  /// Watch side: ask the phone to sync, for a watch with no route to the server.
+  ///
+  /// The fallback, not the path. The watch pushes to the backend itself when it
+  /// can — see [SyncCredential] for why it holds a token at all — and only ends
+  /// up here when that failed for want of a network rather than for want of an
+  /// account.
+  Future<void> requestSyncNow() => _relay(const SyncNowRequest());
+
   /// Watch side: re-point the running block at [activityId] without opening a
   /// new boundary — answering an unnamed block, or correcting a mis-pointed one.
   ///
@@ -539,6 +563,9 @@ final wearSyncProvider = Provider<WearSyncService>((ref) {
     syncStore: ref.watch(syncStoreProvider),
     outbox: ref.watch(wearOutboxProvider),
     isWatch: ref.watch(isWatchProvider),
+    // Read when the request arrives, not now: the sync service does not exist
+    // until a token has landed, and the phone is running long before that.
+    onSyncRequested: () => ref.read(manualSyncProvider.notifier).run(),
   );
   ref.onDispose(service.dispose);
   return service;

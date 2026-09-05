@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/database.dart' show Activity;
+import '../data/manual_sync.dart';
 import '../data/providers.dart';
+import '../data/sync_service.dart';
 import '../data/wear_sync.dart';
 import '../build_info.dart';
 import '../domain/block.dart';
@@ -328,6 +330,7 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
         ],
         if (bookmarked.isEmpty) const _NoBookmarksHint(),
         const SizedBox(height: 6),
+        const _SyncRow(),
         // The watch is the device where "what is installed here?" is hardest
         // to answer any other way.
         Text(
@@ -637,6 +640,72 @@ class _NoBookmarksHint extends ConsumerWidget {
         style: mono(context, size: 9, weight: FontWeight.w700, color: t.muted),
       ),
     );
+  }
+}
+
+/// Push what this watch has recorded, without waiting for the phone to be
+/// opened.
+///
+/// On home rather than in the menu, which is where the other actions live: every
+/// pane but this one is gated on a running block, and forcing a sync is exactly
+/// as useful with nothing tracking — arguably more, since that is when you have
+/// just finished something.
+///
+/// Absent rather than disabled when it cannot work — no backend in this build,
+/// or no token relayed yet. Unlike the phone there is no invitation state to
+/// offer: a 227px screen has no room for the setup sheet, and the account has to
+/// come from the phone anyway.
+class _SyncRow extends ConsumerWidget {
+  const _SyncRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = neo(context);
+    if (!ref.watch(syncConfigProvider).hasServer) return const SizedBox.shrink();
+    if (ref.watch(syncServiceProvider) == null) return const SizedBox.shrink();
+
+    final sync = ref.watch(manualSyncProvider);
+    return NeoPressable(
+      // On the control rather than on the widget: this returns an empty box on
+      // a build that cannot sync, and a key held by the widget would still be
+      // found there — so "no sync row" could not be asserted at all.
+      key: const ValueKey('sync-now'),
+      shadowOffset: 3,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+      onTap: sync.running ? null : () => _syncNow(ref),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            sync.running ? '⟳ syncing…' : '⟳ sync now',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: mono(context, size: 12, weight: FontWeight.w800),
+          ),
+          // The only feedback there is. A failure inside sync is silent by
+          // design everywhere else, and on a watch there is no second screen to
+          // go and check.
+          if (sync.status != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              sync.status!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: mono(context, size: 9, weight: FontWeight.w700, color: t.muted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Direct first, then over the wrist. The watch holds the account token so it
+  /// can reach the server itself, which is the only path that works with the
+  /// phone asleep — but a Bluetooth-only watch off wifi has no route at all, and
+  /// then the phone is the one device that does.
+  Future<void> _syncNow(WidgetRef ref) async {
+    if (await ref.read(manualSyncProvider.notifier).run()) return;
+    await ref.read(wearSyncProvider).requestSyncNow();
   }
 }
 

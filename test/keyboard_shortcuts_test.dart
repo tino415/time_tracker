@@ -251,6 +251,43 @@ Future<AppDatabase> _bootWithSync(
 SyncService _rejectingService(AppDatabase db) =>
     SyncService(store: SyncStore(db), transport: _RejectingTransport(), backend: 'test');
 
+/// Boots with an ancestor holding whatever the shortcut layer declined.
+///
+/// Key events walk up the focus chain until something reports them handled, so a
+/// node above the app sees exactly the keys the bindings passed on.
+Future<List<LogicalKeyboardKey>> _bootWatchingDeclinedKeys(
+  WidgetTester tester, {
+  SyncService Function(AppDatabase db)? service,
+}) async {
+  tester.view.physicalSize = _desktop;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  final declined = <LogicalKeyboardKey>[];
+  final db = AppDatabase.forTesting(NativeDatabase.memory());
+  addTearDown(db.close);
+  await _seed(db);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+        if (service != null) syncServiceProvider.overrideWithValue(service(db)),
+      ],
+      child: Focus(
+        onKeyEvent: (_, event) {
+          if (event is KeyDownEvent) declined.add(event.logicalKey);
+          return KeyEventResult.ignored;
+        },
+        child: const PhoneApp(),
+      ),
+    ),
+  );
+  await settle(tester);
+  return declined;
+}
+
 /// What the last manual sync came to, or null while none has run.
 ///
 /// Asked of the state rather than of the screen: in both inert shapes the status
@@ -827,6 +864,38 @@ void main() {
 
     expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
     expect(_syncStatus(tester), isNull);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('an unavailable key is declined rather than swallowed', (tester) async {
+    // The handler-side availability check has no other visible effect, because
+    // ManualSync also refuses a null service — so without this the check could be
+    // deleted and every other test would still pass. What it decides is whether
+    // the key stays available to anything above the shortcut layer.
+    final declined = await _bootWatchingDeclinedKeys(tester);
+
+    await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(
+      declined,
+      contains(LogicalKeyboardKey.keyR),
+      reason: 'a build with no sync claimed the key anyway',
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('an available key is consumed', (tester) async {
+    final declined = await _bootWatchingDeclinedKeys(tester, service: _rejectingService);
+
+    await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(
+      declined,
+      isNot(contains(LogicalKeyboardKey.keyR)),
+      reason: 'the binding ran but let the key carry on past it',
+    );
 
     await disposeApp(tester);
   });

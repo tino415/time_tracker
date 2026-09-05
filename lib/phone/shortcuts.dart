@@ -502,6 +502,11 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
 /// The bindings, as a list you can read — the ones this build actually has.
 Future<void> showShortcutsHelp(BuildContext context, WidgetRef ref) {
   final t = neo(context);
+  // Resolved here rather than inside the builder, which reruns on every rebuild
+  // of the dialog route: _AppControls sits in the header or in the sidebar
+  // depending on the breakpoint, so a resize across it disposes the consumer this
+  // ref belongs to while the dialog is still open.
+  final listed = shortcutBindings.where((b) => b.available?.call(ref) != false).toList();
 
   return showDialog<void>(
     context: context,
@@ -522,9 +527,7 @@ Future<void> showShortcutsHelp(BuildContext context, WidgetRef ref) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final b in shortcutBindings)
-                if (b.available?.call(ref) != false)
-                  _HelpRow(keys: b.label, what: b.what, only: b.only),
+              for (final b in listed) _HelpRow(keys: b.label, what: b.what, only: b.only),
               // Not one of ours — Flutter dismisses a modal route on Escape by
               // itself. Listed because someone reading this wants to know what
               // the keyboard does, not which layer implements it.

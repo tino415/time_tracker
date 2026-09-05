@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,7 +16,9 @@ import 'screens/reports_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'widgets/assign_activity.dart';
 import 'widgets/block_comment.dart';
+import 'widgets/command_picker.dart';
 import 'widgets/neo.dart';
+import 'widgets/sync_setup.dart';
 
 /// Keyboard shortcuts for the desktop PWA — bare keys, vim-style.
 ///
@@ -67,6 +70,10 @@ enum ShortcutAction {
   startUnnamed,
   focusSearch,
   syncNow,
+  syncSetup,
+  toggleTheme,
+  exportCsv,
+  showCommands,
   showHelp,
   prevPeriod,
   nextPeriod,
@@ -84,6 +91,7 @@ class ShortcutBinding {
     required this.action,
     this.prefix,
     this.shift = false,
+    this.primaryModifier = false,
     this.only,
     this.available,
   });
@@ -103,6 +111,13 @@ class ShortcutBinding {
   /// produce a digit at all; letters have no such problem, so that reason is
   /// gone with the digits.
   final bool shift;
+
+  /// Requires the platform's own modifier — Cmd on a Mac, Ctrl everywhere else.
+  ///
+  /// The exception to this file's bare-keys rule, and it earns the exception by
+  /// being the one binding people arrive already knowing. See [_onKey] for why
+  /// holding one otherwise means the keystroke is somebody else's.
+  final bool primaryModifier;
 
   /// The legend on a US keyboard. Shown, never matched.
   final String label;
@@ -126,6 +141,10 @@ class ShortcutBinding {
 /// A tear-off rather than a closure in the row below: the table is const, and a
 /// function literal cannot appear in a constant expression.
 bool _syncConfigured(WidgetRef ref) => ref.read(syncServiceProvider) != null;
+
+/// Weaker than [_syncConfigured] on purpose: setting up the account is exactly
+/// what you reach for when there is a server and no account yet.
+bool _syncOffered(WidgetRef ref) => ref.read(syncConfigProvider).hasServer;
 
 const shortcutBindings = <ShortcutBinding>[
   ShortcutBinding(
@@ -228,6 +247,20 @@ const shortcutBindings = <ShortcutBinding>[
     only: 'calendar',
     action: ShortcutAction.nextPeriod,
   ),
+  // The one binding with a modifier, and the one nobody has to be taught. Every
+  // app with a command palette uses it, so it is the first thing a keyboard user
+  // tries — which is worth more here than the consistency of the bare-key rule.
+  //
+  // A browser tab is not the obstacle it looks like. Cmd+K is the omnibox, but
+  // the engine calls preventDefault() on any key the framework reports handled,
+  // so the page wins it the same way GitHub and every other palette does.
+  ShortcutBinding(
+    key: PhysicalKeyboardKey.keyK,
+    primaryModifier: true,
+    label: '⌘K',
+    what: 'Everything, by name',
+    action: ShortcutAction.showCommands,
+  ),
   ShortcutBinding(
     key: PhysicalKeyboardKey.slash,
     shift: true,
@@ -235,6 +268,105 @@ const shortcutBindings = <ShortcutBinding>[
     what: 'This list',
     action: ShortcutAction.showHelp,
   ),
+];
+
+/// What the picker can reach: every action with a name, whether or not a key is
+/// spent on it.
+///
+/// The point of the picker is to scale past the keymap — the single-key space is
+/// small and spending one is permanent — so this table is the longer list, and
+/// [shortcutBindings] is the subset that also earned a key. Theme, sync setup and
+/// the CSV export appear only here, because until now they had buttons and
+/// nothing else.
+class ShortcutCommand {
+  const ShortcutCommand({
+    required this.action,
+    required this.label,
+    this.keywords = '',
+    this.available,
+  });
+
+  final ShortcutAction action;
+
+  /// How the row reads. Sentence case, a verb first — it is an instruction being
+  /// picked, not a heading.
+  final String label;
+
+  /// Words it should also match, for the ones whose label is not what someone
+  /// would type looking for them.
+  final String keywords;
+
+  /// Whether this build can do it. Same contract as [ShortcutBinding.available],
+  /// and the same reason: sync is absent without a server, not merely inert.
+  final bool Function(WidgetRef ref)? available;
+
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return label.toLowerCase().contains(q) || keywords.toLowerCase().contains(q);
+  }
+}
+
+const shortcutCommands = <ShortcutCommand>[
+  ShortcutCommand(action: ShortcutAction.goNow, label: 'Go to Now', keywords: 'tab switch'),
+  ShortcutCommand(
+    action: ShortcutAction.goTimeline,
+    label: 'Go to Timeline',
+    keywords: 'tab calendar day',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.goReports,
+    label: 'Go to Reports',
+    keywords: 'tab week totals',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.goActivities,
+    label: 'Go to Activities',
+    keywords: 'tab catalogue list',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.startUnnamed,
+    label: 'Start a block, name it later',
+    keywords: 'new now unsorted',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.focusSearch,
+    label: 'Search, or paste a task id',
+    keywords: 'find external',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.editActivity,
+    label: 'Change what the running block tracks',
+    keywords: 'assign repoint correct',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.editNote,
+    label: 'Note on the running block',
+    keywords: 'comment annotate',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.syncNow,
+    label: 'Sync now',
+    keywords: 'push pull backend',
+    available: _syncConfigured,
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.syncSetup,
+    label: 'Sync account',
+    keywords: 'token qr join disconnect settings',
+    available: _syncOffered,
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.toggleTheme,
+    label: 'Switch light and dark',
+    keywords: 'theme appearance settings',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.exportCsv,
+    label: 'Export CSV · all history',
+    keywords: 'download save spreadsheet',
+  ),
+  ShortcutCommand(action: ShortcutAction.showHelp, label: 'Keyboard shortcuts', keywords: 'keys ?'),
 ];
 
 // `/` on its own is deliberately unbound. It means "search" nearly everywhere,
@@ -248,6 +380,20 @@ const shortcutBindings = <ShortcutBinding>[
 /// block. Structural rather than a flag maintained per field — there are ten
 /// fields across eight files, and a check they each have to remember is one a
 /// new field will forget.
+/// Whether the platform's own command modifier is down — Cmd on Apple, Ctrl
+/// elsewhere.
+///
+/// The distinction is the platform's, not the keyboard's: a Mac user reaches for
+/// Cmd and everyone else for Ctrl, and binding both everywhere would swallow
+/// Ctrl+K on a Mac, where it is "delete to end of line" in every text field.
+bool _isPrimaryModifierHeld() {
+  final keyboard = HardwareKeyboard.instance;
+  final apple =
+      defaultTargetPlatform == TargetPlatform.macOS || defaultTargetPlatform == TargetPlatform.iOS;
+  if (apple) return keyboard.isMetaPressed && !keyboard.isControlPressed;
+  return keyboard.isControlPressed && !keyboard.isMetaPressed;
+}
+
 bool _isTyping() {
   final context = FocusManager.instance.primaryFocus?.context;
   if (context == null) return false;
@@ -331,6 +477,26 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
                 HardwareKeyboard.instance.isControlPressed))) {
       _disarm();
       return KeyEventResult.handled;
+    }
+
+    // The command picker, ahead of both guards below.
+    //
+    // Ahead of the field guard because the picker is most useful from inside a
+    // field — you are already typing, and this is where you go when what you
+    // want is not what the field does. Ahead of the modifier bail because it is
+    // the one binding that holds one.
+    //
+    // Matched here rather than in the table's loop: everything down there
+    // assumes no modifier is held, and threading a second mode through it would
+    // cost more than the one row it serves.
+    if (_isPrimaryModifierHeld() && !HardwareKeyboard.instance.isShiftPressed) {
+      for (final b in shortcutBindings) {
+        if (!b.primaryModifier || b.key != event.physicalKey) continue;
+        if (b.available?.call(ref) == false) continue;
+        _disarm();
+        _run(b.action);
+        return KeyEventResult.handled;
+      }
     }
 
     // Escape leaves the field, and is the one key the guard does not silence.
@@ -423,6 +589,23 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
       case ShortcutAction.syncNow:
         ref.read(manualSyncProvider.notifier).run();
 
+      case ShortcutAction.syncSetup:
+        showSyncSetup(context, ref);
+
+      case ShortcutAction.toggleTheme:
+        {
+          final current = Theme.of(context).brightness;
+          ref.read(themeModeProvider.notifier).state = current == Brightness.dark
+              ? ThemeMode.light
+              : ThemeMode.dark;
+        }
+
+      case ShortcutAction.exportCsv:
+        exportCsv(context, ref);
+
+      case ShortcutAction.showCommands:
+        _openCommands();
+
       case ShortcutAction.showHelp:
         showShortcutsHelp(context, ref);
 
@@ -448,6 +631,21 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
       case ShortcutAction.nextPeriod:
         _shiftPeriod(1);
     }
+  }
+
+  /// Open the picker, and run whatever it comes back with.
+  ///
+  /// The action is run here rather than inside the picker so it goes through
+  /// [_run] like every other one — which is what keeps the tab moves' focus
+  /// handling, and means a command cannot behave differently depending on which
+  /// door it was opened by.
+  Future<void> _openCommands() async {
+    final action = await showCommandPicker(context, ref);
+    if (!mounted) return;
+    // The picker was a modal route, so focus left this subtree while it was up
+    // and the bare keys are deaf until it comes back. See [_goToTab].
+    _node.requestFocus();
+    if (action != null) _run(action);
   }
 
   void _shiftPeriod(int delta) {

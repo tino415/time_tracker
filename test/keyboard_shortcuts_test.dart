@@ -14,6 +14,7 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +92,32 @@ Future<void> _go(
   await _press(tester, PhysicalKeyboardKey.keyG, LogicalKeyboardKey.keyG);
   await _press(tester, physical, legend);
 }
+
+/// A key held with the platform's own command modifier — the one exception to
+/// this file's bare-keys rule.
+///
+/// Ctrl by default, because `flutter test` reports Android and the binding
+/// follows the platform rather than the keyboard. [meta] takes the Apple branch
+/// instead, which needs [debugDefaultTargetPlatformOverride] to be set by the
+/// caller or the two disagree.
+Future<void> _pressPrimary(
+  WidgetTester tester,
+  PhysicalKeyboardKey physical,
+  LogicalKeyboardKey legend, {
+  bool meta = false,
+}) async {
+  const web = 'web';
+  final modifier = meta ? LogicalKeyboardKey.metaLeft : LogicalKeyboardKey.controlLeft;
+  await tester.sendKeyDownEvent(modifier, platform: web);
+  await tester.sendKeyDownEvent(legend, physicalKey: physical, platform: web);
+  await tester.sendKeyUpEvent(legend, physicalKey: physical, platform: web);
+  await tester.sendKeyUpEvent(modifier, platform: web);
+  await settle(tester);
+}
+
+/// The picker's own field, which is what proves it is open — its hint is not a
+/// string anything else in the app uses.
+Finder _picker() => find.text('what do you want to do?');
 
 /// `e` then a letter.
 Future<void> _edit(
@@ -616,6 +643,120 @@ void main() {
     expect(await db.select(db.activityChanges).get(), hasLength(1));
 
     await disposeApp(tester);
+  });
+
+  group('the command picker', () {
+    testWidgets('opens on the one binding that holds a modifier', (tester) async {
+      await bootApp(tester, viewport: _desktop, seed: _seed);
+
+      await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK);
+
+      expect(_picker(), findsOneWidget);
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('Cmd rather than Ctrl where the platform says Cmd', (tester) async {
+      // The modifier follows the platform, not the keyboard: binding both
+      // everywhere would swallow Ctrl+K on a Mac, where every text field treats
+      // it as "delete to end of line".
+      // Cleared inside the body, not in a tearDown: the binding asserts every
+      // foundation debug variable is back to its default before the test
+      // returns, which is earlier than a tearDown runs.
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        await bootApp(tester, viewport: _desktop, seed: _seed);
+
+        await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK, meta: true);
+        expect(_picker(), findsOneWidget);
+
+        await disposeApp(tester);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('opens while a field has focus, unlike everything else', (tester) async {
+      // Deliberately ahead of the typing guard. The picker is most useful from
+      // inside a field: you are already typing, and this is where you go when
+      // what you want is not what the field does.
+      await bootApp(tester, viewport: _desktop, seed: _seed);
+      await tester.tap(_searchField());
+      await settle(tester);
+      await tester.enterText(_searchField(), 'st');
+      await settle(tester);
+
+      await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK);
+
+      expect(_picker(), findsOneWidget);
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('a named command runs, through the same path its key would', (tester) async {
+      await bootApp(tester, viewport: _desktop, seed: _seed);
+      await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK);
+
+      await tester.enterText(find.byType(TextField).last, 'reports');
+      await settle(tester);
+      await _press(tester, PhysicalKeyboardKey.enter, LogicalKeyboardKey.enter);
+
+      expect(_picker(), findsNothing);
+      expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('naming an activity starts it', (tester) async {
+      // The half a command list alone would not cover. "Start deep work" is the
+      // thing people most often want, and it is not a command — it is a name.
+      final db = await bootApp(tester, viewport: _desktop, seed: _seedPair);
+      expect(await db.select(db.activityChanges).get(), hasLength(1));
+
+      await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK);
+      await tester.enterText(find.byType(TextField).last, _other);
+      await settle(tester);
+      await _press(tester, PhysicalKeyboardKey.enter, LogicalKeyboardKey.enter);
+
+      expect(_picker(), findsNothing);
+      final changes = await db.select(db.activityChanges).get();
+      expect(changes, hasLength(2), reason: 'a boundary was opened');
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('the keyboard is not deaf after the picker closes', (tester) async {
+      // A modal route takes focus out of the shell's subtree by design, so every
+      // bare key stops arriving until it is handed back. Nothing else here would
+      // catch it: the picker would keep working and everything else would quietly
+      // stop.
+      await bootApp(tester, viewport: _desktop, seed: _seed);
+      await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK);
+      await _press(tester, PhysicalKeyboardKey.escape, LogicalKeyboardKey.escape);
+      expect(_picker(), findsNothing);
+
+      await _go(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+      expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
+
+      await disposeApp(tester);
+    });
+
+    testWidgets('a command this build cannot run is not offered', (tester) async {
+      // Same contract the help list follows: there is no SYNC_URL under
+      // `flutter test`, so sync is absent rather than listed and inert.
+      await bootApp(tester, viewport: _desktop, seed: _seed);
+      await _pressPrimary(tester, PhysicalKeyboardKey.keyK, LogicalKeyboardKey.keyK);
+
+      await tester.enterText(find.byType(TextField).last, 'sync');
+      await settle(tester);
+
+      expect(find.text('Sync now'), findsNothing);
+      expect(find.text('Sync account'), findsNothing);
+      expect(find.text('nothing matches'), findsOneWidget);
+
+      await disposeApp(tester);
+    });
   });
 
   testWidgets('? lists the bindings, and the list is the table', (tester) async {

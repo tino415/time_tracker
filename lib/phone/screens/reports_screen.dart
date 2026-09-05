@@ -548,6 +548,18 @@ class _ReportBar extends StatelessWidget {
   }
 }
 
+/// The export, without being on Reports first.
+///
+/// It always covered all history rather than the range on screen, so the screen
+/// was never a precondition — only where the button happened to be.
+Future<void> exportCsv(BuildContext context, WidgetRef ref) => _exportCsv(
+  context,
+  ref,
+  ref.read(blocksProvider),
+  ref.read(activityTreeProvider),
+  DateTime.now(),
+);
+
 Future<void> _exportCsv(
   BuildContext context,
   WidgetRef ref,

@@ -118,8 +118,18 @@ void main() {
     await settle(tester);
 
     expect(tile('a'), findsOneWidget);
-    expect(tile('b'), findsOneWidget);
     expect(find.text('nothing tracked'), findsOneWidget);
+
+    // The second bookmark is a scroll away rather than absent: the clock is the
+    // first row of this list and opens at the top of the screen, so a round
+    // watch face fits it and about one tile. test/watch_flow_test.dart scrolls
+    // for the same reason — this is the on-device half of that.
+    await tester.scrollUntilVisible(tile('b'), 40);
+    expect(tile('b'), findsOneWidget);
+
+    // Back up before tapping, so the tile is on screen to hit and the hero is
+    // on screen to read afterwards.
+    await tester.scrollUntilVisible(tile('a'), -40);
 
     // A tap has to do both halves: record locally so the watch is honest with
     // the phone out of range, and relay so the phone converges on the same row.

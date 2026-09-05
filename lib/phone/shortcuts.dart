@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/manual_sync.dart';
 import '../data/providers.dart';
+import '../data/sync_service.dart';
 import '../data/tracker_controller.dart';
 import 'phone_app.dart';
 import 'screens/calendar_screen.dart';
@@ -64,6 +66,7 @@ enum ShortcutAction {
   goActivities,
   startUnnamed,
   focusSearch,
+  syncNow,
   showHelp,
   prevPeriod,
   nextPeriod,
@@ -82,6 +85,7 @@ class ShortcutBinding {
     this.prefix,
     this.shift = false,
     this.only,
+    this.available,
   });
 
   /// Matched on position, not on the character produced. A logical binding is
@@ -108,8 +112,20 @@ class ShortcutBinding {
   /// The screen this applies on, or null for anywhere.
   final String? only;
 
+  /// Whether this build can do it at all, or null for a key that always can.
+  ///
+  /// [only] scopes by screen; this scopes by configuration, which the table
+  /// cannot say for itself — sync is absent from a build with no server, not
+  /// merely inapplicable somewhere. Consulted by the help list too, so a key
+  /// this device does not have is never advertised.
+  final bool Function(WidgetRef ref)? available;
+
   final ShortcutAction action;
 }
+
+/// A tear-off rather than a closure in the row below: the table is const, and a
+/// function literal cannot appear in a constant expression.
+bool _syncConfigured(WidgetRef ref) => ref.read(syncServiceProvider) != null;
 
 const shortcutBindings = <ShortcutBinding>[
   ShortcutBinding(
@@ -166,6 +182,16 @@ const shortcutBindings = <ShortcutBinding>[
     label: 'S',
     what: 'Search, or paste a task id',
     action: ShortcutAction.focusSearch,
+  ),
+  // The same physical key as `g r`, and they cannot collide: the match below
+  // requires a binding's prefix to be the one that is armed, so bare and
+  // prefixed rows are disjoint sets rather than competing entries.
+  ShortcutBinding(
+    key: PhysicalKeyboardKey.keyR,
+    label: 'r',
+    what: 'Sync now',
+    action: ShortcutAction.syncNow,
+    available: _syncConfigured,
   ),
   // h and l rather than brackets: previous/next is a *direction*, and it then
   // means one thing on both screens — one unit back or forward along the time
@@ -341,6 +367,7 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
       if (b.prefix?.key != wasPending?.key) continue;
       if (b.key != event.physicalKey || b.shift != shift) continue;
       if (b.only != null && b.only != screen) continue;
+      if (b.available?.call(ref) == false) continue;
       _run(b.action);
       return KeyEventResult.handled;
     }
@@ -393,8 +420,11 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
           ref.read(quickSwitchFocusProvider).requestFocus();
         });
 
+      case ShortcutAction.syncNow:
+        ref.read(manualSyncProvider.notifier).run();
+
       case ShortcutAction.showHelp:
-        showShortcutsHelp(context);
+        showShortcutsHelp(context, ref);
 
       // Both edit the block the clock is running against, so both are silent on
       // an empty timeline rather than opening a sheet over nothing.
@@ -469,8 +499,8 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
   }
 }
 
-/// The bindings, as a list you can read.
-Future<void> showShortcutsHelp(BuildContext context) {
+/// The bindings, as a list you can read — the ones this build actually has.
+Future<void> showShortcutsHelp(BuildContext context, WidgetRef ref) {
   final t = neo(context);
 
   return showDialog<void>(
@@ -492,7 +522,9 @@ Future<void> showShortcutsHelp(BuildContext context) {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final b in shortcutBindings) _HelpRow(keys: b.label, what: b.what, only: b.only),
+              for (final b in shortcutBindings)
+                if (b.available?.call(ref) != false)
+                  _HelpRow(keys: b.label, what: b.what, only: b.only),
               // Not one of ours — Flutter dismisses a modal route on Escape by
               // itself. Listed because someone reading this wants to know what
               // the keyboard does, not which layer implements it.

@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/manual_sync.dart';
 import '../data/sync_service.dart';
-import '../data/sync_transport.dart';
 import '../theme/tokens.dart';
 import 'breakpoints.dart';
 import 'screens/activities_screen.dart';
@@ -258,7 +258,7 @@ class _AppControls extends ConsumerWidget {
         // everywhere (a Bluetooth keyboard on a phone should work), but a
         // keyboard button on a touch phone is noise, and the platform is the
         // honest signal here rather than how wide the window happens to be.
-        if (kIsWeb) _ControlButton(label: '⌨ KEYS', onTap: () => showShortcutsHelp(context)),
+        if (kIsWeb) _ControlButton(label: '⌨ KEYS', onTap: () => showShortcutsHelp(context, ref)),
         _ControlButton(
           label: '◑ THEME',
           onTap: () {
@@ -284,68 +284,38 @@ class _AppControls extends ConsumerWidget {
 /// Manual rather than a background loop, because the local database is
 /// authoritative: syncing is how devices *agree*, not how the app works, so its
 /// failure has to be inert and its timing the user's business.
-class _SyncControls extends ConsumerStatefulWidget {
+///
+/// The button is one of two ways to ask and `r` is the other, which is why the
+/// running flag and the result line live in [manualSyncProvider] rather than in
+/// this widget.
+class _SyncControls extends ConsumerWidget {
   const _SyncControls();
 
   @override
-  ConsumerState<_SyncControls> createState() => _SyncControlsState();
-}
-
-class _SyncControlsState extends ConsumerState<_SyncControls> {
-  bool _running = false;
-  String? _status;
-
-  Future<void> _sync(SyncService service) async {
-    setState(() {
-      _running = true;
-      _status = null;
-    });
-    try {
-      final result = await service.syncNow();
-      if (!mounted) return;
-      setState(() {
-        _status =
-            '↑${result.pushed} ↓${result.pulled}'
-            '${result.rejected > 0 ? " · ${result.rejected} superseded" : ""}';
-      });
-    } on SyncException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        // Being offline is the normal state for this app, not a failure worth
-        // alarming about; a bad token is worth naming, because only the user
-        // can fix it.
-        _status = e.unauthorized ? 'token rejected' : 'offline';
-      });
-    } finally {
-      if (mounted) setState(() => _running = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
     // No server in this build: nothing to offer, so offer nothing.
     if (!ref.watch(syncConfigProvider).hasServer) return const SizedBox.shrink();
 
-    final service = ref.watch(syncServiceProvider);
     // A server but no account — sync is opt-in, and this is the invitation.
-    if (service == null) {
+    if (ref.watch(syncServiceProvider) == null) {
       return _ControlButton(label: '⟳ SYNC', onTap: () => showSyncSetup(context, ref));
     }
 
+    final sync = ref.watch(manualSyncProvider);
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         _ControlButton(
-          label: _running ? '⟳ SYNCING…' : '⟳ SYNC',
-          onTap: _running ? null : () => _sync(service),
+          label: sync.running ? '⟳ SYNCING…' : '⟳ SYNC',
+          onTap: sync.running ? null : ref.read(manualSyncProvider.notifier).run,
         ),
         _ControlButton(label: '⚙', onTap: () => showSyncSetup(context, ref)),
-        if (_status != null)
+        if (sync.status != null)
           Text(
-            _status!,
+            sync.status!,
             // The one control sized by a result rather than by a label. The
             // strip bounds it now, so this is only about how many lines a long
             // one may take out of the body.

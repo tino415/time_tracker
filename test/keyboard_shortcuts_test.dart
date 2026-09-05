@@ -13,12 +13,21 @@
 
 import 'dart:async';
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/data/manual_sync.dart';
+import 'package:time_tracker/data/providers.dart';
+import 'package:time_tracker/data/sync_service.dart';
+import 'package:time_tracker/data/sync_store.dart';
+import 'package:time_tracker/data/sync_transport.dart';
+import 'package:time_tracker/domain/sync_protocol.dart';
 import 'package:time_tracker/domain/unsorted.dart';
+import 'package:time_tracker/phone/phone_app.dart';
 import 'package:time_tracker/phone/screens/activities_screen.dart';
 import 'package:time_tracker/phone/screens/calendar_screen.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
@@ -185,6 +194,75 @@ Future<void> _seedPair(AppDatabase db) async {
   await _seed(db);
   await DriftActivityRepository(db).createActivity(name: _other, color: '#E4572E');
 }
+
+/// Refuses everything it is pushed, so one round trip produces a status string
+/// without a server behind it.
+class _RejectingTransport implements SyncTransport {
+  @override
+  Future<void> claimAccount() async {}
+
+  @override
+  Future<SyncResponse> exchange(SyncRequest request) async => SyncResponse(
+    cursor: '1',
+    rejected: [
+      for (final a in request.activities) a.syncId,
+      for (final c in request.changes) c.syncId,
+    ],
+  );
+}
+
+/// [_seed] refused by [_RejectingTransport]: one activity and one change pushed,
+/// both superseded.
+const _refused = '↑0 ↓0 · 2 superseded';
+
+/// Boots with a sync server configured but no account — the shape `r` has to be
+/// inert in. Pass [service] for the authenticated shape, where it works.
+///
+/// [bootApp] cannot serve here: it overrides only the database, so `SYNC_URL` is
+/// whatever the build had, which under `flutter test` is empty.
+Future<AppDatabase> _bootWithSync(
+  WidgetTester tester, {
+  required Size viewport,
+  SyncService Function(AppDatabase db)? service,
+  Future<void> Function(AppDatabase db)? seed,
+}) async {
+  tester.view.physicalSize = viewport;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  final db = AppDatabase.forTesting(NativeDatabase.memory());
+  addTearDown(db.close);
+  if (seed != null) await seed(db);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
+        if (service != null) syncServiceProvider.overrideWithValue(service(db)),
+      ],
+      child: const PhoneApp(),
+    ),
+  );
+  await settle(tester);
+  return db;
+}
+
+SyncService _rejectingService(AppDatabase db) =>
+    SyncService(store: SyncStore(db), transport: _RejectingTransport(), backend: 'test');
+
+/// What the last manual sync came to, or null while none has run.
+///
+/// Asked of the state rather than of the screen: in both inert shapes the status
+/// line is not rendered at all, so an empty screen would pass whether the key
+/// did nothing or did everything.
+String? _syncStatus(WidgetTester tester) => ProviderScope.containerOf(
+  tester.element(find.byType(PhoneApp)),
+).read(manualSyncProvider).status;
+
+/// A ref for the availability predicates, which are asked the same question the
+/// key handler asks.
+WidgetRef _ref(WidgetTester tester) => tester.element(find.byType(AppShortcuts)) as WidgetRef;
 
 void main() {
   testWidgets('g then a letter moves between tabs', (tester) async {
@@ -510,9 +588,33 @@ void main() {
 
     expect(find.text('Keyboard'), findsOneWidget);
     // Generated from the same table that installs them, so the two cannot drift.
+    // Bindings this build cannot run are skipped on both sides — the list is
+    // what the keyboard does here, not what the table could hold.
+    final ref = _ref(tester);
     for (final binding in shortcutBindings) {
+      if (binding.available?.call(ref) == false) continue;
       expect(find.textContaining(binding.what), findsWidgets, reason: '${binding.label} is listed');
     }
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the list drops a key this build does not have', (tester) async {
+    // No SYNC_URL under `flutter test`, so there is no sync to offer — and a
+    // list advertising a key that does nothing is worse than a shorter list.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    await _press(tester, PhysicalKeyboardKey.slash, LogicalKeyboardKey.slash, shift: true);
+    expect(find.textContaining('Sync now'), findsNothing);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the list carries the sync key once there is one', (tester) async {
+    await _bootWithSync(tester, viewport: _desktop, seed: _seed, service: _rejectingService);
+
+    await _press(tester, PhysicalKeyboardKey.slash, LogicalKeyboardKey.slash, shift: true);
+    expect(find.textContaining('Sync now'), findsOneWidget);
 
     await disposeApp(tester);
   });
@@ -524,7 +626,7 @@ void main() {
 
     // Not awaited: the future completes when the dialog is *dismissed*, so
     // awaiting it waits forever for a tap this test has not made yet.
-    unawaited(showShortcutsHelp(tester.element(find.byType(NowScreen))));
+    unawaited(showShortcutsHelp(tester.element(find.byType(NowScreen)), _ref(tester)));
     await settle(tester);
 
     expect(find.text('Keyboard'), findsOneWidget);
@@ -656,6 +758,75 @@ void main() {
     await _go(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
 
     expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('r syncs, and says what came of it', (tester) async {
+    // The outcome has to survive the press: it used to live in the button's own
+    // State, which a key handler has no way to reach.
+    await _bootWithSync(tester, viewport: _desktop, seed: _seed, service: _rejectingService);
+
+    await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(_syncStatus(tester), _refused);
+    expect(find.text(_refused), findsOneWidget, reason: 'the button shows what the key did');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('r is inert in a build with no server', (tester) async {
+    // Scoped by configuration, not by screen: there is nothing to sync *with*
+    // here, so the key is not merely inapplicable — it is absent.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(_syncStatus(tester), isNull);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('r is inert with a server but no account', (tester) async {
+    // Sync is opt-in. Until this device has joined an account the button is an
+    // invitation to set one up, and the key has nothing to run.
+    await _bootWithSync(tester, viewport: _desktop, seed: _seed);
+
+    await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(_syncStatus(tester), isNull);
+    expect(find.text('SET UP SYNC'), findsNothing, reason: 'nor did it open the setup sheet');
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('r does not sync while a field has focus', (tester) async {
+    // The guard covers the new key like every other: "r" is a letter someone is
+    // entitled to type into a search box.
+    await _bootWithSync(tester, viewport: _desktop, seed: _seed, service: _rejectingService);
+
+    await tester.tap(_searchField());
+    await settle(tester);
+    await tester.enterText(_searchField(), 'r');
+    await settle(tester);
+
+    await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(_syncStatus(tester), isNull);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('g r still reaches Reports, and does not sync on the way', (tester) async {
+    // Bare and prefixed rows share the physical key. They are disjoint because
+    // the match requires a binding's prefix to be the armed one — this is that
+    // claim, made where both rows exist.
+    await _bootWithSync(tester, viewport: _desktop, seed: _seed, service: _rejectingService);
+
+    await _go(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
+
+    expect(inScreen(ReportsScreen, find.text('PER CATEGORY')), findsOneWidget);
+    expect(_syncStatus(tester), isNull);
 
     await disposeApp(tester);
   });

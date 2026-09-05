@@ -105,6 +105,13 @@ Future<AppDatabase> _bootWithSync(
   return db;
 }
 
+/// Open the wide shell's controls. They hang off a trigger at the top right
+/// now, rather than sitting exposed at the foot of the sidebar.
+Future<void> _openMenu(WidgetTester tester) async {
+  await tester.tap(find.text('⚙ MENU'));
+  await settle(tester);
+}
+
 /// Where the focused control sits, horizontally. Traversal order is a claim
 /// about the layout, so it is asked of the layout.
 double? _focusedX() {
@@ -154,7 +161,10 @@ void main() {
     // The header folds into the sidebar rather than keeping its own strip, so
     // the wordmark moves left of the content instead of above it.
     expect(_at(tester, find.text('[track]')).dx, lessThan(body.dx));
-    expect(_at(tester, find.text('◑ THEME')).dx, lessThan(body.dx));
+    // The controls go the other way, and that is the point: at the foot of the
+    // sidebar they sat bottom left, the furthest corner from where a desktop
+    // user looks for them.
+    expect(_at(tester, find.text('⚙ MENU')).dx, greaterThan(body.dx));
 
     await disposeApp(tester);
   });
@@ -213,6 +223,7 @@ void main() {
     expect(inScreen(ReportsScreen, find.text('↧ EXPORT CSV · ALL HISTORY')), findsNothing);
     expect(find.text('SET UP SYNC'), findsNothing);
 
+    await _openMenu(tester);
     await tester.tap(find.text('⟳ SYNC'));
     await settle(tester);
 
@@ -221,35 +232,32 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the phone header keeps sync on the wordmark row', (tester) async {
-    // The controls live in a Wrap, so a header with one item too many for the
-    // width takes a second row rather than overflowing — and that is only true
-    // since the header started handing them a width. Measured against the
-    // infinity a Row gives a non-flexible child, the Wrap could not wrap at all,
-    // and this passed anyway because one button fits either way.
-    //
-    // Wrapping costs height on the screen with the least to spare, so the
-    // un-authenticated shape — server configured, no account, one button — is
-    // asserted to stay on the wordmark row. The fullest header is the test
-    // below.
+  testWidgets('the phone reaches its controls from under the thumb', (tester) async {
+    // They used to sit at the right edge of the wordmark strip, which is the far
+    // corner from a thumb holding the phone one-handed — the position a phone is
+    // actually held in. The bar at the bottom is the one thing already there.
     await _bootWithSync(tester, viewport: _phone);
 
-    final wordmark = tester.getCenter(find.text('[track]'));
-    final sync = tester.getCenter(find.text('⟳ SYNC'));
+    expect(find.text('⟳ SYNC'), findsNothing, reason: 'still on the top strip');
 
+    final more = find.text('•••');
     expect(
-      sync.dy,
-      moreOrLessEquals(wordmark.dy, epsilon: 4),
-      reason: 'the chrome wrapped onto a second row',
+      tester.getCenter(more).dy,
+      greaterThan(tester.getCenter(find.text('[track]')).dy),
+      reason: 'the way in is at the top of the screen',
     );
+
+    await tester.tap(more);
+    await settle(tester);
+    expect(find.text('⟳ SYNC'), findsOneWidget);
 
     await disposeApp(tester);
   });
 
-  testWidgets('a synced header keeps its status inside the window', (tester) async {
-    // The fullest the header gets: two buttons, a gear and a result string whose
-    // width comes from the sync rather than from a label. That string is what
-    // ran off the right edge, and it is the half of the header a user loses.
+  testWidgets('a sync run from the sheet keeps its status inside the window', (tester) async {
+    // The result string is the one control sized by an outcome rather than by a
+    // label, so it is the one that runs off an edge. The sheet is where it is
+    // read now, and the sheet is what has to hold it.
     await _bootWithSync(
       tester,
       viewport: _phone,
@@ -258,6 +266,8 @@ void main() {
           SyncService(store: SyncStore(db), transport: _RejectingTransport(), backend: 'test'),
     );
 
+    await tester.tap(find.text('•••'));
+    await settle(tester);
     await tester.tap(find.text('⟳ SYNC'));
     await settle(tester);
 
@@ -265,7 +275,7 @@ void main() {
     expect(
       tester.getRect(find.textContaining('superseded')).right,
       lessThanOrEqualTo(_phone.width - 16),
-      reason: 'the status is outside the header gutter',
+      reason: 'the status is outside the sheet',
     );
 
     await disposeApp(tester);

@@ -100,10 +100,20 @@ class _Home extends ConsumerWidget {
   /// One screen per destination, same as narrow — each mounted exactly once, so
   /// a second copy never carries its own state and its own database
   /// subscriptions.
+  ///
+  /// The menu trigger rides above them rather than beside them: a strip spanning
+  /// both columns would interleave the focus ring, and Tab is meant to exhaust
+  /// the sidebar before it enters the content. Inside this column it is simply
+  /// one more content stop.
   Widget _wideBody(int tab) {
-    return IndexedStack(
-      index: tab,
-      children: [for (final tt in _tabs) _ReadableWidth(child: tt.screen)],
+    return Stack(
+      children: [
+        IndexedStack(
+          index: tab,
+          children: [for (final tt in _tabs) _ReadableWidth(child: tt.screen)],
+        ),
+        const Positioned(top: 12, right: 12, child: _MenuTrigger()),
+      ],
     );
   }
 }
@@ -127,27 +137,19 @@ class _ReadableWidth extends StatelessWidget {
   }
 }
 
+/// The wordmark strip, and nothing else.
+///
+/// It used to carry the app controls at its right edge, which put them in the
+/// far corner from a thumb holding the phone one-handed — the position a phone
+/// is actually held in. They are under the thumb now, at the end of the tab bar.
 class _Header extends StatelessWidget {
   const _Header();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      // The controls take what is left of the row rather than their natural
-      // width. A non-flexible child of a Row is measured against infinity, and a
-      // Wrap offered infinity has nowhere to wrap to — it laid out one run and
-      // ran off the edge, taking the sync status with it. A Spacer would not do:
-      // it is flexible too, so the remainder would be split in half.
-      child: Row(
-        children: [
-          const _Wordmark(),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Align(alignment: Alignment.centerRight, child: _AppControls()),
-          ),
-        ],
-      ),
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Row(children: [_Wordmark()]),
     );
   }
 }
@@ -181,7 +183,70 @@ class _TabBar extends ConsumerWidget {
                   onTap: () => ref.read(tabProvider.notifier).state = i,
                 ),
               ),
+            // Fixed width, not a fifth Expanded cell. The cells carry no
+            // horizontal padding and the labels are 11px mono, so five equal
+            // cells on a 360px phone give 72px each — about what ACTIVITIES
+            // needs on its own, and the label sets no overflow, so it would clip
+            // rather than degrade.
+            //
+            // Kept out of `_tabs` as well: that list also builds the sidebar,
+            // and the index constants beside it are what the shortcuts address.
+            // This is an action, and only the bar it is drawn in has room for
+            // that distinction to not matter.
+            const _MoreCell(),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The app's own controls, under the thumb.
+///
+/// A sheet rather than a popup: it is the frame every other sheet in the app
+/// uses, and it disappears under the soft keyboard along with the bar it hangs
+/// off — which matters, because Now's vertical budget is the binding constraint
+/// on that screen and this costs it nothing.
+class _MoreCell extends ConsumerWidget {
+  const _MoreCell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = neo(context);
+    return Container(
+      width: 52,
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: t.line, width: 3)),
+      ),
+      child: _TabButton(
+        label: '•••',
+        active: false,
+        onTap: () => showNeoSheet<void>(context, (_) => const _AppControlsSheet()),
+      ),
+    );
+  }
+}
+
+/// [_AppControls] in the frame the narrow shell opens it in.
+class _AppControlsSheet extends StatelessWidget {
+  const _AppControlsSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: t.bg,
+          border: Border.all(color: t.line, width: 3),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [NeoSectionHeader('app'), SizedBox(height: 12), _AppControls()],
         ),
       ),
     );
@@ -217,9 +282,30 @@ class _Sidebar extends ConsumerWidget {
               leftAligned: true,
             ),
           const Spacer(),
-          const Padding(padding: EdgeInsets.all(12), child: _AppControls()),
         ],
       ),
+    );
+  }
+}
+
+/// The wide shell's way into the app's controls: top right, where a desktop
+/// looks for them.
+///
+/// They used to sit at the foot of the sidebar, because that is where the
+/// header folds in at this width — bottom left, which is the furthest point on
+/// the screen from where anyone goes looking for settings.
+///
+/// Deliberately not the phone's gesture. A bottom sheet beside a mouse arrives
+/// from the wrong edge, and the two shells already differ in every other way
+/// they present the same four things.
+class _MenuTrigger extends ConsumerWidget {
+  const _MenuTrigger();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _ControlButton(
+      label: '⚙ MENU',
+      onTap: () => showNeoMenu<void>(context, (_) => const _AppControls()),
     );
   }
 }

@@ -46,6 +46,46 @@ Future<T?> showNeoSheet<T>(BuildContext context, WidgetBuilder builder) {
   );
 }
 
+/// Open a menu hanging from the top right, in this app's own frame.
+///
+/// The wide shell's counterpart to [showNeoSheet]: a bottom sheet is the right
+/// shape under a thumb and the wrong one beside a mouse, where the controls are
+/// at the top of the window and a panel sliding up from the bottom edge has come
+/// from nowhere.
+///
+/// A route rather than an [OverlayPortal] or a hand-rolled barrier, which is
+/// what makes it small: Escape, the outside tap, focus containment and the
+/// return value are all things a modal route already does, and each is a thing a
+/// hand-rolled dropdown gets subtly wrong. The barrier is transparent because
+/// this dims nothing — it is four controls, not a decision.
+///
+/// Aligned to the window rather than anchored to the button. At this breakpoint
+/// the content column runs to the right edge, so the two are the same place, and
+/// measuring a rect would buy nothing but a chance to be wrong about it.
+Future<T?> showNeoMenu<T>(BuildContext context, WidgetBuilder builder) {
+  return showDialog<T>(
+    context: context,
+    barrierColor: Colors.transparent,
+    builder: (ctx) {
+      final t = neo(ctx);
+      return Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 12, right: 12),
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              decoration: t.card(shadowOffset: 6),
+              padding: const EdgeInsets.all(12),
+              child: builder(ctx),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /// Inverse label chip — the otin.dev section-header device: a solid [line] box
 /// with bold uppercase [surface] text. Green variant fills [brand].
 class NeoChip extends StatelessWidget {

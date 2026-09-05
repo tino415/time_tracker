@@ -394,7 +394,7 @@ try {
     shortcutsWork = await seesText(/PER CATEGORY/);
 
     await key('Slash', { shift: true });
-    helpListed = (await seesText(/Keyboard/)) && (await seesText(/Previous week/));
+    helpListed = (await seesText(/Keyboard/)) && (await seesText(/Previous period/));
     keysDetail = `esc=${escClosed} reports=${shortcutsWork} help=${helpListed}`;
   } catch (e) {
     keysDetail = (e.message ?? String(e)).split('\n')[0];
@@ -408,19 +408,32 @@ try {
   // widget suite. And it exists because the keystroke is not enough — Safari
   // takes Cmd+/ for its status bar, so there the list had no keyboard route at
   // all, and a shortcut for discovering shortcuts is a poor sole route anyway.
+  //
+  // Two clicks now: at this width the app controls live behind the tab bar's
+  // ••• cell, so this covers the sheet opening as well as what is in it.
   let keysButton = false;
   let buttonDetail = 'not reached';
   try {
     await page.keyboard.press('Escape'); // close the dialog the chord opened
     await sleep(1000);
+    await label('•••').click({ timeout: 10000 });
+    await sleep(1200);
     await label('⌨ KEYS').click({ timeout: 10000 });
     await sleep(1500);
-    keysButton = (await seesText(/Keyboard/)) && (await seesText(/Previous week/));
+    keysButton = (await seesText(/Keyboard/)) && (await seesText(/Previous period/));
     buttonDetail = keysButton ? 'opened the list' : 'click had no effect';
   } catch (e) {
     buttonDetail = (e.message ?? String(e)).split('\n')[0];
   }
-  check('the header button opens the cheatsheet', keysButton, buttonDetail);
+  check('the controls sheet opens the cheatsheet', keysButton, buttonDetail);
+
+  // Two routes deep now — the cheatsheet, and the sheet it was opened from —
+  // and everything after this clicks the app itself. Unconditional, because a
+  // check that failed halfway leaves one of them up just as surely.
+  for (let i = 0; i < 2; i++) {
+    await page.keyboard.press('Escape');
+    await sleep(800);
+  }
 
   // --- Tab reaches the controls ---------------------------------------------
   // The widget suite can prove Flutter's own focus tree moves. Whether the
@@ -456,12 +469,16 @@ try {
   // costs no extra boot, and it tests the better thing. A desktop window is
   // resized while the app is running, and re-laying-out on that is what no
   // widget test can convincingly cover — they each pick a size and stay there.
-  let paired = false;
+  //
+  // This used to also assert that a wide window drew Now and the timeline side
+  // by side. It does not any more, and deliberately: 716271c made every width
+  // show one screen at a time, and `at the widest viewport, selecting Timeline
+  // shows Timeline and not Now` in test/shell_layout_test.dart pins the
+  // opposite. The check had been failing ever since, asserting a layout the app
+  // had given up.
   let widened = false;
   let wideDetail = 'not reached';
   try {
-    // The timeline is a separate tab at phone width, so its view toggle is not
-    // in the tree at all — which is what makes it evidence of a second pane.
     await page.setViewportSize({ width: 1280, height: 900 });
     await sleep(2000);
 
@@ -482,30 +499,19 @@ try {
           text: (n.getAttribute('aria-label') || n.textContent || '').replace(/\s+/g, ' '),
           box: n.getBoundingClientRect(),
         }));
-      const first = (re) => leaves.find((n) => re.test(n.text))?.box ?? null;
       return {
         navInSidebar: ['NOW', 'TIMELINE', 'REPORTS', 'ACTIVITIES'].filter((l) =>
           leaves.some((n) => n.text.trim() === l && n.box.right <= sidebar + 4),
         ).length,
-        now: first(/START NOW/i),
-        timeline: first(/≣ LIST/),
       };
     }, 180);
 
     widened = geometry.navInSidebar === 4;
-    paired = !!geometry.now &&
-      !!geometry.timeline &&
-      geometry.timeline.width > 0 &&
-      geometry.timeline.left >= geometry.now.right;
-    wideDetail = `${geometry.navInSidebar}/4 destinations in the sidebar` +
-      (geometry.now && geometry.timeline
-        ? `, now ends ${Math.round(geometry.now.right)}, timeline starts ${Math.round(geometry.timeline.left)}`
-        : ', a pane was not in the tree');
+    wideDetail = `${geometry.navInSidebar}/4 destinations in the sidebar`;
   } catch (e) {
     wideDetail = (e.message ?? String(e)).split('\n')[0];
   }
   check('the navigation survives a resize', widened, wideDetail);
-  check('a wide window pairs Now with the timeline', paired, wideDetail);
 
   const fatal = errors.filter((e) => !/favicon/i.test(e));
   check('no page errors', fatal.length === 0, fatal.slice(0, 3).join(' | '));

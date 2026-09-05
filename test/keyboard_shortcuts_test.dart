@@ -948,7 +948,13 @@ void main() {
     await _press(tester, PhysicalKeyboardKey.keyR, LogicalKeyboardKey.keyR);
 
     expect(_syncStatus(tester), _refused);
-    expect(find.text(_refused), findsOneWidget, reason: 'the button shows what the key did');
+
+    // And it is still there to be read once the controls are opened. This is the
+    // half the move to a menu put at risk: the outcome of a sync you asked for
+    // by key must not depend on a surface having been open at the time.
+    await tester.tap(find.text('⚙ MENU'));
+    await settle(tester);
+    expect(find.text(_refused), findsOneWidget, reason: 'the menu shows what the key did');
 
     await disposeApp(tester);
   });

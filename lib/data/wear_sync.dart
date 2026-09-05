@@ -345,7 +345,7 @@ class WearSyncService {
           at: at,
         );
         if (opened) {
-          await _activities.touchUsed(activityId, at);
+          await _activities.touchUsed(activityId, at, push: !_isWatch);
           // The peer's view of "what is tracking" just changed.
           if (!_isWatch) await _pushSnapshot(force: true);
         }
@@ -463,7 +463,11 @@ class WearSyncService {
     final when = at ?? DateTime.now();
 
     await _changes.applyRelayedSwitch(changeSyncId: changeSyncId, activityId: activityId, at: when);
-    await _activities.touchUsed(activityId, when);
+    // Recorded, not pushed. What the watch knows of this activity came over the
+    // relay, which carries name and colour and no more — so the row it holds is
+    // a partial view, and offering it to the server would state the missing
+    // fields (the parent link, above all) as this device's own fact.
+    await _activities.touchUsed(activityId, when, push: !_isWatch);
 
     await _relay(SwitchRequest(changeSyncId: changeSyncId, activityId: activityId, at: when));
   }

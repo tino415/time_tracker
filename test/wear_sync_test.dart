@@ -449,6 +449,30 @@ void main() {
       service.dispose();
     });
 
+    test('switching to a snapshot activity offers the server nothing', () async {
+      // A snapshot carries name and colour only, so an adopted row's parentId is
+      // null — a gap in what the watch was told, not a fact about the activity.
+      // The recency bump that rides along with a switch marked the row dirty,
+      // which offered that gap to the server as this device's own edit; the push
+      // is version-LWW, so it won, and the parent link the phone set was gone.
+      //
+      // Cosmetic until the watch could sync on its own. With a sync button it is
+      // one tap from routine, which is why this is pinned before the button.
+      final service = serviceFor(isWatch: true);
+      await service.start();
+      await bridge.receive(
+        const BookmarkSnapshot(
+          activities: [WearActivity(syncId: 'a', name: 'Deep work', color: '#4F8FEE')],
+        ),
+      );
+
+      await service.requestSwitch('a');
+
+      final pending = await SyncStore(db).pendingActivities();
+      expect(pending.map((a) => a.syncId), isNot(contains('a')));
+      service.dispose();
+    });
+
     test('reproduces the phone\'s current block locally', () async {
       // The bug this exists for: the watch showed "nothing tracked" while the
       // phone was tracking, because the snapshot's current block was decoded

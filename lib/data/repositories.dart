@@ -32,7 +32,12 @@ abstract class ActivityRepository {
   Future<void> setParent(String id, String? parentId);
 
   /// Bump recency (last-used-first autocomplete).
-  Future<void> touchUsed(String id, DateTime at);
+  ///
+  /// [push] false records it without offering the row to the server. For the
+  /// watch, where a row may have arrived over the Wear relay carrying only the
+  /// fields the relay protocol has — pushing one would state the fields it does
+  /// *not* have as fact, and version-LWW would let that win.
+  Future<void> touchUsed(String id, DateTime at, {bool push = true});
 
   /// The catch-all activity behind "start now, name it later", created on first
   /// use. Idempotent, and safe to race: the id is fixed, so two devices (or two

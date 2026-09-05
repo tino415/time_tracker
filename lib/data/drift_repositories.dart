@@ -87,8 +87,10 @@ class DriftActivityRepository implements ActivityRepository {
   }
 
   @override
-  Future<void> touchUsed(String id, DateTime at) =>
-      _bump(id, ActivitiesCompanion(lastUsedAt: Value(at)));
+  Future<void> touchUsed(String id, DateTime at, {bool push = true}) {
+    final patch = ActivitiesCompanion(lastUsedAt: Value(at));
+    return push ? _bump(id, patch) : _applyPeer(id, patch);
+  }
 
   @override
   Future<void> ensurePeerActivity(WearActivity activity) async {

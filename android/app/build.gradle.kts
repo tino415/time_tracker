@@ -42,6 +42,13 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    testOptions {
+        // Robolectric reads the merged resources: the widget layout it inflates,
+        // widget_nothing_tracked, and the capability array WearContractTest
+        // checks against WearBridge.CAPABILITY.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 flutter {
@@ -59,4 +66,22 @@ dependencies {
     // TimeDifferenceComplicationText, the mechanism that lets the watch face
     // render elapsed time itself instead of the app pushing one every tick.
     implementation("androidx.wear.watchface:watchface-complications-data-source:1.2.1")
+
+    testImplementation("junit:junit:4.13.2")
+    // Supplies a real org.json and real resources: the android.jar on the unit
+    // test classpath is stubs that throw, and half this module is JSON parsing.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
+    // The Data Layer clients are abstract classes with non-public constructors,
+    // so they cannot be hand-faked. Their Tasks are real ones from Tasks.for*.
+    testImplementation("io.mockk:mockk:1.13.13")
+    // Dispatchers.setMain, so WearBridge's Main-dispatcher scope runs inline.
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+
+    constraints {
+        // Robolectric pulls Conscrypt in transitively, and the version it asks
+        // for ships no linux-aarch_64 native, which every test needs here.
+        // 2.7.0 is the first that does — a floor, not a dependency of ours.
+        testImplementation("org.conscrypt:conscrypt-openjdk-uber:2.7.0")
+    }
 }

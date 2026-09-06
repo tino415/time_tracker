@@ -48,6 +48,10 @@ app.*.map.json
 # only the configuration-problems report. Output of a build, like /build.
 /android/build/
 
+# `just android-test` parks Gradle's project cache and the Kotlin compiler's
+# persistent dir here — outside build/, so `just clean` leaves them warm.
+/.gradle-test-cache/
+
 # nix env (built from default.nix, tangled from repositories.org)
 .nix
 result

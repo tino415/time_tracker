@@ -146,6 +146,26 @@ test-only +args:
 test-failures +args="test":
     flutter test --no-pub --reporter=failures-only {{args}}
 
+# The Kotlin under android/ is the Wear transport, the queue and cache it keeps
+# on disk, and the widget and complication surfaces — none of it reachable from
+# `flutter test`, which is why Gradle is driven directly here.
+#
+# Both cache redirects are mandatory, not tuning. The Flutter Gradle plugin is
+# pulled in as a composite build straight from the SDK, and when that SDK sits on
+# a read-only path Gradle and the Kotlin compiler both try to write their scratch
+# state beside it. The Kotlin one at least reports a missing .kotlin/sessions
+# file; Gradle's own project cache fails *silently* — no output at all, a
+# non-zero exit, and a daemon that logs the build as successful. Absolute paths:
+# a relative one resolves against the included build, not this directory. Parked
+# in .gradle-test-cache/ rather than build/ so `clean` (flutter clean, which
+# wipes build/) does not cost the next run a cold reconfigure and recompile.
+[doc('JVM unit tests for the Kotlin sources under android/ — Robolectric, so no device or emulator; the first run fetches Gradle and the Robolectric android-all jar, and its private Gradle cache means no lock against deploy/e2e/up — do not run them at the same time')]
+android-test *args:
+    cd android && ./gradlew \
+      --project-cache-dir="{{justfile_directory()}}/.gradle-test-cache/project" \
+      -Pkotlin.project.persistent.dir="{{justfile_directory()}}/.gradle-test-cache/kotlin" \
+      :app:testDebugUnitTest {{args}}
+
 # Needs a running emulator or a connected device. `flutter devices` lists the
 # ids; a phone paired over wifi gets a new ip:port each pairing, so pass it
 # explicitly when it changes.

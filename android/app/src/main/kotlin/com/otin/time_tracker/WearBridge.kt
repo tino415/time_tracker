@@ -34,6 +34,10 @@ import java.io.File
 class WearBridge(
     context: Context,
     binaryMessenger: BinaryMessenger,
+    // Defaulted rather than constructed below so a test can hand in doubles:
+    // both are Play Services statics that need a live GMS to answer.
+    private val messageClient: MessageClient = Wearable.getMessageClient(context.applicationContext),
+    private val capabilityClient: CapabilityClient = Wearable.getCapabilityClient(context.applicationContext),
 ) : MethodChannel.MethodCallHandler,
     EventChannel.StreamHandler,
     MessageClient.OnMessageReceivedListener,
@@ -42,8 +46,6 @@ class WearBridge(
     private val appContext = context.applicationContext
     private val methodChannel = MethodChannel(binaryMessenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(binaryMessenger, EVENT_CHANNEL)
-    private val messageClient: MessageClient = Wearable.getMessageClient(appContext)
-    private val capabilityClient: CapabilityClient = Wearable.getCapabilityClient(appContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var sink: EventChannel.EventSink? = null
@@ -212,7 +214,7 @@ class WearBridge(
                 "notPaired"
             }
             mainHandler.post {
-                sink?.success(mapOf("type" to "_reachability", "payload" to mapOf("state" to state)))
+                sink?.success(mapOf("type" to TYPE_REACHABILITY, "payload" to mapOf("state" to state)))
             }
         }
     }
@@ -231,6 +233,12 @@ class WearBridge(
 
         /** Data Layer path this bridge and the listener service both serve. */
         const val PATH = "/time_tracker/sync"
+
+        /**
+         * Reserved event type this bridge emits itself; never a wire message.
+         * The Dart side matches it by the same literal in wear_bridge.dart.
+         */
+        const val TYPE_REACHABILITY = "_reachability"
 
         /**
          * True while a Flutter engine holds the inbound sink, i.e. this bridge

@@ -1,6 +1,8 @@
 package com.otin.time_tracker
 
+import android.content.Context
 import android.util.Log
+import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
@@ -21,7 +23,14 @@ import java.io.File
  * engine to hand the message to and no Drift connection to apply it with, and
  * every decision that could live in Dart does.
  */
-class WearListenerService : WearableListenerService() {
+// A factory rather than a client because a Service has no Context until the
+// system attaches one, and open only so a test subclass can hand its own
+// factory through this constructor — behaviour is not overridable. With every
+// parameter defaulted, Kotlin still emits the no-arg constructor the framework
+// instantiates services with; WearContractTest pins that.
+open class WearListenerService(
+    private val messageClient: (Context) -> MessageClient = { Wearable.getMessageClient(it) },
+) : WearableListenerService() {
 
     override fun onMessageReceived(event: MessageEvent) {
         if (event.path != WearBridge.PATH) return
@@ -69,7 +78,7 @@ class WearListenerService : WearableListenerService() {
     private fun replyWithCachedSnapshot(sourceNodeId: String, payload: JSONObject) {
         val envelope = JSONObject().put("type", "bookmarks").put("payload", payload)
         val bytes = envelope.toString().toByteArray(Charsets.UTF_8)
-        Wearable.getMessageClient(this).sendMessage(sourceNodeId, WearBridge.PATH, bytes)
+        messageClient(this).sendMessage(sourceNodeId, WearBridge.PATH, bytes)
             .addOnFailureListener { t ->
                 Log.d(TAG, "answering snapshot_request from cache failed: ${t.message}")
             }

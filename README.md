@@ -128,8 +128,11 @@ lib/
   phone/       The phone/web shell: screens + neobrutalist widget kit
   watch/       Wear OS shell
   theme/       NeoTokens design tokens
+android/       Kotlin: the native half of the Wear bridge, the queue and cache
+               that answer while no Flutter engine runs, the home-screen widget
+               and the watch-face complication; JVM tests in app/src/test
 worker/        The sync backend: Cloudflare Worker, D1 schema, its own README
-test/          Unit + widget tests; support/ holds the shared flow harness
+test/          Dart unit + widget tests; support/ holds the shared flow harness
 integration_test/  On-device end-to-end
 tool/          serve_web.dart, web_smoke.mjs, worker_smoke.mjs
 ```

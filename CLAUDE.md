@@ -1,4 +1,4 @@
-# GymTracker
+# track
 
 Read README.md for project architecture details.
 

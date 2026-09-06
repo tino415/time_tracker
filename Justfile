@@ -159,7 +159,7 @@ test-failures +args="test":
 # a relative one resolves against the included build, not this directory. Parked
 # in .gradle-test-cache/ rather than build/ so `clean` (flutter clean, which
 # wipes build/) does not cost the next run a cold reconfigure and recompile.
-[doc('JVM unit tests for the Kotlin sources under android/ — Robolectric, so no device or emulator; the first run fetches Gradle and the Robolectric android-all jar, and its private Gradle cache means no lock against deploy/e2e/up — do not run them at the same time')]
+[doc('JVM unit tests for the Kotlin sources under android/ — Robolectric, so no device or emulator; takes gradle test args, so a subset is --tests "*WearBridgeTest*". First run fetches Gradle and the Robolectric android-all jar; its private Gradle cache means no lock against deploy/e2e/up — do not run them at the same time')]
 android-test *args:
     cd android && ./gradlew \
       --project-cache-dir="{{justfile_directory()}}/.gradle-test-cache/project" \

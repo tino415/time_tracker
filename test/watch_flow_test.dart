@@ -893,26 +893,21 @@ void main() {
   group('syncing from the wrist', () {
     final syncRow = find.byKey(const ValueKey('sync-now'));
 
-    /// Home's list, scrolled to its foot, where the rows that belong to the app
-    /// rather than to an activity live.
+    /// Start something, then swipe to the menu the sync row lives in.
     ///
-    /// Dragged rather than `scrollUntilVisible`, because half of these tests
-    /// assert the row is *not* there: a finder that never matches would make
-    /// that helper run to its limit and throw, and one that is merely below the
-    /// fold would read as absent. Reaching the end first makes present and
-    /// absent mean what they say.
-    Future<void> scrollToFoot(WidgetTester tester) async {
-      for (var i = 0; i < 4; i++) {
-        await tester.drag(find.byType(ListView), const Offset(0, -200));
-        await settle(tester);
-      }
+    /// The block is not incidental: the menu is gated on one, and the shell
+    /// bounces every pane but home back without it. That gate is the cost of
+    /// putting the row here rather than on home.
+    Future<void> openSyncMenu(WidgetTester tester) async {
+      await tapTile(tester, tile(deepWorkId));
+      await openMenu(tester);
     }
 
     testWidgets('a build with no backend offers nothing to sync to', (tester) async {
       final bridge = FakeWearBridge();
       addTearDown(bridge.dispose);
       await pumpWatch(tester, bridge, seed: seedBookmarks);
-      await scrollToFoot(tester);
+      await openSyncMenu(tester);
 
       expect(syncRow, findsNothing);
 
@@ -933,7 +928,7 @@ void main() {
           syncConfigProvider.overrideWithValue(const SyncConfig(baseUrl: 'https://sync.example')),
         ],
       );
-      await scrollToFoot(tester);
+      await openSyncMenu(tester);
 
       expect(syncRow, findsNothing);
 
@@ -953,7 +948,7 @@ void main() {
         ],
       );
 
-      await scrollToFoot(tester);
+      await openSyncMenu(tester);
       await tester.tap(syncRow);
       await settle(tester);
 
@@ -981,7 +976,7 @@ void main() {
         ],
       );
 
-      await scrollToFoot(tester);
+      await openSyncMenu(tester);
       await tester.tap(syncRow);
       await settle(tester);
 
@@ -1006,7 +1001,7 @@ void main() {
         ],
       );
 
-      await scrollToFoot(tester);
+      await openSyncMenu(tester);
       await tester.tap(syncRow);
       await settle(tester);
 

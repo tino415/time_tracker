@@ -330,7 +330,6 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
         ],
         if (bookmarked.isEmpty) const _NoBookmarksHint(),
         const SizedBox(height: 6),
-        const _SyncRow(),
         // The watch is the device where "what is installed here?" is hardest
         // to answer any other way.
         Text(
@@ -361,6 +360,12 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
           label: 'swap current action',
           onTap: () => _show(_WatchPane.swap),
         ),
+        const SizedBox(height: 6),
+        // The one row here that does not edit the running block. It sits with
+        // the others because this is where the watch's actions live, and home is
+        // for switching — the cost is that the menu only opens while something
+        // is tracking, so a sync cannot be forced from the empty state.
+        const _SyncRow(),
       ],
     );
   }
@@ -646,10 +651,10 @@ class _NoBookmarksHint extends ConsumerWidget {
 /// Push what this watch has recorded, without waiting for the phone to be
 /// opened.
 ///
-/// On home rather than in the menu, which is where the other actions live: every
-/// pane but this one is gated on a running block, and forcing a sync is exactly
-/// as useful with nothing tracking — arguably more, since that is when you have
-/// just finished something.
+/// In the menu, with the watch's other actions, rather than on home among the
+/// things you switch to. The menu only opens while something is tracking, so a
+/// sync cannot be forced from the empty state — which for continuous tracking is
+/// the first run and little else.
 ///
 /// Absent rather than disabled when it cannot work — no backend in this build,
 /// or no token relayed yet. Unlike the phone there is no invitation state to

@@ -645,6 +645,61 @@ class DriftChangeRepository implements ChangeRepository {
   }
 
   @override
+  Future<bool> swapActivitySets(String changeA, String changeB) async {
+    if (changeA == changeB) return false;
+    return _db.transaction(() async {
+      final a = await (_db.select(
+        _db.activityChanges,
+      )..where((t) => t.syncId.equals(changeA))).getSingleOrNull();
+      final b = await (_db.select(
+        _db.activityChanges,
+      )..where((t) => t.syncId.equals(changeB))).getSingleOrNull();
+      if (a == null || b == null) return false;
+
+      final idsA = await _activityIdsOf(changeA);
+      final idsB = await _activityIdsOf(changeB);
+      // Same rule as every other write here: a swap that changes nothing must
+      // not dirty two rows, or each sync would re-send both blocks unaltered.
+      final sameSet = idsA.length == idsB.length && idsA.containsAll(idsB);
+      if (sameSet && a.comment == b.comment) return false;
+
+      // Both sides go before either comes back. The join's primary key is
+      // {activityChangeId, activityId}, so writing B's ids onto A while A's are
+      // still on B collides on any id the two have in common.
+      await (_db.delete(
+        _db.activityChangeActivities,
+      )..where((t) => t.activityChangeId.isIn([changeA, changeB]))).go();
+      await _link(changeA, idsB);
+      await _link(changeB, idsA);
+
+      // The comment describes the activity, so it travels with it. A note about
+      // a call left on the block that no longer tracks the call is the same
+      // error this action exists to correct.
+      await _bump(changeA, ActivityChangesCompanion(comment: Value(b.comment)));
+      await _bump(changeB, ActivityChangesCompanion(comment: Value(a.comment)));
+      return true;
+    });
+  }
+
+  Future<Set<String>> _activityIdsOf(String changeId) async {
+    final links = await (_db.select(
+      _db.activityChangeActivities,
+    )..where((t) => t.activityChangeId.equals(changeId))).get();
+    return links.map((l) => l.activityId).toSet();
+  }
+
+  Future<void> _link(String changeId, Set<String> activityIds) async {
+    for (final id in activityIds) {
+      await _db
+          .into(_db.activityChangeActivities)
+          .insert(
+            ActivityChangeActivitiesCompanion.insert(activityChangeId: changeId, activityId: id),
+            mode: InsertMode.insertOrIgnore,
+          );
+    }
+  }
+
+  @override
   Future<void> setComment(String changeId, String? comment) =>
       _bump(changeId, ActivityChangesCompanion(comment: Value(comment)));
 

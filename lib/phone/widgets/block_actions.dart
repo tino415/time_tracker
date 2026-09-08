@@ -15,12 +15,15 @@ import 'block_comment.dart';
 import 'block_split.dart';
 import 'block_start.dart';
 import 'neo.dart';
+import 'swap_undo.dart';
 
 /// The edit menu for one block, shared by the timeline list, the calendar and
 /// the Now hero, so all three offer the same verbs on the same data.
 ///
 /// [canMerge] is false for the earliest block, which has no boundary before it
-/// to delete.
+/// to delete. Whether the block has a *predecessor* is a different question and
+/// is answered here from the block list, not by the caller — see the note on
+/// `previous` below.
 ///
 /// Split used to be here only when the caller supplied a position, which meant
 /// the calendar only. It is offered everywhere now: the calendar cannot express
@@ -34,6 +37,15 @@ Future<void> showBlockActions(
 }) async {
   final t = neo(context);
   final hasPointer = ref.read(hasPointerProvider);
+  // The block before this one, found here rather than passed in. The three
+  // callers answer "is there a previous" differently — the calendar passes a
+  // slice flag that is false for a block spanning midnight, which does have a
+  // predecessor — and a verb offered on one screen and missing on another is a
+  // worse fault than the one it fixes.
+  final blocks = ref.read(blocksProvider);
+  final index = blocks.indexWhere((b) => b.change.syncId == block.change.syncId);
+  // Newest first, so the entry after this one is the earlier block.
+  final previous = index >= 0 && index + 1 < blocks.length ? blocks[index + 1] : null;
   // This is the sheet that most needs the scroll control showNeoSheet gives
   // every one of them: change, tag, untag, split, retime, note and merge is
   // seven rows, past the 9/16 an unscrolled sheet is capped at.
@@ -177,6 +189,25 @@ Future<void> showBlockActions(
                   },
                 ),
               ],
+              if (previous != null) ...[
+                const SizedBox(height: 10),
+                // "Trade labels", not "swap": the one way this action is read
+                // wrongly is as a reorder, with the durations following the
+                // names. Naming the neighbour rather than saying "the block
+                // before" also makes it checkable before tapping.
+                //
+                // Deliberately not called swap, which this sheet already spends
+                // on the per-activity action meaning replace — and which the
+                // watch spends the same way, so renaming either would leave the
+                // two disagreeing.
+                NeoButton(
+                  label: '⇅ trade labels with ${_neighbourLabel(previous, block)}',
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await swapWithUndo(context, ref, block.change.syncId);
+                  },
+                ),
+              ],
               if (canMerge) ...[
                 const SizedBox(height: 10),
                 NeoButton(
@@ -195,6 +226,33 @@ Future<void> showBlockActions(
       ),
     ),
   );
+}
+
+/// How the block being traded with is named on the button: its start time and
+/// its activities, joined the way every other label here joins them.
+///
+/// The day is included only when the neighbour began on a different date, which
+/// happens on the block that spans midnight. A bare "09:00" there would name the
+/// wrong block, and printing the date always would spend the width on nothing.
+String _neighbourLabel(Block previous, Block block) {
+  final sameDay =
+      previous.start.year == block.start.year &&
+      previous.start.month == block.start.month &&
+      previous.start.day == block.start.day;
+  final when = sameDay
+      ? formatTimeOfDay(previous.start)
+      : '${previous.start.day}/${previous.start.month} ${formatTimeOfDay(previous.start)}';
+
+  // deriveBlocks drops soft-deleted activities, so a block can arrive carrying
+  // none. Naming the time alone still identifies it; a trailing empty name would
+  // read as a bug and defeat the point of naming the neighbour at all.
+  final names = previous.activities.map((a) => a.name).join(' + ');
+  if (names.isEmpty) return 'the block at $when';
+
+  // NeoButton's label does not ellipsize, so a long set would wrap the button
+  // over several lines. Cut it here, where the string is built.
+  final label = '$when $names';
+  return label.length <= 34 ? label : '${label.substring(0, 33)}…';
 }
 
 /// One activity on the block, with the two things you can do to *it*.

@@ -248,6 +248,108 @@ void main() {
       expect((await changes.loadChanges()).length, 3);
     });
   });
+
+  group('swapWithPrevious', () {
+    test('the labels change places and the boundaries do not', () async {
+      final ids = await seedDay();
+      final before = [for (final id in ids) await changes.activityIdsForChange(id)];
+
+      await controller.swapWithPrevious(ids[1]);
+
+      expect(await changes.activityIdsForChange(ids[0]), before[1]);
+      expect(await changes.activityIdsForChange(ids[1]), before[0]);
+      // The whole point: a three-hour block and a five-minute one trade names
+      // without either changing length.
+      expect(await boundaryOf(ids[0]), at(9));
+      expect(await boundaryOf(ids[1]), at(12));
+      expect(await boundaryOf(ids[2]), at(15));
+    });
+
+    test('the note travels with the activity it describes', () async {
+      final ids = await seedDay();
+      await changes.setComment(ids[0], 'called Peter');
+      await changes.setComment(ids[1], 'wrote it up');
+
+      await controller.swapWithPrevious(ids[1]);
+
+      final rows = await changes.loadChanges();
+      expect(rows.firstWhere((c) => c.syncId == ids[0]).comment, 'wrote it up');
+      expect(rows.firstWhere((c) => c.syncId == ids[1]).comment, 'called Peter');
+    });
+
+    test('doing it twice puts everything back', () async {
+      final ids = await seedDay();
+      final before = [for (final id in ids) await changes.activityIdsForChange(id)];
+
+      await controller.swapWithPrevious(ids[1]);
+      await controller.swapWithPrevious(ids[1]);
+
+      // This is what lets undo be the same call rather than a second unwind
+      // path that could disagree with the first.
+      expect(await changes.activityIdsForChange(ids[0]), before[0]);
+      expect(await changes.activityIdsForChange(ids[1]), before[1]);
+    });
+
+    test('both rows are marked for pushing', () async {
+      final ids = await seedDay();
+      await controller.swapWithPrevious(ids[1]);
+
+      final rows = await changes.loadChanges();
+      // The set travels inside the change for sync, so an edit that leaves both
+      // versions alone never reaches the other device.
+      expect(rows.firstWhere((c) => c.syncId == ids[0]).dirty, isTrue);
+      expect(rows.firstWhere((c) => c.syncId == ids[1]).dirty, isTrue);
+    });
+
+    test('the earliest block has nothing before it', () async {
+      final ids = await seedDay();
+      final before = await changes.activityIdsForChange(ids[0]);
+
+      expect(await controller.swapWithPrevious(ids[0]), isNull);
+      expect(await changes.activityIdsForChange(ids[0]), before);
+    });
+
+    test('it names the pair it traded, so undo does not re-derive one', () async {
+      final ids = await seedDay();
+
+      final swapped = await controller.swapWithPrevious(ids[1]);
+
+      expect(swapped, (ids[0], ids[1]));
+    });
+
+    test('undo puts back the pair it was given, not the current neighbour', () async {
+      final ids = await seedDay();
+      final before = [for (final id in ids) await changes.activityIdsForChange(id)];
+      final swapped = (await controller.swapWithPrevious(ids[2]))!;
+
+      // A block lands between the two while the snackbar is up — a relayed
+      // switch from the watch looks exactly like this. Re-deriving "the previous
+      // block" here would trade with the newcomer and leave the first mistake.
+      final d = await activities.createActivity(name: 'D', color: '#666666');
+      await controller.switchTo(d.syncId, at: at(13));
+
+      await controller.swapPair(swapped.$1, swapped.$2);
+
+      expect(await changes.activityIdsForChange(ids[1]), before[1]);
+      expect(await changes.activityIdsForChange(ids[2]), before[2]);
+    });
+
+    test('two blocks carrying the same label are left alone', () async {
+      final a = await activities.createActivity(name: 'A', color: '#333333');
+      await controller.switchTo(a.syncId, at: at(9));
+      await controller.switchTo(a.syncId, at: at(12));
+      final ids = (await changes.loadChanges()).reversed.map((c) => c.syncId).toList();
+      final versions = {for (final c in await changes.loadChanges()) c.syncId: c.version};
+
+      await controller.swapWithPrevious(ids[1]);
+
+      // Nothing changed, so nothing may be dirtied: otherwise every sync would
+      // re-send two identical blocks.
+      for (final c in await changes.loadChanges()) {
+        expect(c.version, versions[c.syncId], reason: c.syncId);
+      }
+    });
+  });
 }
 
 /// Derive the timeline the way the UI does, so edit tests operate on real Blocks.

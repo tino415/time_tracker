@@ -186,6 +186,29 @@ abstract class ChangeRepository {
   /// and lands on the activity finally chosen.
   Future<void> setChangeActivity(String changeId, String activityId);
 
+  /// Exchange what two changes are labelled with: their activity sets and the
+  /// comments describing them, in one transaction.
+  ///
+  /// Neither `changedAt` moves, so the boundaries stay exactly where they are
+  /// and no block changes length. This corrects two neighbours labelled the
+  /// wrong way round; it is not the fix for a switch made a minute late, which
+  /// is a boundary in the wrong place and belongs to [setChangedAt].
+  ///
+  /// Its own inverse — calling it again puts both back — which is what lets undo
+  /// be the same call rather than a second unwind path.
+  ///
+  /// A no-op when the two carry the same set and the same comment, so a swap
+  /// that would change nothing does not mark either row for pushing. Returns
+  /// whether it wrote, so a caller does not announce an edit that did not happen.
+  ///
+  /// Known hazard, and the first edit here to have it: this needs *two* change
+  /// rows to land together, and sync resolves one row at a time. If a peer holds
+  /// a newer version of exactly one of the pair, it keeps that one and takes the
+  /// other, leaving both blocks carrying the same set and one label gone. Every
+  /// other multi-block edit — moving a boundary, merging — writes a single row's
+  /// payload, so nothing before this could split in transit.
+  Future<bool> swapActivitySets(String changeA, String changeB);
+
   Future<void> setComment(String changeId, String? comment);
 
   /// Resize: move a boundary. Because boundaries are shared, this retimes the

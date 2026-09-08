@@ -257,6 +257,39 @@ class TrackerController {
     if (!ascending.any((c) => c.syncId == changeId)) return;
     await _changes.deleteChange(changeId);
   }
+
+  /// Trade labels with the block before this one: the two activity sets and
+  /// their comments change places, and nothing else does.
+  ///
+  /// For two neighbours labelled the wrong way round. The boundaries do not
+  /// move, so the durations stay with the slots and a three-hour block trades
+  /// its name with a five-minute one without either changing length. A switch
+  /// noticed a minute late is a different complaint — that is a boundary in the
+  /// wrong place, and [moveBoundary] is its fix.
+  ///
+  /// The earliest block has nothing before it, so that is a no-op.
+  ///
+  /// Returns the two changes it traded, or null when it wrote nothing — there
+  /// was no predecessor, or the two already carried the same label and note.
+  /// Callers announce the edit only when there was one.
+  Future<(String, String)?> swapWithPrevious(String changeId) async {
+    final ascending = (await _changes.loadChanges()).reversed.toList();
+    final i = ascending.indexWhere((c) => c.syncId == changeId);
+    if (i <= 0) return null;
+    final previous = ascending[i - 1].syncId;
+    final wrote = await _changes.swapActivitySets(previous, changeId);
+    return wrote ? (previous, changeId) : null;
+  }
+
+  /// Trade two named changes back, for undo.
+  ///
+  /// Undo names both rather than re-deriving "the previous block", because the
+  /// timeline can change under the snackbar: a relayed switch or a split landing
+  /// in the six seconds it is up would put a different block before this one,
+  /// and the undo would then trade with that instead — leaving the original
+  /// mistake and making a second one.
+  Future<void> swapPair(String changeA, String changeB) =>
+      _changes.swapActivitySets(changeA, changeB);
 }
 
 final trackerControllerProvider = Provider<TrackerController>((ref) {

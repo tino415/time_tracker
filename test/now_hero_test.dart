@@ -70,6 +70,51 @@ void main() {
 
     await disposeApp(tester);
   });
+
+  testWidgets('the day-left number does not cost the clock its size', (tester) async {
+    // Two numbers now share the clock row, on the narrowest screen this ships
+    // to. The elapsed clock is the reason anyone looks at this card, so the
+    // second one has to fit in what it leaves rather than take from it.
+    //
+    // Assert the painted width, not the style: the clock sits in a FittedBox,
+    // whose scale never touches the TextStyle, so reading `fontSize` back would
+    // report 40 however small the glyphs actually are. An upper bound is no use
+    // either — a FittedBox child cannot exceed its box by construction. Only a
+    // lower bound can fail, and it fails exactly when a growing neighbour
+    // squeezes the clock.
+    await bootApp(tester, viewport: _narrow, seed: _seedDeepPath);
+
+    expect(inScreen(NowScreen, find.text('to midnight')), findsOneWidget);
+
+    // 0:00:00 is seven characters of 40pt mono at a 0.6em advance, so an
+    // unscaled clock paints about 168dp wide.
+    final clock = inScreen(NowScreen, find.textContaining(RegExp(r'^\d+:\d\d:\d\d$')));
+    expect(tester.getRect(clock).width, greaterThan(160));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a hero with nothing running still says what is left of today', (tester) async {
+    // The not-tracking branch has no clock of its own, so it needed its own
+    // ticker. The question does not depend on anything running, and this is
+    // exactly the moment it is worth asking.
+    //
+    // An activity that was never started, rather than an empty database: with no
+    // activities at all the screen is the first-run pane and there is no hero.
+    await bootApp(
+      tester,
+      viewport: _narrow,
+      seed: (db) async {
+        await DriftActivityRepository(db).createActivity(name: 'Break', color: '#9A9B95');
+      },
+    );
+
+    // NeoChip uppercases its label.
+    expect(inScreen(NowScreen, find.text('NOT TRACKING')), findsOneWidget);
+    expect(inScreen(NowScreen, find.text('to midnight')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
 }
 
 // A golden of this hero was tried and removed. Where the breadcrumb gets cut is

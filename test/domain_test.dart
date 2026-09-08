@@ -212,6 +212,26 @@ void main() {
     });
   });
 
+  group('remainingToday', () {
+    test('counts to the next midnight', () {
+      expect(remainingToday(DateTime(2026, 1, 7, 9, 30)), const Duration(hours: 14, minutes: 30));
+    });
+
+    test('a minute before midnight is a minute, not a negative', () {
+      expect(remainingToday(DateTime(2026, 1, 7, 23, 59)), const Duration(minutes: 1));
+    });
+
+    test('a minute after midnight is nearly the whole day', () {
+      expect(remainingToday(DateTime(2026, 1, 8, 0, 1)), const Duration(hours: 23, minutes: 59));
+    });
+
+    test('midnight itself is a whole day, never zero', () {
+      // The boundary belongs to the day starting, so the number never reads 0m
+      // for the instant it flips. localDayRange puts midnight at a day's start.
+      expect(remainingToday(DateTime(2026, 1, 7)), const Duration(days: 1));
+    });
+  });
+
   group('ActivityTree', () {
     final work = act('work', 'Work');
     final client = act('client', 'Client', parent: 'work');

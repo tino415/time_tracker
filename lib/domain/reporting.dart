@@ -87,3 +87,14 @@ Map<String, Duration> _asDurations(Map<String, int> micros) =>
   final start = DateTime(day.year, day.month, day.day);
   return (start: start, end: DateTime(start.year, start.month, start.day + 1));
 }
+
+/// How much of [now]'s local day is still ahead.
+///
+/// The day ends at midnight, which is the boundary every report already buckets
+/// by, so this needs nothing stored and nothing configured. Derived from [now]
+/// rather than from a clock of its own, so a caller that already has a tick can
+/// hand it over and the two numbers cannot disagree.
+///
+/// Uses [localDayRange]'s own end rather than adding 24 hours, so the one day a
+/// year that is 23 or 25 hours long answers with the day it actually has.
+Duration remainingToday(DateTime now) => localDayRange(now).end.difference(now);

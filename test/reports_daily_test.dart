@@ -117,6 +117,33 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('day mode carries what is left of today, week mode does not', (tester) async {
+    await bootApp(tester, viewport: _tallPhone);
+    await openTab(tester, 'REPORTS');
+
+    // The week has its own version of this question and nobody has asked it.
+    expect(inScreen(ReportsScreen, find.text('left until midnight')), findsNothing);
+
+    await _toggleToDay(tester);
+    expect(inScreen(ReportsScreen, find.text('left until midnight')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a day with nothing tracked still says what is left of it', (tester) async {
+    // The categories render in an if/else against an empty range, and the row
+    // sits outside it deliberately: a day you have tracked nothing on is
+    // precisely the day the question is worth answering.
+    await bootApp(tester, viewport: _tallPhone);
+    await openTab(tester, 'REPORTS');
+    await _toggleToDay(tester);
+
+    expect(inScreen(ReportsScreen, find.textContaining('nothing tracked')), findsOneWidget);
+    expect(inScreen(ReportsScreen, find.text('left until midnight')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('day mode starts on today and refuses to step into the future', (tester) async {
     await bootApp(tester, viewport: _tallPhone);
     await openTab(tester, 'REPORTS');

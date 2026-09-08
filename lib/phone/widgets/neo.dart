@@ -249,10 +249,17 @@ class NeoButton extends StatelessWidget {
   }
 }
 
-/// Rebuilds [builder] every second with the current time — for live elapsed
-/// clocks. Ticks only while mounted.
+/// Rebuilds [builder] with the current time — for live elapsed clocks. Ticks
+/// only while mounted.
+///
+/// [period] is a second by default, which is what a `H:MM:SS` clock needs. A
+/// value printed to the minute should pass `Duration(minutes: 1)` instead: an
+/// idle phone left on a tab should not rebuild sixty times for each change the
+/// reader can see.
 class SecondTicker extends StatefulWidget {
-  const SecondTicker({super.key, required this.builder});
+  const SecondTicker({super.key, required this.builder, this.period = const Duration(seconds: 1)});
+
+  final Duration period;
 
   final Widget Function(BuildContext context, DateTime now) builder;
 
@@ -262,13 +269,26 @@ class SecondTicker extends StatefulWidget {
 
 class _SecondTickerState extends State<SecondTicker> {
   Timer? _timer;
-  DateTime _now = DateTime.now();
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
+    _start();
+  }
+
+  /// The period is read at build of the timer, so a widget that changes it needs
+  /// the timer replaced — otherwise it keeps the rate it was first given, with
+  /// nothing to say so.
+  @override
+  void didUpdateWidget(SecondTicker old) {
+    super.didUpdateWidget(old);
+    if (old.period != widget.period) _start();
+  }
+
+  void _start() {
+    _timer?.cancel();
+    _timer = Timer.periodic(widget.period, (_) {
+      if (mounted) setState(() {});
     });
   }
 
@@ -278,8 +298,13 @@ class _SecondTickerState extends State<SecondTicker> {
     super.dispose();
   }
 
+  // The time is read here rather than held in a field, so every rebuild paints
+  // the current one whatever caused it. A cached value is only ever as fresh as
+  // the last tick, which at a minute's period means up to a minute stale — and
+  // timers do not fire at all while the app is suspended, so the first frame
+  // after a resume would paint whenever the app went away.
   @override
-  Widget build(BuildContext context) => widget.builder(context, _now);
+  Widget build(BuildContext context) => widget.builder(context, DateTime.now());
 }
 
 /// A small square colour swatch with the neobrutalist 2px border.

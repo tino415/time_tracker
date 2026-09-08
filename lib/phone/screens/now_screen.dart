@@ -6,6 +6,7 @@ import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
+import '../../domain/reporting.dart';
 import '../../domain/unsorted.dart';
 import '../../format.dart';
 import '../../theme/tokens.dart';
@@ -357,9 +358,26 @@ class _HeroCard extends ConsumerWidget {
           children: [
             NeoChip('Not tracking'),
             const SizedBox(height: 14),
-            Text(
-              'pick something below to start',
-              style: mono(context, size: 16, weight: FontWeight.w700, color: t.muted),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    'pick something below to start',
+                    style: mono(context, size: 16, weight: FontWeight.w700, color: t.muted),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Its own ticker: this branch has none, and the question the
+                // number answers does not depend on anything running. By the
+                // minute, because that is how often the printed value changes.
+                // The tracking branch ticks per second for the clock beside it;
+                // this branch has no clock to pay for.
+                SecondTicker(
+                  period: const Duration(minutes: 1),
+                  builder: (context, now) => _DayLeft(now: now, color: t.muted),
+                ),
+              ],
             ),
           ],
         ),
@@ -497,9 +515,34 @@ class _HeroCard extends ConsumerWidget {
           ],
           const SizedBox(height: 16),
           SecondTicker(
-            builder: (context, now) => Text(
-              formatElapsedClock(b.duration(now)),
-              style: mono(context, size: 40, weight: FontWeight.w800, color: onFill, height: 1),
+            builder: (context, now) => Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // formatElapsedClock has no upper bound, so a block left running
+                // over a weekend prints a string wider than the card. That is an
+                // open defect of its own and the cap belongs there, not here —
+                // but sharing the row with a second number turns "reads badly"
+                // into an overflow, so the clock scales rather than overruns.
+                // At any ordinary duration it is 40pt and untouched.
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      formatElapsedClock(b.duration(now)),
+                      style: mono(
+                        context,
+                        size: 40,
+                        weight: FontWeight.w800,
+                        color: onFill,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _DayLeft(now: now, color: onFill),
+              ],
             ),
           ),
           const SizedBox(height: 6),
@@ -532,6 +575,39 @@ class _HeroCard extends ConsumerWidget {
           _CommentRow(block: b, onFill: onFill),
         ],
       ),
+    );
+  }
+}
+
+/// How much of today is left, beside the clock counting how much of it is gone.
+///
+/// Sized to fit the space the elapsed clock leaves rather than to match it. On a
+/// 320dp screen the hero has 248dp inside it and the 40pt clock takes 168 of
+/// them, so this column has about 80 to work with and the caption, not the
+/// number, is what sets its width. Growing either one shrinks the clock that is
+/// the reason anyone looks at this card.
+class _DayLeft extends StatelessWidget {
+  const _DayLeft({required this.now, required this.color});
+
+  final DateTime now;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          formatDurationHm(remainingToday(now)),
+          style: mono(context, size: 16, weight: FontWeight.w800, color: color, height: 1),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          'to midnight',
+          style: mono(context, size: 9, weight: FontWeight.w700, spacing: .6, color: color),
+        ),
+      ],
     );
   }
 }

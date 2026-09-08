@@ -157,6 +157,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           )
         else
           _categoryRows(hasPointer, tree, totals, roots, max: maxRoot, depth: 0),
+        // Outside the branch above, so a day with nothing tracked still answers
+        // "how much of it is left" — that is exactly the day you want to ask.
+        // Only in day mode: the same question about a week is a different one,
+        // and nobody has asked it.
+        if (dayMode && day == today) _DayRemainingRow(day: day),
         const SizedBox(height: 18),
         NeoButton(
           label: '↧ export csv · all history',
@@ -290,6 +295,55 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     return label == 'Today' || label == 'Yesterday'
         ? 'nothing tracked ${label.toLowerCase()}'
         : 'nothing tracked on $label';
+  }
+}
+
+/// What is left of today, under the categories rather than among them.
+///
+/// A row, not a category: no bar, no drill-in, and muted, because a bar would
+/// invite reading it as a share of the same total and it is the opposite of one.
+/// The rest of this screen answers where the day went; this is the one line that
+/// answers what is still ahead.
+class _DayRemainingRow extends StatelessWidget {
+  const _DayRemainingRow({required this.day});
+
+  /// The day the report is scoped to. Only today has a remainder.
+  final DateTime day;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    // Its own clock rather than the screen's `now`. This screen rebuilds when
+    // the blocks change and at no other time, and it survives a tab switch
+    // inside the IndexedStack — so a `now` read once in build would still be
+    // reporting the morning's leftover hours later.
+    //
+    // The day check is repeated here for the same reason. The caller decides
+    // whether to mount this at all, which is right for a report stepped back to
+    // an earlier day, but it cannot notice midnight arriving under an open
+    // report. This can, and takes its own spacing with it when it goes.
+    return SecondTicker(
+      period: const Duration(minutes: 1),
+      builder: (context, now) => day != DateTime(now.year, now.month, now.day)
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'left until midnight',
+                      style: mono(context, size: 13, weight: FontWeight.w700, color: t.muted),
+                    ),
+                  ),
+                  Text(
+                    formatDurationHm(remainingToday(now)),
+                    style: mono(context, size: 13, weight: FontWeight.w800, color: t.muted),
+                  ),
+                ],
+              ),
+            ),
+    );
   }
 }
 

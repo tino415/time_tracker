@@ -9,6 +9,7 @@ import '../../domain/block.dart';
 import '../../domain/unsorted.dart';
 import '../../format.dart';
 import '../../theme/tokens.dart';
+import '../breakpoints.dart';
 import '../widgets/activity_editor.dart';
 import '../widgets/assign_activity.dart';
 import '../widgets/block_actions.dart';
@@ -65,62 +66,109 @@ class _NowScreenState extends ConsumerState<NowScreen> {
 
     if (activities.isEmpty) return const _FirstRunEmpty();
 
-    // What grows with the data is the flexible child; what sits below it is one
-    // row of chrome whose height nothing typed can change. The matches used to
-    // be part of that lower half, and five of them plus the create row wanted
-    // more than a phone has left once the keyboard is up — a Column pushes its
-    // last child out first, and the last child was the field that raised the
-    // keyboard.
+    // Which edge the chrome band takes, and the only thing width decides here.
+    // Every inset that eats the screen arrives from the bottom — the soft
+    // keyboard, a short window — so on a phone the band stays down there in
+    // thumb reach and the region above it gives way. A wide window has no thumb
+    // and does have a controls strip along the top, so the band goes up and the
+    // clipping happens where nothing lives.
     //
-    // The footer is measured against the body rather than against the infinity a
-    // Column hands a non-flexible child, and it scrolls from the bottom: a window
-    // too short even for those rows loses the start bar, not the field.
+    // MediaQuery rather than the LayoutBuilder's own constraint: on the wide
+    // shell _ReadableWidth caps this screen at contentMaxWidth and the sidebar
+    // takes sidebarWidth off it, so the local width answers a different question
+    // than "does this window have a sidebar".
+    final onTop = MediaQuery.sizeOf(context).width >= sidebarBreakpoint;
+
+    // The band is measured against the body rather than against the infinity a
+    // Column hands a non-flexible child, and it scrolls from its own pinned
+    // edge: a window too short for both rows loses the start bar, not the field.
+    // The field sits on the pinned edge at either width, so dropping the start
+    // bar while a query is typed never moves the field under the finger.
     return LayoutBuilder(
       builder: (context, body) => ValueListenableBuilder(
         valueListenable: _search,
         builder: (context, value, _) {
           final query = value.text.trim();
           return Column(
+            verticalDirection: onTop ? VerticalDirection.down : VerticalDirection.up,
             children: [
+              _ChromeBand(
+                onTop: onTop,
+                maxHeight: body.maxHeight,
+                showStartBar: query.isEmpty,
+                controller: _search,
+                onSubmitted: () {
+                  final matches = matchingActivities(activities, query);
+                  if (matches.isEmpty) {
+                    _createFromSearch();
+                  } else {
+                    _switchTo(matches.first.syncId);
+                  }
+                },
+              ),
               Expanded(
                 child: query.isEmpty
                     ? _Browse(activities: activities, current: current)
                     : _Matches(
                         matches: matchingActivities(activities, query),
                         query: query,
+                        fromTop: onTop,
                         onSwitch: _switchTo,
                         onCreate: _createFromSearch,
                       ),
               ),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: body.maxHeight),
-                child: SingleChildScrollView(
-                  reverse: true,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Nothing to start blind while you are reading matches,
-                      // and hiding it puts the results against the field they
-                      // came from.
-                      if (query.isEmpty) const _StartNowBar(),
-                      _QuickSwitchField(
-                        controller: _search,
-                        onSubmitted: () {
-                          final matches = matchingActivities(activities, query);
-                          if (matches.isEmpty) {
-                            _createFromSearch();
-                          } else {
-                            _switchTo(matches.first.syncId);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// The start bar and the search field, as one block pinned to a screen edge.
+///
+/// Which edge is the only thing that varies. The rule against the body is drawn
+/// here rather than by the rows inside, so it stays put when the band scrolls,
+/// and so exactly one rule ever separates the band from what it sits against.
+class _ChromeBand extends StatelessWidget {
+  const _ChromeBand({
+    required this.onTop,
+    required this.maxHeight,
+    required this.showStartBar,
+    required this.controller,
+    required this.onSubmitted,
+  });
+
+  final bool onTop;
+  final double maxHeight;
+  final bool showStartBar;
+  final TextEditingController controller;
+  final VoidCallback onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    final rule = BorderSide(color: t.line, width: 3);
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: onTop ? Border(bottom: rule) : Border(top: rule),
+      ),
+      child: SingleChildScrollView(
+        reverse: !onTop,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          // The field is the child on the pinned edge, so it is the one thing
+          // here that never moves.
+          verticalDirection: onTop ? VerticalDirection.down : VerticalDirection.up,
+          children: [
+            _QuickSwitchField(controller: controller, onSubmitted: onSubmitted),
+            // Nothing to start blind while you are reading matches. The divider
+            // goes with it: on its own it would be a rule under nothing.
+            if (showStartBar) ...[Container(height: 3, color: t.line), const _StartNowBar()],
+          ],
+        ),
       ),
     );
   }
@@ -160,31 +208,59 @@ class _Browse extends StatelessWidget {
 
 /// What the field matched, in the region the bookmarks otherwise hold.
 ///
-/// Anchored to the bottom, near the field it came from, and scrolling: it used
-/// to be a rigid child below the field, and growing was how it pushed the field
-/// off the screen.
+/// Anchored against the band, near the field the matches came from, and
+/// scrolling: it used to be a rigid child below the field, and growing was how
+/// it pushed the field off the screen.
 class _Matches extends StatelessWidget {
   const _Matches({
     required this.matches,
     required this.query,
+    required this.fromTop,
     required this.onSwitch,
     required this.onCreate,
   });
 
   final List<Activity> matches;
   final String query;
+
+  /// Whether the band is above this region. Everything here hangs from the edge
+  /// the field is on, and the create row takes that edge, so it is the row that
+  /// is always on screen and the matches are what scrolls away.
+  final bool fromTop;
+
   final ValueChanged<String> onSwitch;
   final VoidCallback onCreate;
 
   @override
   Widget build(BuildContext context) {
     final t = neo(context);
+    final create = Padding(
+      padding: EdgeInsets.only(bottom: fromTop ? 8 : 0),
+      child: NeoPressable(
+        onTap: onCreate,
+        fill: t.brand,
+        shadowOffset: 3,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        child: Text(
+          '+ create & switch: "$query"',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: mono(context, weight: FontWeight.w800, color: t.brandInk),
+        ),
+      ),
+    );
+    // One scroll view, anchored at the field, with the create row on the
+    // anchored edge. Order rather than pinning: a row held outside the scroll
+    // view is a row that cannot scroll, and a region shorter than it then
+    // overflows instead. Here nothing can overflow and the row that acts on
+    // what you typed is the last thing a shrinking window takes.
     return SingleChildScrollView(
-      reverse: true,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      reverse: !fromTop,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (fromTop) create,
           for (final a in matches)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -210,18 +286,7 @@ class _Matches extends StatelessWidget {
                 ),
               ),
             ),
-          NeoPressable(
-            onTap: onCreate,
-            fill: t.brand,
-            shadowOffset: 3,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            child: Text(
-              '+ create & switch: "$query"',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: mono(context, weight: FontWeight.w800, color: t.brandInk),
-            ),
-          ),
+          if (!fromTop) create,
         ],
       ),
     );
@@ -229,8 +294,9 @@ class _Matches extends StatelessWidget {
 }
 
 /// Recency first, then alphabetical: the activity you just left is the one you
-/// are most likely coming back to. Five, because the create row sits below the
-/// last match and a list long enough to scroll is a list that hides it.
+/// are most likely coming back to. Five, so the matches stay a glance rather
+/// than a list to read; the create row sits on the scroll view's anchored edge
+/// and does not depend on this cap to stay on screen.
 List<Activity> matchingActivities(List<Activity> all, String query) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return const [];
@@ -250,25 +316,22 @@ List<Activity> matchingActivities(List<Activity> all, String query) {
 
 /// One tap, no typing: open a boundary *now* and decide what it was afterwards.
 ///
-/// Sits directly above the search field and below the fold of everything else,
-/// because the whole value is that it is reachable without reading the screen.
+/// The row of the band furthest from the pinned edge, so it is the one that
+/// scrolls away when the window runs out of room. The band owns the fill and the
+/// rule against the body, which is why those stay put; the divider above this
+/// row scrolls with it, because a rule under nothing is worse than no rule.
 class _StartNowBar extends ConsumerWidget {
   const _StartNowBar();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final t = neo(context);
     // Offered unconditionally, including while an unnamed block is already
     // running. It used to hide itself then, on the reasoning that the useful
     // action was naming the running block instead — but starting a second
     // unnamed block is exactly what the watch does, and two in a row are two
     // different things to name later, not one thing tapped twice.
-    return Container(
-      decoration: BoxDecoration(
-        color: t.surface,
-        border: Border(top: BorderSide(color: t.line, width: 3)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: NeoButton(
         label: '▶ start now · name it later',
         shadowOffset: 4,
@@ -632,7 +695,17 @@ class _SwitchGrid extends ConsumerWidget {
 }
 
 /// The paste/search row, and nothing that grows with what it matched — that is
-/// the screen's region, above the start bar.
+/// the screen's region, on the other side of the band.
+///
+/// The band pins this row against a screen edge, so it is the row that survives
+/// a soft keyboard and a short window.
+///
+/// Pasting a task id still works — [matchingActivities] matches `externalId` —
+/// but the hint no longer says so, and the only place that does is the keyboard
+/// cheatsheet, which a touch build never shows: its button is behind `kIsWeb`
+/// and its bindings need a hardware keyboard. So on a phone the paste is
+/// undocumented, which is a real cost of the shorter hint rather than an
+/// oversight.
 class _QuickSwitchField extends ConsumerWidget {
   const _QuickSwitchField({required this.controller, required this.onSubmitted});
 
@@ -641,17 +714,12 @@ class _QuickSwitchField extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final t = neo(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: t.surface,
-        border: Border(top: BorderSide(color: t.line, width: 3)),
-      ),
+    return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: DottedField(
         controller: controller,
         focusNode: ref.watch(quickSwitchFocusProvider),
-        hint: 'paste task id or search…',
+        hint: 'search or create task',
         onSubmitted: (_) => onSubmitted(),
       ),
     );

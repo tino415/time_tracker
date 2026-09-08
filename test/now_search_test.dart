@@ -6,6 +6,11 @@
 // first, and the last child was the field that raised the keyboard — which is
 // why every one of these tests asks the same question of the layout, at a
 // different size: where is the field?
+//
+// The answer now depends on the width. Below the sidebar breakpoint the band
+// keeps the bottom edge, where the thumb is; at or above it the band takes the
+// top, where a short window is not about to clip it. Either way the field is the
+// row on the pinned edge, so nothing the user types can move it.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -101,6 +106,100 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(tester.getRect(_field).bottom, lessThanOrEqualTo(360));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a wide window puts the band above the region', (tester) async {
+    // The band goes to the top exactly where the sidebar appears, so one
+    // constant answers both questions and they cannot drift apart.
+    await bootApp(tester, viewport: const Size(900, 700), seed: _oneRunning);
+
+    expect(
+      tester.getRect(_field).bottom,
+      lessThan(tester.getRect(inScreen(NowScreen, find.text('TRACKING'))).top),
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a phone keeps the band below the region, in thumb reach', (tester) async {
+    await bootApp(tester, viewport: _phone, seed: _oneRunning);
+
+    expect(
+      tester.getRect(_field).top,
+      greaterThan(tester.getRect(inScreen(NowScreen, find.text('TRACKING'))).bottom),
+    );
+
+    await disposeApp(tester);
+  });
+
+  // The field sits on the pinned edge and the start bar on the far side of it,
+  // so dropping the bar takes height off the end that is free to move. Put the
+  // two rows the other way round at either width and the first keystroke yanks
+  // the field out from under the finger.
+  for (final (name, viewport) in const [('a wide window', Size(900, 700)), ('a phone', _phone)]) {
+    testWidgets('hiding the start bar never moves the field on $name', (tester) async {
+      await bootApp(tester, viewport: viewport, seed: _sixMatching);
+      final before = tester.getRect(_field);
+
+      await _type(tester, 'work');
+
+      expect(tester.getRect(_field), before);
+
+      await disposeApp(tester);
+    });
+  }
+
+  testWidgets('a couple of matches stay against the field, not adrift', (tester) async {
+    // One match is far less than fills the region. The cluster has to hang from
+    // the field's edge rather than sit wherever the region starts, or the phone
+    // reads as though the results belong to something else on the screen.
+    await bootApp(tester, viewport: _phone, seed: _sixMatching);
+    await _type(tester, 'work log 1');
+
+    final create = inScreen(NowScreen, find.textContaining('+ create & switch'));
+    expect(tester.getRect(_field).top - tester.getRect(create).bottom, lessThan(60));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a region too short for the create row scrolls instead of overflowing', (
+    tester,
+  ) async {
+    // With a query typed the band is just the field, so the region takes what is
+    // left of a very short window — less than one row. Everything here is inside
+    // one scroll view precisely so that case scrolls rather than throws.
+    await bootApp(tester, viewport: const Size(360, 200), seed: _sixMatching);
+    await _type(tester, 'work');
+
+    expect(tester.takeException(), isNull);
+
+    await disposeApp(tester);
+  });
+
+  // The create row is the row that acts on what you typed, so it takes the edge
+  // the scroll view is anchored at: the last thing a shrinking window can reach,
+  // rather than the first. That is a claim about child order, so assert the
+  // order — a window that happens to be tall enough proves nothing.
+  testWidgets('the create row takes the anchored edge on a wide window', (tester) async {
+    await bootApp(tester, viewport: const Size(780, 360), seed: _sixMatching);
+    await _type(tester, 'work');
+
+    final create = tester.getRect(inScreen(NowScreen, find.textContaining('+ create & switch')));
+    final firstMatch = tester.getRect(inScreen(NowScreen, find.text('work log 1')));
+    expect(create.top, lessThan(firstMatch.top));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the create row takes the anchored edge on a phone', (tester) async {
+    await bootApp(tester, viewport: _phone, seed: _sixMatching);
+    await _type(tester, 'work');
+
+    final create = tester.getRect(inScreen(NowScreen, find.textContaining('+ create & switch')));
+    final lastMatch = tester.getRect(inScreen(NowScreen, find.text('work log 5')));
+    expect(create.top, greaterThan(lastMatch.top));
 
     await disposeApp(tester);
   });

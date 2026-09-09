@@ -28,19 +28,32 @@ Future<void> swapWithUndo(BuildContext context, WidgetRef ref, String changeId) 
 
   final t = neo(context);
   final messenger = ScaffoldMessenger.of(context);
+  // Built here rather than inside the undo callback, which runs after an await
+  // and must not reach back through a BuildContext that may be gone.
+  final style = mono(context, weight: FontWeight.w800, color: t.surface);
   messenger.hideCurrentSnackBar();
   messenger.showSnackBar(
     SnackBar(
       backgroundColor: t.line,
       duration: const Duration(seconds: 6),
-      content: Text(
-        'labels swapped · times unchanged',
-        style: mono(context, weight: FontWeight.w800, color: t.surface),
-      ),
+      content: Text('labels swapped · times unchanged', style: style),
       action: SnackBarAction(
         label: 'UNDO',
         textColor: t.surface,
-        onPressed: () => controller.swapPair(swapped.$1, swapped.$2),
+        // Awaited and checked, not fired and forgotten. Six seconds is long
+        // enough for one of the two blocks to be merged away or changed by a
+        // peer, and the repository answers that by writing nothing — which
+        // would otherwise be a tap that silently did nothing at all.
+        onPressed: () async {
+          if (await controller.swapPair(swapped.$1, swapped.$2)) return;
+          messenger.hideCurrentSnackBar();
+          messenger.showSnackBar(
+            SnackBar(
+              backgroundColor: t.line,
+              content: Text('those blocks have changed · nothing undone', style: style),
+            ),
+          );
+        },
       ),
     ),
   );

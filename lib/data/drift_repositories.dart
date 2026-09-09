@@ -648,12 +648,17 @@ class DriftChangeRepository implements ChangeRepository {
   Future<bool> swapActivitySets(String changeA, String changeB) async {
     if (changeA == changeB) return false;
     return _db.transaction(() async {
+      // Live rows only, like every other read here. Undo carries two ids taken
+      // six seconds earlier, and either block can be merged away or deleted by a
+      // peer in that window: without this, undo would move a label back onto the
+      // survivor from a tombstone, and mark the tombstone dirty at a fresh
+      // version so the deletion gets re-pushed as an edit.
       final a = await (_db.select(
         _db.activityChanges,
-      )..where((t) => t.syncId.equals(changeA))).getSingleOrNull();
+      )..where((t) => t.syncId.equals(changeA) & t.deletedAt.isNull())).getSingleOrNull();
       final b = await (_db.select(
         _db.activityChanges,
-      )..where((t) => t.syncId.equals(changeB))).getSingleOrNull();
+      )..where((t) => t.syncId.equals(changeB) & t.deletedAt.isNull())).getSingleOrNull();
       if (a == null || b == null) return false;
 
       final idsA = await _activityIdsOf(changeA);
@@ -675,11 +680,31 @@ class DriftChangeRepository implements ChangeRepository {
       // The comment describes the activity, so it travels with it. A note about
       // a call left on the block that no longer tracks the call is the same
       // error this action exists to correct.
-      await _bump(changeA, ActivityChangesCompanion(comment: Value(b.comment)));
-      await _bump(changeB, ActivityChangesCompanion(comment: Value(a.comment)));
+      // One version for both, rather than each row bumping its own. The two are
+      // only meaningful read together, and independent counters let a peer split
+      // them by being newer than whichever happens to be lower: a row edited
+      // twice sits at 6 while its neighbour sits at 3, and a swap bumping each
+      // by one leaves 7 and 4 for a peer holding 6 to take apart.
+      //
+      // Moving both to max + 1 does not make the pair atomic — a genuinely
+      // newer edit on one of them still wins alone — but it removes every split
+      // that came from the two having drifted apart in version space rather than
+      // from a real conflict.
+      final next = (a.version > b.version ? a.version : b.version) + 1;
+      await _writeSwapped(changeA, b.comment, next);
+      await _writeSwapped(changeB, a.comment, next);
       return true;
     });
   }
+
+  Future<void> _writeSwapped(String changeId, String? comment, int version) =>
+      (_db.update(_db.activityChanges)..where((t) => t.syncId.equals(changeId))).write(
+        ActivityChangesCompanion(
+          comment: Value(comment),
+          version: Value(version),
+          dirty: const Value(true),
+        ),
+      );
 
   Future<Set<String>> _activityIdsOf(String changeId) async {
     final links = await (_db.select(

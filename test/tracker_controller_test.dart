@@ -290,6 +290,32 @@ void main() {
       expect(await changes.activityIdsForChange(ids[1]), before[1]);
     });
 
+    test('both rows come out at one version, above whichever was higher', () async {
+      final ids = await seedDay();
+      // Give the earlier block a history, so the two sit far apart in version
+      // space — the state that lets a peer take the pair apart by being newer
+      // than only one of them.
+      final d = await activities.createActivity(name: 'D', color: '#666666');
+      for (var i = 0; i < 4; i++) {
+        await changes.setComment(ids[0], 'note $i');
+      }
+      await changes.replaceActivityInChange(
+        ids[0],
+        (await changes.activityIdsForChange(ids[0])).single,
+        d.syncId,
+      );
+      final before = await changes.loadChanges();
+      final highest = before.map((c) => c.version).reduce((a, b) => a > b ? a : b);
+
+      await controller.swapWithPrevious(ids[1]);
+
+      final after = await changes.loadChanges();
+      final a = after.firstWhere((c) => c.syncId == ids[0]).version;
+      final b = after.firstWhere((c) => c.syncId == ids[1]).version;
+      expect(a, b);
+      expect(a, greaterThan(highest));
+    });
+
     test('both rows are marked for pushing', () async {
       final ids = await seedDay();
       await controller.swapWithPrevious(ids[1]);
@@ -315,6 +341,20 @@ void main() {
       final swapped = await controller.swapWithPrevious(ids[1]);
 
       expect(swapped, (ids[0], ids[1]));
+    });
+
+    test('undo refuses once one of the pair has been merged away', () async {
+      final ids = await seedDay();
+      final swapped = (await controller.swapWithPrevious(ids[1]))!;
+      final survivorSet = await changes.activityIdsForChange(ids[0]);
+
+      // Merging deletes the later block's boundary. Undo still holds both ids,
+      // and without a tombstone guard it would move a label back onto the
+      // survivor and re-push the deleted row as a fresh edit.
+      await controller.mergeIntoPrevious(ids[1]);
+
+      expect(await controller.swapPair(swapped.$1, swapped.$2), isFalse);
+      expect(await changes.activityIdsForChange(ids[0]), survivorSet);
     });
 
     test('undo puts back the pair it was given, not the current neighbour', () async {

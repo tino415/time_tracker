@@ -252,7 +252,13 @@ String _neighbourLabel(Block previous, Block block) {
   // NeoButton's label does not ellipsize, so a long set would wrap the button
   // over several lines. Cut it here, where the string is built.
   final label = '$when $names';
-  return label.length <= 34 ? label : '${label.substring(0, 33)}…';
+  if (label.length <= 34) return label;
+  // Back off a unit when the cut lands between the halves of a surrogate pair.
+  // Activity names carry emoji, and half of one renders as a replacement glyph
+  // right where the ellipsis is meant to say "there was more".
+  final last = label.codeUnitAt(32);
+  final cut = last >= 0xD800 && last <= 0xDBFF ? 32 : 33;
+  return '${label.substring(0, cut)}…';
 }
 
 /// One activity on the block, with the two things you can do to *it*.

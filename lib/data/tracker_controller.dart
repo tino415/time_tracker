@@ -288,7 +288,9 @@ class TrackerController {
   /// in the six seconds it is up would put a different block before this one,
   /// and the undo would then trade with that instead — leaving the original
   /// mistake and making a second one.
-  Future<void> swapPair(String changeA, String changeB) =>
+  /// Returns whether it wrote. False when either block has since been merged
+  /// away or deleted by a peer, or when the two already match.
+  Future<bool> swapPair(String changeA, String changeB) =>
       _changes.swapActivitySets(changeA, changeB);
 }
 

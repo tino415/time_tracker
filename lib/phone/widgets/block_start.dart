@@ -126,7 +126,7 @@ class _StartSheetState extends ConsumerState<_StartSheet> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    '→ ${formatDurationHm(ends.difference(_start))}',
+                    '→ ${formatSpan(ends.difference(_start))}',
                     style: mono(context, size: 13, weight: FontWeight.w700, color: t.muted),
                   ),
                 ],

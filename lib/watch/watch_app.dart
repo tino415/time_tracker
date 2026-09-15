@@ -11,6 +11,7 @@ import '../data/sync_service.dart';
 import '../data/wear_sync.dart';
 import '../build_info.dart';
 import '../domain/block.dart';
+import '../domain/reporting.dart';
 import '../domain/unsorted.dart';
 import '../domain/wear_protocol.dart';
 import '../format.dart';
@@ -613,7 +614,10 @@ class _ElapsedClock extends StatelessWidget {
       builder: (context, now) => FittedBox(
         fit: BoxFit.scaleDown,
         child: Text(
-          formatElapsedClock(block.duration(now)),
+          // Same "how long today" cap as the phone hero, through the same
+          // helper — an uncapped clock here would shrink into unreadability
+          // inside the FittedBox rather than visibly overflow.
+          formatElapsedClock(elapsedToday(block.start, now)),
           style: mono(
             context,
             size: 34,

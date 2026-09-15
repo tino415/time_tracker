@@ -5,6 +5,7 @@ import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
 import '../../domain/block.dart';
+import '../../domain/calendar.dart';
 import '../../format.dart';
 import '../widgets/block_actions.dart';
 import '../widgets/neo.dart';
@@ -87,11 +88,12 @@ class _TimelineList extends ConsumerWidget {
 
     return SecondTicker(
       builder: (context, now) {
-        // Group by local calendar day of the block's start (newest first).
+        // A block crossing midnight appears once under each day it touches, so
+        // the rows group by the slice's day, not the block's.
         final rows = <Widget>[];
         DateTime? lastDay;
-        for (final b in blocks) {
-          final day = DateTime(b.start.year, b.start.month, b.start.day);
+        for (final s in sliceByLocalDay(blocks, now)) {
+          final day = DateTime(s.start.year, s.start.month, s.start.day);
           if (lastDay == null || day != lastDay) {
             rows.add(
               Padding(
@@ -106,7 +108,7 @@ class _TimelineList extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: 12),
               // Blocks are newest-first, so the last one is the earliest — it has
               // no preceding boundary to merge into.
-              child: _BlockCard(block: b, now: now, canMerge: b != blocks.last),
+              child: _BlockCard(slice: s, now: now, canMerge: s.block != blocks.last),
             ),
           );
         }
@@ -121,29 +123,37 @@ class _TimelineList extends ConsumerWidget {
   }
 
   static String _dayLabel(DateTime day, DateTime now) {
+    // Calendar dates, not difference().inDays: a 23-hour spring-forward day
+    // floors to zero elapsed days and would label yesterday "Today".
     final today = DateTime(now.year, now.month, now.day);
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
+    if (day == today) return 'Today';
+    if (day == DateTime(today.year, today.month, today.day - 1)) return 'Yesterday';
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[day.weekday - 1]} ${day.day}/${day.month}';
   }
 }
 
 class _BlockCard extends ConsumerWidget {
-  const _BlockCard({required this.block, required this.now, this.canMerge = true});
+  const _BlockCard({required this.slice, required this.now, this.canMerge = true});
   final bool canMerge;
-  final Block block;
+
+  /// The day's share of a block. The card *shows* the slice — its range and its
+  /// duration — but every action goes to [DaySlice.block], whole.
+  final DaySlice slice;
   final DateTime now;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
+    final block = slice.block;
     final acts = block.activities;
     final multi = acts.length > 1;
-    final range = block.isOpen
-        ? '${formatTimeOfDay(block.start)} – now'
-        : '${formatTimeOfDay(block.start)} – ${formatTimeOfDay(block.end!)}';
+    // The open block's final slice runs to the present; its earlier slices (and
+    // every closed block's) end where the next day or block starts.
+    final openEnd = block.isOpen && !slice.continuesAfter;
+    final range = openEnd
+        ? '${formatTimeOfDay(slice.start)} – now'
+        : '${formatTimeOfDay(slice.start)} – ${formatTimeOfDay(slice.end)}';
 
     return NeoPressable(
       onTap: () => showBlockActions(context, ref, block, canMerge: canMerge),
@@ -172,7 +182,7 @@ class _BlockCard extends ConsumerWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          formatDurationHm(block.duration(now)),
+                          formatSpan(slice.duration),
                           style: mono(context, weight: FontWeight.w800),
                         ),
                         // Resume, one tap, without opening anything. A visible
@@ -192,7 +202,7 @@ class _BlockCard extends ConsumerWidget {
                     Row(
                       children: [
                         Text(range, style: mono(context, size: 11, color: t.muted)),
-                        if (block.isOpen) ...[
+                        if (openEnd) ...[
                           const SizedBox(width: 8),
                           Text(
                             '● open',
@@ -204,7 +214,10 @@ class _BlockCard extends ConsumerWidget {
                     if (multi) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'forgot to switch · even-split ${formatDurationHm(Duration(microseconds: block.duration(now).inMicroseconds ~/ acts.length))} each',
+                        // The slice's share, not the block's: reports clip to
+                        // the day before splitting evenly, so this is the very
+                        // number the day's report attributes to each activity.
+                        'forgot to switch · even-split ${formatSpan(Duration(microseconds: slice.duration.inMicroseconds ~/ acts.length))} each',
                         style: mono(context, size: 10, weight: FontWeight.w700, color: t.muted),
                       ),
                     ],

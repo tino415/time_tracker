@@ -45,6 +45,16 @@ Future<void> _oneRunning(AppDatabase db) async {
 
 Finder get _field => inScreen(NowScreen, find.byType(DottedField));
 
+/// The band's own border: the decorated Container closest around the field.
+Border _bandBorder(WidgetTester tester) =>
+    tester
+            .widgetList<Container>(find.ancestor(of: _field, matching: find.byType(Container)))
+            .map((c) => c.decoration)
+            .whereType<BoxDecoration>()
+            .firstWhere((d) => d.border != null)
+            .border
+        as Border;
+
 Future<void> _type(WidgetTester tester, String text) async {
   await tester.enterText(inScreen(NowScreen, find.byType(TextField)), text);
   await tester.pump();
@@ -130,6 +140,33 @@ void main() {
       tester.getRect(_field).top,
       greaterThan(tester.getRect(inScreen(NowScreen, find.text('TRACKING'))).bottom),
     );
+
+    await disposeApp(tester);
+  });
+
+  // On the phone the band's other three sides are the screen's own edges, so
+  // one rule is the whole border. On the wide shell the band floats inside the
+  // content cap — every edge against bare bg — so it takes the full outline
+  // every boxed slab has, or the fill ends mid-air.
+  testWidgets('the band is a boxed slab on a wide window', (tester) async {
+    await bootApp(tester, viewport: const Size(900, 700), seed: _oneRunning);
+
+    final border = _bandBorder(tester);
+    for (final side in [border.top, border.bottom, border.left, border.right]) {
+      expect(side.width, 3);
+    }
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('the phone band keeps its single rule against the body', (tester) async {
+    await bootApp(tester, viewport: _phone, seed: _oneRunning);
+
+    final border = _bandBorder(tester);
+    expect(border.top.width, 3);
+    expect(border.left, BorderSide.none);
+    expect(border.right, BorderSide.none);
+    expect(border.bottom, BorderSide.none);
 
     await disposeApp(tester);
   });

@@ -98,3 +98,17 @@ Map<String, Duration> _asDurations(Map<String, int> micros) =>
 /// Uses [localDayRange]'s own end rather than adding 24 hours, so the one day a
 /// year that is 23 or 25 hours long answers with the day it actually has.
 Duration remainingToday(DateTime now) => localDayRange(now).end.difference(now);
+
+/// The running block's share of [now]'s local day: elapsed since [start], or
+/// since midnight when the block began before today.
+///
+/// This is the live clock's number, shared by the phone and watch shells so the
+/// arithmetic cannot drift between them. Display only — a block's true span
+/// stays [Block.duration], and reports keep counting multi-day blocks in full.
+/// It answers "how long today", which is also why it never exceeds the day so
+/// far: a weekend left running stops printing `62:14:07`.
+Duration elapsedToday(DateTime start, DateTime now) {
+  final dayStart = localDayRange(now).start;
+  final from = start.isAfter(dayStart) ? start : dayStart;
+  return now.difference(from);
+}

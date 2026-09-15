@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/format.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 
 import 'support/flow_harness.dart';
@@ -90,6 +91,34 @@ void main() {
     // unscaled clock paints about 168dp wide.
     final clock = inScreen(NowScreen, find.textContaining(RegExp(r'^\d+:\d\d:\d\d$')));
     expect(tester.getRect(clock).width, greaterThan(160));
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a weekend-old block counts today, and the since-row carries the day', (
+    tester,
+  ) async {
+    // The clock answers "how long today": a block started 30 hours ago must
+    // not print 30:xx:xx. What still says the block is older than it counts is
+    // the since-row, which grows a weekday once the start is not today.
+    final start = DateTime.now().subtract(const Duration(hours: 30));
+    await bootApp(
+      tester,
+      viewport: _narrow,
+      seed: (db) async {
+        final a = await DriftActivityRepository(db).createActivity(name: 'Sleep', color: '#9A9B95');
+        await DriftChangeRepository(db).switchTo(a.syncId, at: start);
+      },
+    );
+
+    final clock = inScreen(NowScreen, find.textContaining(RegExp(r'^\d+:\d\d:\d\d$')));
+    final hours = int.parse((tester.widget<Text>(clock).data!).split(':').first);
+    expect(hours, lessThan(24));
+
+    expect(
+      inScreen(NowScreen, find.text('since ${formatTimestamp(start, DateTime.now())}')),
+      findsOneWidget,
+    );
 
     await disposeApp(tester);
   });

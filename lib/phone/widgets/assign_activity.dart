@@ -27,7 +27,7 @@ Future<void> assignBlockActivity(BuildContext context, WidgetRef ref, Block bloc
     title: isUnsortedSet(block.activities) ? 'What was this?' : 'Change to',
     trailing:
         '${formatTimeOfDay(block.start)} · '
-        '${formatDurationHm(block.duration(DateTime.now()))}',
+        '${formatSpan(block.duration(DateTime.now()))}',
   );
   if (id == null) return;
   await ref.read(trackerControllerProvider).assignBlock(block.change.syncId, id);

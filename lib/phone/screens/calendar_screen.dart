@@ -417,7 +417,7 @@ class _SliceCard extends StatelessWidget {
                   if (height >= 26)
                     Text(
                       '${formatTimeOfDay(slice.start)}–${slice.block.isOpen ? "now" : formatTimeOfDay(slice.end)}'
-                      ' · ${formatDurationHm(slice.duration)}',
+                      ' · ${formatSpan(slice.duration)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: mono(context, size: 10, color: t.muted),

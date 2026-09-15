@@ -43,40 +43,62 @@ double minutesFromMidnight(DateTime t) {
   return t.difference(midnight).inMilliseconds / 60000.0;
 }
 
+/// Every day's slices of [newestFirst], newest first — the timeline list's
+/// rows. The open block's last slice ends at [now].
+///
+/// Cuts fall at `DateTime(y, m, d + 1)`, half-open: a block ending exactly at
+/// midnight belongs to the earlier day only, and on a DST day the cut lands
+/// where the local clock says, not 24 hours along. [sliceDay] filters this, so
+/// the timeline and the calendar cannot disagree about which day owns a
+/// stretch — and neither can the daily report, which clips to the same
+/// `localDayRange` boundary.
+List<DaySlice> sliceByLocalDay(List<Block> newestFirst, DateTime now) {
+  final out = <DaySlice>[];
+  for (final b in newestFirst) {
+    final end = b.end ?? now;
+    final points = [b.start];
+    var midnight = DateTime(b.start.year, b.start.month, b.start.day + 1);
+    while (midnight.isBefore(end)) {
+      points.add(midnight);
+      midnight = DateTime(midnight.year, midnight.month, midnight.day + 1);
+    }
+    points.add(end);
+
+    for (var i = points.length - 2; i >= 0; i--) {
+      out.add(
+        DaySlice(
+          block: b,
+          start: points[i],
+          end: points[i + 1],
+          continuesBefore: i > 0,
+          continuesAfter: i < points.length - 2,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 /// The slices of [blocks] visible on the local calendar day containing [day],
 /// chronological. The open block is measured up to [now].
 ///
-/// Blocks that do not touch the day are dropped, as are zero-length slices.
+/// A filter over [sliceByLocalDay] — the one owner of the midnight rule —
+/// keeping only [day]'s slices. Blocks that do not touch the day are dropped,
+/// as are zero-length slices (a boundary opened this instant has nothing for a
+/// calendar to draw, though the timeline list still shows it as a row).
 List<DaySlice> sliceDay({
   required List<Block> blocks,
   required DateTime day,
   required DateTime now,
 }) {
   final dayStart = DateTime(day.year, day.month, day.day);
-  final dayEnd = DateTime(day.year, day.month, day.day + 1);
-
-  final out = <DaySlice>[];
-  for (final block in blocks) {
-    final blockEnd = block.end ?? now;
-    // Half-open [start, end): a block ending exactly at midnight belongs to the
-    // earlier day only.
-    if (!blockEnd.isAfter(dayStart) || !dayEnd.isAfter(block.start)) continue;
-
-    final start = block.start.isAfter(dayStart) ? block.start : dayStart;
-    final end = blockEnd.isBefore(dayEnd) ? blockEnd : dayEnd;
-    if (!end.isAfter(start)) continue;
-
-    out.add(
-      DaySlice(
-        block: block,
-        start: start,
-        end: end,
-        continuesBefore: block.start.isBefore(dayStart),
-        continuesAfter: blockEnd.isAfter(dayEnd),
-      ),
-    );
-  }
-
+  final out = sliceByLocalDay(blocks, now)
+      .where(
+        (s) =>
+            DateTime(s.start.year, s.start.month, s.start.day) == dayStart &&
+            s.end.isAfter(s.start),
+      )
+      .toList();
   out.sort((a, b) => a.start.compareTo(b.start));
   return out;
 }

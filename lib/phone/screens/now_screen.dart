@@ -128,9 +128,13 @@ class _NowScreenState extends ConsumerState<NowScreen> {
 
 /// The start bar and the search field, as one block pinned to a screen edge.
 ///
-/// Which edge is the only thing that varies. The rule against the body is drawn
-/// here rather than by the rows inside, so it stays put when the band scrolls,
-/// and so exactly one rule ever separates the band from what it sits against.
+/// Which edge is the only thing that varies. The border is drawn here rather
+/// than by the rows inside, so it stays put when the band scrolls. On the phone
+/// that border is one rule against the body — the other three sides are the
+/// screen's own edges. On the wide shell the band floats inside the content
+/// cap, edges against bare bg, so it takes the full 3px outline every boxed
+/// slab in the app has: a single rule there would leave the fill ending
+/// mid-air.
 class _ChromeBand extends StatelessWidget {
   const _ChromeBand({
     required this.onTop,
@@ -154,7 +158,7 @@ class _ChromeBand extends StatelessWidget {
       constraints: BoxConstraints(maxHeight: maxHeight),
       decoration: BoxDecoration(
         color: t.surface,
-        border: onTop ? Border(bottom: rule) : Border(top: rule),
+        border: onTop ? Border.fromBorderSide(rule) : Border(top: rule),
       ),
       child: SingleChildScrollView(
         reverse: !onTop,
@@ -514,59 +518,69 @@ class _HeroCard extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: 16),
+          // One ticker for the clock and its since-row: the clock resets to
+          // count from midnight the moment the day turns, and that is exactly
+          // when "since 23:00" has to grow its day prefix — one `now` keeps the
+          // two from ever telling different stories.
           SecondTicker(
-            builder: (context, now) => Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+            builder: (context, now) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // formatElapsedClock has no upper bound, so a block left running
-                // over a weekend prints a string wider than the card. That is an
-                // open defect of its own and the cap belongs there, not here —
-                // but sharing the row with a second number turns "reads badly"
-                // into an overflow, so the clock scales rather than overruns.
-                // At any ordinary duration it is 40pt and untouched.
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      formatElapsedClock(b.duration(now)),
-                      style: mono(
-                        context,
-                        size: 40,
-                        weight: FontWeight.w800,
-                        color: onFill,
-                        height: 1,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    // The clock answers "how long today" — a block left running
+                    // over a weekend counts from midnight instead of printing
+                    // 62:14:07. The FittedBox stays anyway: a narrow window can
+                    // still be tighter than 40pt of digits.
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          formatElapsedClock(elapsedToday(b.start, now)),
+                          style: mono(
+                            context,
+                            size: 40,
+                            weight: FontWeight.w800,
+                            color: onFill,
+                            height: 1,
+                          ),
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 12),
+                    _DayLeft(now: now, color: onFill),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // The one correction worth a direct tap: you almost always
+                // notice the start is wrong while looking at the clock it
+                // drives. The timestamp grows a weekday once the start is not
+                // today — with the clock capped, this row is what still says
+                // the block is older than it counts.
+                GestureDetector(
+                  onTap: () => editBlockStart(context, ref, b),
+                  behavior: HitTestBehavior.opaque,
+                  child: Row(
+                    children: [
+                      Text(
+                        'since ${formatTimestamp(b.start, now)}',
+                        style: mono(context, size: 12, weight: FontWeight.w700, color: onFill),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'edit',
+                        style: mono(
+                          context,
+                          size: 10,
+                          weight: FontWeight.w800,
+                          spacing: .8,
+                          color: onFill,
+                        ).copyWith(decoration: TextDecoration.underline, decorationColor: onFill),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                _DayLeft(now: now, color: onFill),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          // The one correction worth a direct tap: you almost always notice the
-          // start is wrong while looking at the clock it drives.
-          GestureDetector(
-            onTap: () => editBlockStart(context, ref, b),
-            behavior: HitTestBehavior.opaque,
-            child: Row(
-              children: [
-                Text(
-                  'since ${formatTimeOfDay(b.start)}',
-                  style: mono(context, size: 12, weight: FontWeight.w700, color: onFill),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'edit',
-                  style: mono(
-                    context,
-                    size: 10,
-                    weight: FontWeight.w800,
-                    spacing: .8,
-                    color: onFill,
-                  ).copyWith(decoration: TextDecoration.underline, decorationColor: onFill),
                 ),
               ],
             ),

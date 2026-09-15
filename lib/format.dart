@@ -13,14 +13,29 @@ Color parseHexColor(String hex) {
 String toHexColor(Color c) =>
     '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
-/// `H:MM` or `M:SS`-free compact duration for the timeline / reports, e.g.
-/// `2h 05m`, `12m`, `0m`. Rounds down to the minute.
+/// `H:MM` or `M:SS`-free compact duration, e.g. `2h 05m`, `12m`, `0m`. Rounds
+/// down to the minute, and stays in hours however large: this is the form for
+/// *totals* — 25 hours of Work in a week is `25h 00m`, the unit a report is
+/// read and compared in, where `1d 1h` would claim a calendar day the number
+/// does not have. A single block's stretch of wall clock prints via
+/// [formatSpan] instead.
 String formatDurationHm(Duration d) {
   if (d.isNegative) return '0m';
   final h = d.inHours;
   final m = d.inMinutes % 60;
   if (h == 0) return '${m}m';
   return '${h}h ${m.toString().padLeft(2, '0')}m';
+}
+
+/// A single block's span: [formatDurationHm] under a day, `2d 14h` past it.
+///
+/// A span is an interval on the calendar, so days are its natural unit —
+/// `62h 14m` on a weekend-long block takes arithmetic to read. Minutes drop
+/// once days appear, the same trade `2h 05m` already makes with seconds; the
+/// places needing the exact figure (CSV, report totals) hold the [Duration].
+String formatSpan(Duration d) {
+  if (d.inHours >= 24) return '${d.inDays}d ${d.inHours % 24}h';
+  return formatDurationHm(d);
 }
 
 /// `H:MM:SS` live elapsed clock for the "Now" hero card.
@@ -74,9 +89,17 @@ const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 /// fixed by the week being shown.
 String formatWeekdayDay(DateTime d) => '${_weekdays[d.weekday - 1].toUpperCase()} ${d.day}';
 
-/// Readable local timestamp, e.g. `14:05` today or `Mon 14:05` otherwise.
+/// Readable local timestamp: `14:05` today, `Mon 14:05` back through the last
+/// six days, `5/9 14:05` beyond that. The weekday form stops where it stops
+/// being an answer — a week or more back it names the wrong-looking day, and a
+/// reader pairing it with a capped clock has nothing else dating the block.
 String formatTimestamp(DateTime t, DateTime now) {
-  final sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
   final hm = formatTimeOfDay(t);
-  return sameDay ? hm : '${_weekdays[t.weekday - 1]} $hm';
+  final day = DateTime(t.year, t.month, t.day);
+  final today = DateTime(now.year, now.month, now.day);
+  if (day == today) return hm;
+  if (day.isAfter(DateTime(today.year, today.month, today.day - 7))) {
+    return '${_weekdays[t.weekday - 1]} $hm';
+  }
+  return '${t.day}/${t.month} $hm';
 }

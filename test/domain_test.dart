@@ -7,6 +7,7 @@ import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/format.dart';
 import 'package:time_tracker/domain/activity_tree.dart';
 import 'package:time_tracker/domain/block.dart';
+import 'package:time_tracker/domain/calendar.dart';
 import 'package:time_tracker/domain/csv_export.dart';
 import 'package:time_tracker/domain/reporting.dart';
 import 'package:time_tracker/domain/task_paste.dart';
@@ -229,6 +230,167 @@ void main() {
       // The boundary belongs to the day starting, so the number never reads 0m
       // for the instant it flips. localDayRange puts midnight at a day's start.
       expect(remainingToday(DateTime(2026, 1, 7)), const Duration(days: 1));
+    });
+  });
+
+  group('elapsedToday', () {
+    test('a block started today counts from its start', () {
+      expect(
+        elapsedToday(DateTime(2026, 1, 7, 9), DateTime(2026, 1, 7, 11, 30)),
+        const Duration(hours: 2, minutes: 30),
+      );
+    });
+
+    test('a block started before today counts from midnight', () {
+      // The weekend block: started Friday, looked at Sunday morning. The clock
+      // answers "how long today", not the 62-hour running total.
+      expect(
+        elapsedToday(DateTime(2026, 1, 2, 18, 12), DateTime(2026, 1, 4, 8, 26)),
+        const Duration(hours: 8, minutes: 26),
+      );
+    });
+
+    test('a start exactly at midnight is today, whole', () {
+      expect(elapsedToday(DateTime(2026, 1, 7), DateTime(2026, 1, 7, 5)), const Duration(hours: 5));
+    });
+
+    test('never exceeds the day so far', () {
+      final now = DateTime(2026, 1, 7, 23, 59);
+      expect(elapsedToday(DateTime(2025, 6, 1), now), lessThan(const Duration(hours: 24)));
+    });
+  });
+
+  group('formatSpan', () {
+    test('under a day it is formatDurationHm, verbatim', () {
+      expect(formatSpan(const Duration(hours: 2, minutes: 5)), '2h 05m');
+      expect(formatSpan(const Duration(minutes: 12)), '12m');
+      expect(formatSpan(const Duration(hours: 23, minutes: 59)), '23h 59m');
+    });
+
+    test('a day and beyond reads in days and hours', () {
+      expect(formatSpan(const Duration(hours: 62, minutes: 14)), '2d 14h');
+      expect(formatSpan(const Duration(hours: 24)), '1d 0h');
+    });
+
+    test('minutes drop once days appear', () {
+      // The same trade `2h 05m` already makes with seconds: past a day the
+      // minutes are noise, and the exact figure lives in the Duration.
+      expect(formatSpan(const Duration(days: 1, minutes: 59)), '1d 0h');
+    });
+
+    test('a total stays in hours however large', () {
+      // Report totals go through formatDurationHm on purpose: 25 hours of Work
+      // in a week is 25h — `1d 1h` would claim a calendar day the number does
+      // not have. Days belong to spans, which occupy the calendar.
+      expect(formatDurationHm(const Duration(hours: 25)), '25h 00m');
+      expect(formatDurationHm(const Duration(hours: 62, minutes: 14)), '62h 14m');
+    });
+  });
+
+  group('formatTimestamp', () {
+    final now = DateTime(2026, 1, 7, 20); // Wed
+
+    test('today is the bare time', () {
+      expect(formatTimestamp(DateTime(2026, 1, 7, 14, 5), now), '14:05');
+    });
+
+    test('the last six days get a weekday', () {
+      expect(formatTimestamp(DateTime(2026, 1, 6, 14, 5), now), 'Tue 14:05');
+      expect(formatTimestamp(DateTime(2026, 1, 1, 14, 5), now), 'Thu 14:05');
+    });
+
+    test('a week or more back gets a date, not a lying weekday', () {
+      // Exactly seven days back the weekday names today's own weekday — the
+      // reading every capped clock would invite. The date form cannot lie.
+      expect(formatTimestamp(DateTime(2025, 12, 31, 14, 5), now), '31/12 14:05');
+      expect(formatTimestamp(DateTime(2025, 6, 1, 9, 0), now), '1/6 09:00');
+    });
+  });
+
+  group('sliceByLocalDay', () {
+    List<Block> blocksFor(List<ActivityChange> changes) => deriveBlocks(
+      changes: changes,
+      activityIdsByChange: {for (final c in changes) c.syncId: []},
+      activitiesById: {},
+    );
+
+    test('a block inside one day is one slice, untouched', () {
+      final now = DateTime(2026, 1, 5, 20);
+      final blocks = blocksFor([chg('a', d(9)), chg('b', d(12))]);
+      final slices = sliceByLocalDay(blocks, now);
+
+      expect(slices, hasLength(2));
+      // Newest first, same as the blocks went in.
+      expect(slices[1].start, d(9));
+      expect(slices[1].end, d(12));
+      expect(slices[1].duration, const Duration(hours: 3));
+    });
+
+    test('sleep from 23:00 to 7:10 splits at midnight', () {
+      final now = DateTime(2026, 1, 6, 20);
+      final blocks = blocksFor([
+        chg('sleep', DateTime(2026, 1, 5, 23)),
+        chg('wake', DateTime(2026, 1, 6, 7, 10)),
+      ]);
+      final slices = sliceByLocalDay(blocks, now);
+
+      expect(slices, hasLength(3));
+      // The open "wake" block first, then sleep's two slices, newest first.
+      final morning = slices[1];
+      final evening = slices[2];
+      expect(evening.start, DateTime(2026, 1, 5, 23));
+      expect(evening.end, DateTime(2026, 1, 6));
+      expect(evening.duration, const Duration(hours: 1));
+      expect(evening.continuesAfter, isTrue);
+      expect(morning.start, DateTime(2026, 1, 6));
+      expect(morning.end, DateTime(2026, 1, 6, 7, 10));
+      expect(morning.duration, const Duration(hours: 7, minutes: 10));
+      expect(morning.continuesBefore, isTrue);
+      expect(morning.continuesAfter, isFalse);
+      // Both rows act on the one real block.
+      expect(identical(morning.block, evening.block), isTrue);
+    });
+
+    test('an open block crossing midnight: only the last slice runs to now', () {
+      final now = DateTime(2026, 1, 6, 7, 10);
+      final blocks = blocksFor([chg('sleep', DateTime(2026, 1, 5, 23))]);
+      final slices = sliceByLocalDay(blocks, now);
+
+      expect(slices, hasLength(2));
+      expect(slices[0].start, DateTime(2026, 1, 6));
+      expect(slices[0].end, now);
+      expect(slices[0].continuesAfter, isFalse);
+      expect(slices[0].duration, const Duration(hours: 7, minutes: 10));
+      expect(slices[1].end, DateTime(2026, 1, 6));
+      expect(slices[1].continuesAfter, isTrue);
+    });
+
+    test('ending exactly at midnight belongs wholly to the earlier day', () {
+      final now = DateTime(2026, 1, 6, 20);
+      final blocks = blocksFor([chg('a', d(23)), chg('b', DateTime(2026, 1, 6))]);
+      final slices = sliceByLocalDay(blocks, now);
+
+      // No zero-length slice under the day the block only touches.
+      final a = slices.last;
+      expect(a.start, d(23));
+      expect(a.end, DateTime(2026, 1, 6));
+      expect(slices.where((s) => s.block == a.block), hasLength(1));
+    });
+
+    test('a multi-day block yields one slice per day it touches', () {
+      final now = DateTime(2026, 1, 8, 20);
+      final blocks = blocksFor([
+        chg('long', DateTime(2026, 1, 5, 18)),
+        chg('after', DateTime(2026, 1, 8, 6)),
+      ]);
+      final long = sliceByLocalDay(blocks, now).where((s) => s.block.change.syncId == 'long');
+
+      expect(long.map((s) => s.start).toList(), [
+        DateTime(2026, 1, 8),
+        DateTime(2026, 1, 7),
+        DateTime(2026, 1, 6),
+        DateTime(2026, 1, 5, 18),
+      ]);
     });
   });
 

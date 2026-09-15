@@ -124,6 +124,10 @@ class _SplitSheetState extends ConsumerState<_SplitSheet> {
               // Both halves, because the question being answered is where the
               // boundary goes, and a single time does not show what it buys.
               Text(
+                // formatDurationHm, not formatSpan: this readout exists to show
+                // what each minute nudge buys, and the span form drops minutes
+                // past a day — the halves of a weekend block would sit frozen
+                // on `1d 7h` while the taps do their work.
                 '${formatDurationHm(first)}  |  ${formatDurationHm(second)}',
                 style: mono(context, size: 13, weight: FontWeight.w700, color: t.muted),
               ),

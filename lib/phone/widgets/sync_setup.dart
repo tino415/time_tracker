@@ -47,8 +47,11 @@ class _SyncSetupSheetState extends ConsumerState<_SyncSetupSheet> {
       _error = null;
     });
     try {
+      // No invalidate afterwards: the action wrote the token, the provider
+      // streams it, and a changed value rebuilds the chain on its own. Forcing
+      // it would tear down the stack twice and start each fresh AutoSyncService
+      // unthrottled — the invalidate-shaped copy of the sync-rebuild loop.
       await action();
-      ref.invalidate(syncTokenProvider);
     } on SyncException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {

@@ -39,6 +39,12 @@ class SyncStore {
   /// configured has to be something the app *observes* rather than reads once at
   /// startup. Without this the watch would store a token and go on believing it
   /// had none until the next launch.
+  /// Deliberately *not* distinct: the token lives in syncMeta, so this re-emits
+  /// the unchanged value whenever the table is written — a cursor write, or a
+  /// re-grant of the same token that bumps only its version. The Wear relay
+  /// needs those event-shaped emissions (a version bump with an unchanged token
+  /// is exactly what re-pairs a watch), while [syncTokenProvider] needs values
+  /// and dedupes on its side — deduping here would starve the relay.
   Stream<String?> watchToken() {
     return (_db.select(
       _db.syncMeta,

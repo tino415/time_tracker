@@ -93,6 +93,14 @@ final syncAccountProvider = Provider<SyncAccountController>((ref) {
 /// Watched rather than read once: on the watch the token arrives over the Wear
 /// relay after startup, and [syncServiceProvider] has to come to life when it
 /// does rather than at the next launch. Revocation travels the same way.
+/// Distinct, and that is load-bearing. The token's table also holds the cursor
+/// every sync writes last, so the raw stream re-emits the unchanged token after
+/// each sync — and riverpod notifies on any data event, rebuilding this chain:
+/// a fresh SyncService, a fresh AutoSyncService, whose start() syncs
+/// immediately with its rate limit newly zeroed. Sync -> rebuild -> sync, at
+/// network round-trip speed. Deduped here, not in [SyncStore.watchToken]: the
+/// Wear relay hangs off that same stream and needs the event-shaped emissions
+/// (a re-grant of the same token, newer version, is what re-pairs a watch).
 final syncTokenProvider = StreamProvider<String?>((ref) {
-  return ref.watch(syncStoreProvider).watchToken();
+  return ref.watch(syncStoreProvider).watchToken().distinct();
 });

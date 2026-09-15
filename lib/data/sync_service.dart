@@ -53,9 +53,10 @@ class SyncService {
 
       final activities = await _store.pendingActivities();
       final changes = await _store.pendingChanges();
+      final cursor = await _store.cursor();
 
       final response = await _transport.exchange(
-        SyncRequest(cursor: await _store.cursor(), activities: activities, changes: changes),
+        SyncRequest(cursor: cursor, activities: activities, changes: changes),
       );
 
       final rejected = response.rejected.toSet();
@@ -88,7 +89,13 @@ class SyncService {
 
       // Last: an interrupted sync must re-pull rather than skip. Adopting is
       // idempotent, so replaying a page costs nothing; missing one loses data.
-      await _store.setCursor(response.cursor);
+      //
+      // Unmoved means unwritten — the client twin of the server's zero-seq
+      // guard. An idle poll otherwise upserts an identical cursor row, which
+      // re-runs every syncMeta watch query just so a distinct() somewhere can
+      // discard the result, and hands any future watcher added without one the
+      // rebuild loop back.
+      if (response.cursor != cursor) await _store.setCursor(response.cursor);
 
       return SyncResult(
         pushed: activities.length + changes.length - rejected.length,

@@ -232,13 +232,25 @@ async function handleSync(request, env, account) {
   });
 }
 
-/** Reserve [count] positions in this account's order in one write. */
+/**
+ * Reserve [count] positions in this account's order in one write.
+ *
+ * Zero reservations write nothing. Every device polls /sync with an empty push
+ * far more often than it edits, and D1 bills by rows written — a poll that
+ * cost a row write would turn the write budget into a request counter.
+ */
 async function nextSeq(env, account, count) {
-  const start = account.next_seq ?? 1;
-  await env.DB.prepare('UPDATE accounts SET next_seq = ? WHERE id = ?')
-    .bind(start + Math.max(count, 0), account.id)
-    .run();
-  return start;
+  if (count <= 0) return account.next_seq ?? 1;
+  // Reserved in the database, not computed from the row `accountFor` read: two
+  // devices syncing the same account at once would otherwise both start from
+  // the same value, hand out duplicate seqs, and a pull cursor — which is
+  // max(seq) and only moves forward — would skip the clobbered rows forever.
+  const row = await env.DB.prepare(
+    'UPDATE accounts SET next_seq = next_seq + ? WHERE id = ? RETURNING next_seq',
+  )
+    .bind(count, account.id)
+    .first();
+  return row.next_seq - count;
 }
 
 function validActivity(dto) {

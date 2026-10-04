@@ -1,0 +1,70 @@
+# Toolchain for time_tracker: Flutter, the Android SDK, Node and the Playwright
+# browsers. The base image tag is the playwright-core version in package.json,
+# so the browsers in /ms-playwright are the ones that library expects.
+FROM mcr.microsoft.com/playwright:v1.56.1-noble
+
+ARG FLUTTER_VERSION=3.38.10
+ARG JUST_VERSION=1.58.0
+ARG CMDLINE_TOOLS_BUILD=13114758
+ARG PLATFORM_TOOLS_VERSION=35.0.2
+# What Flutter 3.38 and AGP 8.11 ask for: compileSdk 36, build-tools 35.0.0,
+# flutter.ndkVersion.
+ARG ANDROID_PLATFORM=android-36
+ARG BUILD_TOOLS=35.0.0
+ARG NDK_VERSION=28.2.13676358
+
+ENV FLUTTER_ROOT=/opt/flutter \
+    ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64 \
+    PUB_CACHE=/root/.pub-cache \
+    GRADLE_USER_HOME=/root/.gradle \
+    WRANGLER_SEND_METRICS=false \
+    DEV_CONTAINER_INNER=1
+ENV PATH=/opt/flutter/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH
+
+# The Android SDK's native tools (adb, aapt2, the NDK) exist only for x86_64.
+# The host runs them through binfmt qemu-user; they still need an x86_64 libc,
+# which on Ubuntu ports comes from the main archive, not from ports.
+RUN sed -i '/^Types: deb/a Architectures: arm64' /etc/apt/sources.list.d/ubuntu.sources \
+ && sed -i 's/^deb \[/deb [arch=arm64 /' /etc/apt/sources.list.d/nodesource.list \
+ && printf '%s\n' \
+      'Types: deb' \
+      'Architectures: amd64' \
+      'URIs: http://archive.ubuntu.com/ubuntu/' \
+      'Suites: noble noble-updates noble-security' \
+      'Components: main universe' \
+      'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
+      > /etc/apt/sources.list.d/ubuntu-amd64.sources \
+ && dpkg --add-architecture amd64 \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      openjdk-17-jdk-headless git curl unzip xz-utils zip ca-certificates \
+      sqlite3 file \
+      libc6:amd64 libstdc++6:amd64 zlib1g:amd64 \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-aarch64-unknown-linux-musl.tar.gz" \
+      | tar -xz -C /usr/local/bin just
+
+RUN mkdir -p "$ANDROID_HOME/cmdline-tools" \
+ && curl -fsSLo /tmp/cmdline-tools.zip "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_BUILD}_latest.zip" \
+ && unzip -q /tmp/cmdline-tools.zip -d /tmp \
+ && mv /tmp/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest" \
+ && curl -fsSLo /tmp/platform-tools.zip "https://dl.google.com/android/repository/platform-tools_r${PLATFORM_TOOLS_VERSION}-linux.zip" \
+ && unzip -q /tmp/platform-tools.zip -d "$ANDROID_HOME" \
+ && rm /tmp/*.zip \
+ && yes | sdkmanager --licenses >/dev/null \
+ && sdkmanager --install "platforms;${ANDROID_PLATFORM}" "build-tools;${BUILD_TOOLS}" "ndk;${NDK_VERSION}" \
+ && rm -rf /root/.android
+
+# Archives Flutter downloads carry uids the rootless user namespace cannot map.
+ENV TAR_OPTIONS=--no-same-owner
+RUN git clone --depth 1 --branch "${FLUTTER_VERSION}" https://github.com/flutter/flutter.git "$FLUTTER_ROOT" \
+ && flutter config --no-analytics --no-cli-animations \
+ && dart --disable-analytics \
+ && flutter precache --android --web --no-linux \
+ && flutter --version
+
+WORKDIR /workspace
+CMD ["sleep", "infinity"]

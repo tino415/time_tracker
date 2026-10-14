@@ -213,6 +213,26 @@ void main() {
     });
   });
 
+  group('localMonthRange', () {
+    test('runs from the 1st to the next 1st', () {
+      final m = localMonthRange(DateTime(2026, 2, 17, 13, 45));
+      expect(m.start, DateTime(2026, 2));
+      expect(m.end, DateTime(2026, 3));
+    });
+
+    test('December ends on the 1st of January of the next year', () {
+      final m = localMonthRange(DateTime(2026, 12, 31, 23, 59));
+      expect(m.start, DateTime(2026, 12));
+      expect(m.end, DateTime(2027));
+    });
+
+    test('a month with a DST change still ends on midnight', () {
+      final m = localMonthRange(DateTime(2026, 3, 29, 12));
+      expect(m.end, DateTime(2026, 4));
+      expect(m.end.hour, 0);
+    });
+  });
+
   group('remainingToday', () {
     test('counts to the next midnight', () {
       expect(remainingToday(DateTime(2026, 1, 7, 9, 30)), const Duration(hours: 14, minutes: 30));

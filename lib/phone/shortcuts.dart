@@ -214,7 +214,7 @@ const shortcutBindings = <ShortcutBinding>[
   ),
   // h and l rather than brackets: previous/next is a *direction*, and it then
   // means one thing on both screens — one unit back or forward along the time
-  // axis, whether the unit is a week or a day.
+  // axis, whether the unit is a month, a week or a day.
   //
   // j and k are left free on purpose. The calendar's visible axis is vertical,
   // which argues for them there, but a day is a sequence you page through rather
@@ -651,7 +651,7 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
   void _shiftPeriod(int delta) {
     switch (_screen()) {
       case 'reports':
-        ref.read(reportModeProvider) ? shiftReportDay(ref, delta) : shiftReportWeek(ref, delta);
+        shiftReportPeriod(ref, delta);
       case 'calendar':
         shiftCalendarDay(ref, delta);
     }

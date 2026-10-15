@@ -1,4 +1,4 @@
-// Widget-level test of Reports' week/day toggle: only one period is on screen
+// Widget-level test of Reports' month/week/day toggle: only one period is on screen
 // at a time, the day selector steps and refuses the future the same way the
 // week selector always has, and switching modes carries the period being
 // looked at across rather than resetting to today/this week.
@@ -85,6 +85,28 @@ Future<void> _toggleToDay(WidgetTester tester) async {
 Future<void> _toggleToWeek(WidgetTester tester) async {
   await tester.tap(inScreen(ReportsScreen, find.text('▦ WEEK')));
   await settle(tester);
+}
+
+Future<void> _toggleToMonth(WidgetTester tester) async {
+  await tester.tap(inScreen(ReportsScreen, find.text('▣ MONTH')));
+  await settle(tester);
+}
+
+/// The label the month selector renders for the month containing [day].
+String _monthLabel(DateTime day) {
+  const names = [
+    'January', 'February', 'March', 'April', 'May', 'June', //
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  final now = DateTime.now();
+  if (day.year == now.year && day.month == now.month) return 'This month';
+  return '${names[day.month - 1]} ${day.year}';
+}
+
+bool _holdsToday(({DateTime start, DateTime end}) range) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  return !today.isBefore(range.start) && today.isBefore(range.end);
 }
 
 Future<void> _stepDayForward(WidgetTester tester, int times) async {
@@ -206,6 +228,72 @@ void main() {
     // again, not a jump back to "this week".
     expect(inScreen(ReportsScreen, find.text('This week')), findsNothing);
     expect(inScreen(ReportsScreen, find.text(_weekLabel(monday))), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('month mode starts on this month and refuses to step into the future', (
+    tester,
+  ) async {
+    await bootApp(tester, viewport: _tallPhone);
+    await openTab(tester, 'REPORTS');
+    await _toggleToMonth(tester);
+
+    expect(inScreen(ReportsScreen, find.text('This month')), findsOneWidget);
+    expect(inScreen(ReportsScreen, find.text('left until midnight')), findsNothing);
+
+    await tester.tap(inScreen(ReportsScreen, find.text('›')));
+    await settle(tester);
+    expect(inScreen(ReportsScreen, find.text('This month')), findsOneWidget);
+
+    await tester.tap(inScreen(ReportsScreen, find.text('‹')));
+    await settle(tester);
+    final now = DateTime.now();
+    expect(
+      inScreen(ReportsScreen, find.text(_monthLabel(DateTime(now.year, now.month - 1)))),
+      findsOneWidget,
+    );
+
+    await tester.tap(inScreen(ReportsScreen, find.text('›')));
+    await settle(tester);
+    expect(inScreen(ReportsScreen, find.text('This month')), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a past week opens the month of its Monday', (tester) async {
+    await _openLastWeek(tester);
+
+    await _toggleToMonth(tester);
+    final monday = _lastWeek(DateTime.monday);
+    expect(inScreen(ReportsScreen, find.text(_monthLabel(monday))), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('leaving month mode lands on today, or on the month\'s first week and day', (
+    tester,
+  ) async {
+    await _openLastWeek(tester);
+    await _toggleToMonth(tester);
+    final month = localMonthRange(_lastWeek(DateTime.monday));
+    final holdsToday = _holdsToday(month);
+
+    await _toggleToWeek(tester);
+    expect(
+      inScreen(ReportsScreen, find.text(holdsToday ? 'This week' : _weekLabel(month.start))),
+      findsOneWidget,
+    );
+
+    await _toggleToMonth(tester);
+    await _toggleToDay(tester);
+    expect(
+      inScreen(ReportsScreen, find.text(holdsToday ? 'Today' : _dayLabel(month.start))),
+      findsOneWidget,
+    );
+
+    await _toggleToMonth(tester);
+    expect(inScreen(ReportsScreen, find.text(_monthLabel(month.start))), findsOneWidget);
 
     await disposeApp(tester);
   });

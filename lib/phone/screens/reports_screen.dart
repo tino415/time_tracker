@@ -32,10 +32,33 @@ final reportDayProvider = StateProvider<DateTime>((_) {
   return DateTime(now.year, now.month, now.day);
 });
 
-/// Week roll-up or a single day. Same device as `timelineViewProvider`: lifted
-/// out of the screen so the `h`/`l` shortcut can read it to decide which of
-/// [shiftReportWeek] / [shiftReportDay] applies.
-final reportModeProvider = StateProvider<bool>((_) => false); // true = day mode
+/// Which month month mode is showing: 0 = this month, -1 = last month, …
+final monthOffsetProvider = StateProvider<int>((_) => 0);
+
+enum ReportPeriod { month, week, day }
+
+/// The period the report rolls up. Same device as `timelineViewProvider`: lifted
+/// out of the screen so the `h`/`l` shortcut can read it through
+/// [shiftReportPeriod].
+final reportPeriodProvider = StateProvider<ReportPeriod>((_) => ReportPeriod.week);
+
+void shiftReportPeriod(WidgetRef ref, int delta) {
+  switch (ref.read(reportPeriodProvider)) {
+    case ReportPeriod.month:
+      shiftReportMonth(ref, delta);
+    case ReportPeriod.week:
+      shiftReportWeek(ref, delta);
+    case ReportPeriod.day:
+      shiftReportDay(ref, delta);
+  }
+}
+
+/// Step the report month, refusing to walk into the future.
+void shiftReportMonth(WidgetRef ref, int delta) {
+  final next = ref.read(monthOffsetProvider) + delta;
+  if (next > 0) return;
+  ref.read(monthOffsetProvider.notifier).state = next;
+}
 
 /// Step the report week, refusing to walk into the future.
 ///
@@ -57,17 +80,16 @@ void shiftReportDay(WidgetRef ref, int delta) {
   ref.read(reportDayProvider.notifier).state = next;
 }
 
-/// Weekly or daily report: rolled-up horizontal bars per top-level category that
-/// **drill down into their sub-activities**, and a client-side CSV export
-/// (optionally subtree-filtered).
+/// Monthly, weekly or daily report: rolled-up horizontal bars per top-level
+/// category that **drill down into their sub-activities**, and a client-side CSV
+/// export (optionally subtree-filtered).
 ///
-/// One period on screen at a time — a toggle switches between the week and a
-/// single day rather than showing both, so the category bars answer one
-/// question ("what did this week look like" or "what did Tuesday look like")
-/// instead of resizing under a tap on a day row. The toggle carries context
-/// across: entering day mode lands on today when the viewed week holds it,
-/// otherwise the week's first day; leaving day mode shows the week the selected
-/// day belongs to.
+/// One period on screen at a time — a toggle switches between a month, a week
+/// and a single day rather than showing them together, so the category bars
+/// answer one question ("what did this week look like" or "what did Tuesday look
+/// like") instead of resizing under a tap on a row. The toggle carries context
+/// across: the new period is the one holding today when the viewed period holds
+/// it, otherwise the one holding the viewed period's first day.
 ///
 /// The drill-down is the point of a hierarchical catalogue: `Work > Payout >
 /// CU-1042` means "how much did I work for Payout" is a question about a middle
@@ -100,13 +122,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    final dayMode = ref.watch(reportModeProvider);
+    final period = ref.watch(reportPeriodProvider);
+    final monthOffset = ref.watch(monthOffsetProvider);
+    final month = localMonthRange(DateTime(now.year, now.month + monthOffset));
     final weekOffset = ref.watch(weekOffsetProvider);
-    final base = DateTime(now.year, now.month, now.day + weekOffset * 7);
-    final week = localWeekRange(base);
+    final week = localWeekRange(DateTime(now.year, now.month, now.day + weekOffset * 7));
     final day = ref.watch(reportDayProvider);
 
-    final scope = dayMode ? localDayRange(day) : week;
+    final scope = switch (period) {
+      ReportPeriod.month => month,
+      ReportPeriod.week => week,
+      ReportPeriod.day => localDayRange(day),
+    };
     final totals = reportTotals(
       blocks: blocks,
       tree: tree,
@@ -123,19 +150,25 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       children: [
-        dayMode
-            ? _PeriodSelector(
-                label: _dayLabel(day, now),
-                onPrev: () => shiftReportDay(ref, -1),
-                onNext: day.isBefore(today) ? () => shiftReportDay(ref, 1) : null,
-              )
-            : _PeriodSelector(
-                label: _weekLabel(week.start, now),
-                onPrev: () => shiftReportWeek(ref, -1),
-                onNext: weekOffset < 0 ? () => shiftReportWeek(ref, 1) : null,
-              ),
+        switch (period) {
+          ReportPeriod.month => _PeriodSelector(
+            label: _monthLabel(month.start, now),
+            onPrev: () => shiftReportMonth(ref, -1),
+            onNext: monthOffset < 0 ? () => shiftReportMonth(ref, 1) : null,
+          ),
+          ReportPeriod.week => _PeriodSelector(
+            label: _weekLabel(week.start, now),
+            onPrev: () => shiftReportWeek(ref, -1),
+            onNext: weekOffset < 0 ? () => shiftReportWeek(ref, 1) : null,
+          ),
+          ReportPeriod.day => _PeriodSelector(
+            label: _dayLabel(day, now),
+            onPrev: () => shiftReportDay(ref, -1),
+            onNext: day.isBefore(today) ? () => shiftReportDay(ref, 1) : null,
+          ),
+        },
         const SizedBox(height: 10),
-        _ModeToggle(dayMode: dayMode, onChanged: (v) => _setMode(v, week)),
+        _ModeToggle(period: period, onChanged: (to) => _setPeriod(to, scope)),
         const SizedBox(height: 18),
         NeoSectionHeader(
           'Per category',
@@ -151,17 +184,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         if (roots.isEmpty)
           // An empty state, not a zero total: with continuous tracking the only
           // way to reach it is a range that holds no data at all.
-          Text(
-            dayMode ? _emptyDayMessage(day, now) : 'nothing tracked this week',
-            style: mono(context, color: t.muted),
-          )
+          Text(switch (period) {
+            ReportPeriod.month => 'nothing tracked this month',
+            ReportPeriod.week => 'nothing tracked this week',
+            ReportPeriod.day => _emptyDayMessage(day, now),
+          }, style: mono(context, color: t.muted))
         else
           _categoryRows(hasPointer, tree, totals, roots, max: maxRoot, depth: 0),
         // Outside the branch above, so a day with nothing tracked still answers
         // "how much of it is left" — that is exactly the day you want to ask.
         // Only in day mode: the same question about a week is a different one,
         // and nobody has asked it.
-        if (dayMode && day == today) _DayRemainingRow(day: day),
+        if (period == ReportPeriod.day && day == today) _DayRemainingRow(day: day),
         const SizedBox(height: 18),
         NeoButton(
           label: '↧ export csv · all history',
@@ -175,25 +209,26 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  /// Carries context across the toggle: entering day mode picks a day inside
-  /// the week on screen (today if the week holds it, its first day otherwise);
-  /// leaving it shows the week the selected day belongs to. Without this the
-  /// switch would drop you on whatever the other mode was last left at, which
-  /// could be a different month entirely.
-  void _setMode(bool toDayMode, ({DateTime start, DateTime end}) week) {
-    if (toDayMode) {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      final inWeek = !today.isBefore(week.start) && today.isBefore(week.end);
-      ref.read(reportDayProvider.notifier).state = inWeek ? today : week.start;
-    } else {
-      final day = ref.read(reportDayProvider);
-      final thisWeekStart = localWeekRange(DateTime.now()).start;
-      final dayWeekStart = localWeekRange(day).start;
-      ref.read(weekOffsetProvider.notifier).state =
-          dayWeekStart.difference(thisWeekStart).inDays ~/ 7;
+  /// Carries context across the toggle, so the switch does not drop you on
+  /// whatever the other period was last left at.
+  void _setPeriod(ReportPeriod to, ({DateTime start, DateTime end}) viewed) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final holdsToday = !today.isBefore(viewed.start) && today.isBefore(viewed.end);
+    final anchor = holdsToday ? today : viewed.start;
+
+    switch (to) {
+      case ReportPeriod.month:
+        ref.read(monthOffsetProvider.notifier).state =
+            (anchor.year - now.year) * 12 + anchor.month - now.month;
+      case ReportPeriod.week:
+        final thisWeekStart = localWeekRange(now).start;
+        ref.read(weekOffsetProvider.notifier).state =
+            localWeekRange(anchor).start.difference(thisWeekStart).inDays ~/ 7;
+      case ReportPeriod.day:
+        ref.read(reportDayProvider.notifier).state = anchor;
     }
-    ref.read(reportModeProvider.notifier).state = toDayMode;
+    ref.read(reportPeriodProvider.notifier).state = to;
   }
 
   /// The rows built by [_rows], selectable as one region when [hasPointer] —
@@ -270,6 +305,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       out.addAll(_rows(tree, totals, children, max: childMax, depth: depth + 1));
     }
     return out;
+  }
+
+  static String _monthLabel(DateTime monthStart, DateTime now) {
+    if (monthStart == DateTime(now.year, now.month)) return 'This month';
+    const names = [
+      'January', 'February', 'March', 'April', 'May', 'June', //
+      'July', 'August', 'September', 'October', 'November', 'December',
+    ];
+    return '${names[monthStart.month - 1]} ${monthStart.year}';
   }
 
   static String _weekLabel(DateTime weekStart, DateTime now) {
@@ -444,7 +488,7 @@ class _SyncBackendLine extends ConsumerWidget {
 }
 
 /// A period's label with `‹`/`›` steppers either side. The same shape whether
-/// the period is a week or a single day — only the label and what the arrows
+/// the period is a month, a week or a single day — only the label and what the arrows
 /// call differ.
 class _PeriodSelector extends StatelessWidget {
   const _PeriodSelector({required this.label, required this.onPrev, this.onNext});
@@ -468,34 +512,35 @@ class _PeriodSelector extends StatelessWidget {
   }
 }
 
-/// Week roll-up or a single day — never both. Built like `timeline_screen.dart`'s
-/// `_ViewToggle`: two buttons, the active one `primary`.
+/// Month, week or a single day — one at a time. Built like
+/// `timeline_screen.dart`'s `_ViewToggle`: a button per period, the active one
+/// `primary`.
 class _ModeToggle extends StatelessWidget {
-  const _ModeToggle({required this.dayMode, required this.onChanged});
-  final bool dayMode;
-  final ValueChanged<bool> onChanged;
+  const _ModeToggle({required this.period, required this.onChanged});
+  final ReportPeriod period;
+  final ValueChanged<ReportPeriod> onChanged;
+
+  static const _labels = {
+    ReportPeriod.month: '▣ month',
+    ReportPeriod.week: '▦ week',
+    ReportPeriod.day: '▤ day',
+  };
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(
-          child: NeoButton(
-            label: '▦ week',
-            primary: !dayMode,
-            shadowOffset: 3,
-            onTap: () => onChanged(false),
+        for (final p in ReportPeriod.values) ...[
+          if (p != ReportPeriod.values.first) const SizedBox(width: 8),
+          Expanded(
+            child: NeoButton(
+              label: _labels[p]!,
+              primary: p == period,
+              shadowOffset: 3,
+              onTap: () => onChanged(p),
+            ),
           ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: NeoButton(
-            label: '▤ day',
-            primary: dayMode,
-            shadowOffset: 3,
-            onTap: () => onChanged(true),
-          ),
-        ),
+        ],
       ],
     );
   }

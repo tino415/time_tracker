@@ -604,6 +604,13 @@ void main() {
     await _press(tester, PhysicalKeyboardKey.keyL, LogicalKeyboardKey.keyL);
     expect(inScreen(ReportsScreen, find.text('This week')), findsOneWidget);
 
+    await tester.tap(inScreen(ReportsScreen, find.text('▣ MONTH')));
+    await settle(tester);
+    await _press(tester, PhysicalKeyboardKey.keyH, LogicalKeyboardKey.keyH);
+    expect(inScreen(ReportsScreen, find.text('This month')), findsNothing);
+    await _press(tester, PhysicalKeyboardKey.keyL, LogicalKeyboardKey.keyL);
+    expect(inScreen(ReportsScreen, find.text('This month')), findsOneWidget);
+
     // The same keys, a different unit, decided by which screen is showing.
     await _go(tester, PhysicalKeyboardKey.keyT, LogicalKeyboardKey.keyT);
     await tester.tap(find.text('▦ CALENDAR'));

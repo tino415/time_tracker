@@ -88,6 +88,12 @@ Map<String, Duration> _asDurations(Map<String, int> micros) =>
   return (start: start, end: DateTime(start.year, start.month, start.day + 1));
 }
 
+/// The local calendar month `[1st 00:00, next 1st 00:00)` containing [day].
+({DateTime start, DateTime end}) localMonthRange(DateTime day) {
+  final start = DateTime(day.year, day.month);
+  return (start: start, end: DateTime(start.year, start.month + 1));
+}
+
 /// How much of [now]'s local day is still ahead.
 ///
 /// The day ends at midnight, which is the boundary every report already buckets

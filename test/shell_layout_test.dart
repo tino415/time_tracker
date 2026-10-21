@@ -311,6 +311,31 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('a narrow phone at a large text size fits the header and its controls', (
+    tester,
+  ) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 1.15;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await _bootWithSync(
+      tester,
+      viewport: const Size(411, 914),
+      seed: _seed,
+      service: (db) =>
+          SyncService(store: SyncStore(db), transport: _RejectingTransport(), backend: 'test'),
+    );
+    expect(tester.takeException(), isNull, reason: 'the header overflows');
+
+    await tester.tap(find.text('•••'));
+    await settle(tester);
+    await tester.tap(find.text('⟳ SYNC'));
+    await settle(tester);
+
+    expect(tester.takeException(), isNull, reason: 'the controls overflow');
+    expect(find.textContaining('superseded'), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('a single column stops widening long before the window does', (tester) async {
     await bootApp(tester, viewport: const Size(2560, 1200), seed: _seed);
     await tester.tap(find.text('REPORTS'));

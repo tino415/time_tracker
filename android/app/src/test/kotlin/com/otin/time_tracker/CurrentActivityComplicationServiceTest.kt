@@ -1,5 +1,8 @@
 package com.otin.time_tracker
 
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.LongTextComplicationData
@@ -54,6 +57,13 @@ class CurrentActivityComplicationServiceTest {
         )
         return received
     }
+
+    private fun pickerEntry(): ResolveInfo? = service.packageManager
+        .queryIntentServices(
+            Intent(ComplicationDataSourceService.ACTION_COMPLICATION_UPDATE_REQUEST).setPackage(service.packageName),
+            PackageManager.GET_META_DATA,
+        )
+        .singleOrNull { it.serviceInfo.name == CurrentActivityComplicationService::class.java.name }
 
     private fun ComplicationData.mainText(at: Instant = Instant.now()): String = when (this) {
         is ShortTextComplicationData -> text.getTextAt(service.resources, at).toString()
@@ -138,6 +148,24 @@ class CurrentActivityComplicationServiceTest {
     fun `the picker gets preview data, without which the complication is not selectable`() {
         assertNotNull(service.getPreviewData(ComplicationType.SHORT_TEXT))
         assertNotNull(service.getPreviewData(ComplicationType.LONG_TEXT))
+    }
+
+    @Test
+    fun `the picker finds the service under the action it queries`() {
+        assertNotNull(pickerEntry())
+    }
+
+    @Test
+    fun `the picker reads slot types and update period from the keys the library defines`() {
+        val metaData = pickerEntry()!!.serviceInfo.metaData
+
+        assertEquals("SHORT_TEXT,LONG_TEXT", metaData.getString(ComplicationDataSourceService.METADATA_KEY_SUPPORTED_TYPES))
+        assertEquals(0, metaData.getInt(ComplicationDataSourceService.METADATA_KEY_UPDATE_PERIOD_SECONDS, -1))
+    }
+
+    @Test
+    fun `the picker lists it by what it shows rather than by the app name`() {
+        assertEquals("Current activity", pickerEntry()!!.serviceInfo.loadLabel(service.packageManager).toString())
     }
 
     @Test

@@ -5,4 +5,5 @@
          guess, and the widget and complication inherit that by showing this
          instead of a specific activity. -->
     <string name="widget_nothing_tracked">Nothing tracked</string>
+    <string name="complication_label">Current activity</string>
 </resources>

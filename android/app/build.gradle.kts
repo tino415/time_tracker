@@ -85,3 +85,25 @@ dependencies {
         testImplementation("org.conscrypt:conscrypt-openjdk-uber:2.7.0")
     }
 }
+
+// Robolectric downloads its Android runtime from inside the test JVM, where
+// Conscrypt's aarch64 TLS fails the handshake. Gradle fetches it instead, and
+// the tests run offline against that copy.
+// Every test loads both: the sdk= pinned in src/test/resources/robolectric.properties,
+// and the newest SDK this Robolectric knows.
+val robolectricRuntimeVersions = listOf("14-robolectric-10818077-i7", "15-robolectric-12650502-i7")
+
+val robolectricRuntimeDir = layout.buildDirectory.dir("robolectric-runtime")
+
+val syncRobolectricRuntime by tasks.registering(Sync::class) {
+    robolectricRuntimeVersions.forEach { version ->
+        from(configurations.detachedConfiguration(dependencies.create("org.robolectric:android-all-instrumented:$version")))
+    }
+    into(robolectricRuntimeDir)
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(syncRobolectricRuntime)
+    systemProperty("robolectric.offline", "true")
+    systemProperty("robolectric.dependency.dir", robolectricRuntimeDir.get().asFile.absolutePath)
+}

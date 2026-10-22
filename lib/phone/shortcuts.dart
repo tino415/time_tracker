@@ -15,6 +15,7 @@ import 'screens/now_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'widgets/assign_activity.dart';
+import 'widgets/block_actions.dart';
 import 'widgets/block_comment.dart';
 import 'widgets/command_picker.dart';
 import 'widgets/neo.dart';
@@ -79,6 +80,7 @@ enum ShortcutAction {
   nextPeriod,
   editActivity,
   editNote,
+  editBlock,
 }
 
 /// One binding, carrying everything the help overlay needs — so adding a
@@ -188,6 +190,13 @@ const shortcutBindings = <ShortcutBinding>[
     label: 'e n',
     what: 'Note on the running block',
     action: ShortcutAction.editNote,
+  ),
+  ShortcutBinding(
+    key: PhysicalKeyboardKey.keyB,
+    prefix: editPrefix,
+    label: 'e b',
+    what: 'Edit the running block',
+    action: ShortcutAction.editBlock,
   ),
   ShortcutBinding(
     key: PhysicalKeyboardKey.keyS,
@@ -343,6 +352,11 @@ const shortcutCommands = <ShortcutCommand>[
     action: ShortcutAction.editNote,
     label: 'Note on the running block',
     keywords: 'comment annotate',
+  ),
+  ShortcutCommand(
+    action: ShortcutAction.editBlock,
+    label: 'Edit the running block',
+    keywords: 'block menu tag split retime merge',
   ),
   ShortcutCommand(
     action: ShortcutAction.syncNow,
@@ -609,8 +623,8 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
       case ShortcutAction.showHelp:
         showShortcutsHelp(context, ref);
 
-      // Both edit the block the clock is running against, so both are silent on
-      // an empty timeline rather than opening a sheet over nothing.
+      // All three edit the block the clock is running against, so all are silent
+      // on an empty timeline rather than opening a sheet over nothing.
       case ShortcutAction.editActivity:
         {
           final block = ref.read(currentBlockProvider);
@@ -622,6 +636,12 @@ class _AppShortcutsState extends ConsumerState<AppShortcuts> {
           final block = ref.read(currentBlockProvider);
           if (block == null) return;
           editBlockComment(context, ref, block);
+        }
+      case ShortcutAction.editBlock:
+        {
+          final block = ref.read(currentBlockProvider);
+          if (block == null) return;
+          showBlockActions(context, ref, block, canMerge: ref.read(blocksProvider).length > 1);
         }
 
       // One action for both screens: the binding table says which unit, and the

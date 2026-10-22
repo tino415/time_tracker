@@ -95,6 +95,32 @@
                 android:value="0"/>
         </service>
 
+        <!-- Requests a fresh CurrentActivityTileService layout on the same
+             package-scoped broadcast ComplicationUpdateReceiver listens for. -->
+        <receiver
+            android:name=".TileUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.otin.time_tracker.CURRENT_CHANGED"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Wear OS tile for faces that take no third-party complication. The
+             tile picker skips a tile without a label, icon and preview. -->
+        <service
+            android:name=".CurrentActivityTileService"
+            android:label="@string/tile_label"
+            android:icon="@mipmap/ic_launcher"
+            android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER"/>
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/tile_preview"/>
+        </service>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -20,10 +20,11 @@ object CurrentStateCache {
 
     /**
      * Broadcast after a successful [write], package-scoped.
-     * [CurrentActivityWidgetProvider] and [ComplicationUpdateReceiver] both
-     * listen for it. Package-scoped rather than targeted, so on one unflavoured
-     * APK it reaches both of them on either form factor — which is why the
-     * widget receiver has to survive a watch that has no AppWidgetManager.
+     * [CurrentActivityWidgetProvider], [ComplicationUpdateReceiver] and
+     * [TileUpdateReceiver] listen for it. Package-scoped rather than targeted,
+     * so on one unflavoured APK it reaches all of them on either form factor —
+     * which is why the widget receiver has to survive a watch that has no
+     * AppWidgetManager.
      */
     const val ACTION_CHANGED = "com.otin.time_tracker.CURRENT_CHANGED"
 

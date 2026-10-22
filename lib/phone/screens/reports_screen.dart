@@ -222,9 +222,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ref.read(monthOffsetProvider.notifier).state =
             (anchor.year - now.year) * 12 + anchor.month - now.month;
       case ReportPeriod.week:
-        final thisWeekStart = localWeekRange(now).start;
-        ref.read(weekOffsetProvider.notifier).state =
-            localWeekRange(anchor).start.difference(thisWeekStart).inDays ~/ 7;
+        ref.read(weekOffsetProvider.notifier).state = localWeekOffset(anchor, now);
       case ReportPeriod.day:
         ref.read(reportDayProvider.notifier).state = anchor;
     }

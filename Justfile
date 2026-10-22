@@ -227,8 +227,11 @@ web-smoke port="4242": web
 # A different default port from `worker-dev` on purpose: run both at once and
 # the test would silently exercise the dev worker instead — its own database,
 # its own token, and a wall of failures that look like a broken Worker.
-[doc('Smoke-test the sync worker locally on :4245 — a different port from `worker-dev` on purpose; do not run both')]
-worker-smoke port="4245":
+#
+# Depends on `web` because wrangler.toml serves build/web as the Worker's
+# assets, and wrangler refuses to start when that directory is missing.
+[doc('Smoke-test the sync worker locally on :4245 — rebuilds `web` (wrangler will not start without build/web) and stops wrangler when done; do not run alongside `worker-dev`')]
+worker-smoke port="4245": web
     node tool/worker_smoke.mjs {{port}}
 
 # Apply the schema to a local D1. Safe to re-run — the schema is all

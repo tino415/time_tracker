@@ -2,7 +2,11 @@ package com.otin.time_tracker
 
 import android.app.Application
 import android.content.ComponentName
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
+import android.content.ReceiverCallNotAllowedException
+import android.content.ServiceConnection
 import android.content.pm.ResolveInfo
 import android.content.pm.ServiceInfo
 import android.os.Looper
@@ -50,7 +54,7 @@ class TileUpdateReceiverTest {
     }
 
     private fun receive(action: String) {
-        TileUpdateReceiver().onReceive(context, Intent(action))
+        TileUpdateReceiver().onReceive(ReceiverContext(context), Intent(action))
         shadowOf(Looper.getMainLooper()).idle()
     }
 
@@ -66,6 +70,12 @@ class TileUpdateReceiverTest {
         receive(CurrentStateCache.ACTION_CHANGED)
 
         assertEquals(listOf(ComponentName(context, CurrentActivityTileService::class.java)), systemUi.requested)
+    }
+
+    /** What Android hands a manifest receiver: unlike its application, it refuses to bind. */
+    private class ReceiverContext(base: Context) : ContextWrapper(base) {
+        override fun bindService(service: Intent, conn: ServiceConnection, flags: Int): Boolean =
+            throw ReceiverCallNotAllowedException("BroadcastReceiver components are not allowed to bind to services")
     }
 
     private class RecordingUpdateRequester : TileUpdateRequesterService.Stub() {

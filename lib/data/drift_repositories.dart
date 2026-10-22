@@ -291,12 +291,35 @@ class DriftChangeRepository implements ChangeRepository {
   }
 
   @override
-  Future<ActivityChange?> currentChange() {
-    return (_db.select(_db.activityChanges)
-          ..where((t) => t.deletedAt.isNull())
-          ..orderBy([(t) => OrderingTerm.desc(t.changedAt), (t) => OrderingTerm.desc(t.syncId)])
-          ..limit(1))
-        .getSingleOrNull();
+  Stream<void> changeWrites() => _db.tableUpdates(TableUpdateQuery.onTable(_db.activityChanges));
+
+  @override
+  Future<ActivityChange?> currentChange() => _currentChangeQuery().getSingleOrNull();
+
+  @override
+  Stream<CurrentChange?> watchCurrentChange() {
+    final current = Subquery(_currentChangeQuery(), 'current');
+    final links = _db.activityChangeActivities;
+    final query = _db.select(current).join([
+      leftOuterJoin(
+        links,
+        links.activityChangeId.equalsExp(current.ref(_db.activityChanges.syncId)),
+      ),
+    ]);
+    return query.watch().map((rows) {
+      if (rows.isEmpty) return null;
+      return (
+        change: rows.first.readTable(current),
+        activityIds: [for (final row in rows) ?row.readTableOrNull(links)?.activityId],
+      );
+    });
+  }
+
+  SimpleSelectStatement<$ActivityChangesTable, ActivityChange> _currentChangeQuery() {
+    return _db.select(_db.activityChanges)
+      ..where((t) => t.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.changedAt), (t) => OrderingTerm.desc(t.syncId)])
+      ..limit(1);
   }
 
   @override

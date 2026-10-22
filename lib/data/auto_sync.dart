@@ -103,7 +103,7 @@ final autoSyncProvider = Provider<AutoSyncService?>((ref) {
     sync: sync,
     localChanges: StreamGroup.merge([
       ref.watch(activityRepositoryProvider).watchActivities(),
-      ref.watch(changeRepositoryProvider).watchChanges(),
+      ref.watch(changeRepositoryProvider).changeWrites(),
     ]),
   );
   ref.onDispose(service.dispose);

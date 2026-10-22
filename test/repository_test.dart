@@ -146,4 +146,59 @@ void main() {
       {a.syncId, b.syncId},
     );
   });
+
+  group('watchCurrentChange', () {
+    test('is null on an empty timeline', () async {
+      expect(await changes.watchCurrentChange().first, isNull);
+    });
+
+    test('is the newest live change with every activity in its set', () async {
+      final a = await activities.createActivity(name: 'A', color: '#333333');
+      final b = await activities.createActivity(name: 'B', color: '#444444');
+      await changes.switchTo(a.syncId, at: DateTime(2026, 1, 5, 9));
+      final newest = await changes.switchTo(a.syncId, at: DateTime(2026, 1, 5, 10));
+      await changes.addActivityToChange(newest.syncId, b.syncId);
+
+      final current = await changes.watchCurrentChange().first;
+      expect(current!.change.syncId, newest.syncId);
+      expect(current.activityIds.toSet(), {a.syncId, b.syncId});
+    });
+
+    test('falls back to the previous change when the newest is deleted', () async {
+      final a = await activities.createActivity(name: 'A', color: '#333333');
+      final older = await changes.switchTo(a.syncId, at: DateTime(2026, 1, 5, 9));
+      final newest = await changes.switchTo(a.syncId, at: DateTime(2026, 1, 5, 10));
+
+      await changes.deleteChange(newest.syncId);
+      expect((await changes.watchCurrentChange().first)!.change.syncId, older.syncId);
+    });
+
+    test('a change with no join rows yet comes with no activities', () async {
+      final a = await activities.createActivity(name: 'A', color: '#333333');
+      final change = await changes.switchTo(a.syncId);
+      await db.delete(db.activityChangeActivities).go();
+
+      final current = await changes.watchCurrentChange().first;
+      expect(current!.change.syncId, change.syncId);
+      expect(current.activityIds, isEmpty);
+    });
+
+    test('follows a switch made while listening', () async {
+      final a = await activities.createActivity(name: 'A', color: '#333333');
+      final b = await activities.createActivity(name: 'B', color: '#444444');
+      await changes.switchTo(a.syncId);
+
+      final seen = changes.watchCurrentChange().map((c) => c?.activityIds);
+      final expectation = expectLater(seen, emitsThrough([b.syncId]));
+      await changes.switchTo(b.syncId);
+      await expectation;
+    });
+  });
+
+  test('changeWrites fires on a write to the timeline', () async {
+    final a = await activities.createActivity(name: 'A', color: '#333333');
+    final fired = expectLater(changes.changeWrites(), emits(anything));
+    await changes.switchTo(a.syncId);
+    await fired;
+  });
 }

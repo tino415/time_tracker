@@ -36,6 +36,9 @@ Future<void> switchWithUndo(BuildContext context, WidgetRef ref, String activity
       // Longer than the 4s default: this one asks a question, and reading it is
       // the whole point.
       duration: const Duration(seconds: 6),
+      // A snack bar with an action otherwise stays until it is acted on, and on
+      // the phone shell it sits over the Now field until then.
+      persist: false,
       content: Text(
         'new block · same activity',
         style: mono(context, weight: FontWeight.w800, color: t.surface),

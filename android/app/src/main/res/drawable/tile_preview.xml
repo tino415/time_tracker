@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the tile picker shows: the tracking state, a name over the elapsed
+     time, drawn rather than rendered so it needs no device to update. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M96,0a96,96 0 1,0 0.01,0Z"/>
+    <path
+        android:fillColor="#FFC4C7C5"
+        android:pathData="M66,56h60a5,5 0 0,1 0,10h-60a5,5 0 0,1 0,-10Z"/>
+    <path
+        android:strokeColor="#FFE3E3E3"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M61,88C55,88 51,92 51,98L51,114C51,120 55,124 61,124C67,124 71,120 71,114L71,98C71,92 67,88 61,88Z M96,94L104,88L104,124 M121,96C121,91 125,88 131,88C137,88 141,91 141,97C141,104 121,114 121,124L141,124"/>
+    <path
+        android:fillColor="#FFE3E3E3"
+        android:pathData="M78.5,99a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0Z M78.5,113a3.5,3.5 0 1,0 7,0a3.5,3.5 0 1,0 -7,0Z"/>
+</vector>

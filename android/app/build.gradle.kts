@@ -66,6 +66,10 @@ dependencies {
     // TimeDifferenceComplicationText, the mechanism that lets the watch face
     // render elapsed time itself instead of the app pushing one every tick.
     implementation("androidx.wear.watchface:watchface-complications-data-source:1.2.1")
+    // Wear OS tile, for faces that take no third-party complication. Both
+    // declare minSdk 26, the floor the complication library already set.
+    implementation("androidx.wear.tiles:tiles:1.6.2")
+    implementation("androidx.wear.protolayout:protolayout-material3:1.4.2")
 
     testImplementation("junit:junit:4.13.2")
     // Supplies a real org.json and real resources: the android.jar on the unit
@@ -77,6 +81,9 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.13")
     // Dispatchers.setMain, so WearBridge's Main-dispatcher scope runs inline.
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    // Evaluates the tile's elapsed-time expression against a fixed clock, the
+    // way the watch's renderer does against its own.
+    testImplementation("androidx.wear.protolayout:protolayout-expression-pipeline:1.4.2")
 
     constraints {
         // Robolectric pulls Conscrypt in transitively, and the version it asks

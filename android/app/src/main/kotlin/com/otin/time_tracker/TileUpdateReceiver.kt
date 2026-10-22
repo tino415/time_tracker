@@ -13,6 +13,6 @@ import androidx.wear.tiles.TileService
 class TileUpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != CurrentStateCache.ACTION_CHANGED) return
-        TileService.getUpdater(context).requestUpdate(CurrentActivityTileService::class.java)
+        TileService.getUpdater(context.applicationContext).requestUpdate(CurrentActivityTileService::class.java)
     }
 }

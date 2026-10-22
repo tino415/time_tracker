@@ -34,5 +34,9 @@ volumes:
   node_modules: {}
   pub-cache: {}
   gradle: {}
-  android-user: {}
+  # The main checkout's own volume: a worktree signs with the same debug key,
+  # so its APKs install over the apps already on the devices.
+  android-user:
+    external: true
+    name: time_tracker_android-user
   npm-cache: {}

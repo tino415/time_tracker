@@ -1,0 +1,34 @@
+# compose.yaml without published ports, so a stack per worktree runs beside
+# the main checkout's without a bind clash. Keep the rest in step with it.
+services:
+  app:
+    build:
+      context: .local-install
+      dockerfile: Containerfile
+    image: localhost/time_tracker_app
+    working_dir: /workspace
+    command: ["sleep", "infinity"]
+    init: true
+    # The emulators are on the host's loopback (127.0.0.1:5555 wear,
+    # 127.0.0.1:5557 phone). pasta -T forwards those two ports from the
+    # container's loopback to the host's, so `adb connect 127.0.0.1:5555`
+    # works in here, against this container's own adb server; the host's
+    # server on 5037 is out of reach and cannot be replaced by this one.
+    network_mode: "pasta:-T,5555,-T,5557"
+    volumes:
+      - .:/workspace:Z
+      # Built for this image's libc, so it must not be shared with the host.
+      - node_modules:/workspace/node_modules
+      - pub-cache:/root/.pub-cache
+      - gradle:/root/.gradle
+      # Holds debug.keystore: a stable debug key keeps `adb install -r`
+      # upgrading the installed app instead of refusing a new signature.
+      - android-user:/root/.android
+      - npm-cache:/root/.npm
+
+volumes:
+  node_modules: {}
+  pub-cache: {}
+  gradle: {}
+  android-user: {}
+  npm-cache: {}

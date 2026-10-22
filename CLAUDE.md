@@ -18,3 +18,10 @@ README.md or here.
 - we branch features from main
 - when feature is done, it is going for pr
 - merged to main
+
+## Worktrees
+
+A dev stack started from a worktree uses `compose.worktree.yaml`, which
+publishes no ports, so it does not clash with the main checkout's stack:
+`podman compose -p <worktree dir> -f compose.worktree.yaml up -d`, and the same
+`-p` and `-f` for `down`.

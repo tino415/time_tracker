@@ -17,6 +17,10 @@ services:
     network_mode: "pasta:-T,5555,-T,5557"
     volumes:
       - .:/workspace:Z
+      # A worktree's .git is a file pointing into the main checkout's .git, by
+      # host path. Mounted at that same path, git works in here, and builds get
+      # a real BUILD_ID.
+      - ${GIT_COMMON_DIR:?set it as CLAUDE.md shows under Worktrees}:${GIT_COMMON_DIR}
       # Built for this image's libc, so it must not be shared with the host.
       - node_modules:/workspace/node_modules
       - pub-cache:/root/.pub-cache

@@ -81,6 +81,11 @@ Map<String, Duration> _asDurations(Map<String, int> micros) =>
   return (start: start, end: end);
 }
 
+/// How many weeks [day]'s local week lies from [now]'s: 0 for this week, -1 for
+/// last week.
+int localWeekOffset(DateTime day, DateTime now) =>
+    localWeekRange(day).start.difference(localWeekRange(now).start).inDays ~/ 7;
+
 /// The local day `[midnight, next midnight)` containing [day] — the week range's
 /// counterpart, for a report scoped to a single day.
 ({DateTime start, DateTime end}) localDayRange(DateTime day) {

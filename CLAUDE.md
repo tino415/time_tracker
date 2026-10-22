@@ -22,6 +22,10 @@ README.md or here.
 ## Worktrees
 
 A dev stack started from a worktree uses `compose.worktree.yaml`, which
-publishes no ports, so it does not clash with the main checkout's stack:
-`podman compose -p <worktree dir> -f compose.worktree.yaml up -d`, and the same
-`-p` and `-f` for `down`.
+publishes no ports, so it does not clash with the main checkout's stack, and
+mounts the main checkout's `.git` so git works inside it:
+
+    GIT_COMMON_DIR=$(git rev-parse --path-format=absolute --git-common-dir) \
+      podman compose -p <worktree dir> -f compose.worktree.yaml up -d
+
+and the same variable, `-p` and `-f` for `down`.

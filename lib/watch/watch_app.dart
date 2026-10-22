@@ -141,7 +141,7 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
       for (final a in activities)
         if (a.bookmarked) a,
     ];
-    final current = ref.watch(currentBlockProvider);
+    final current = ref.watch(latestBlockProvider);
     final currentId = current != null && current.activities.length == 1
         ? current.activities.first.syncId
         : null;

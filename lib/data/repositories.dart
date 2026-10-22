@@ -62,10 +62,16 @@ abstract class ActivityRepository {
   Future<void> ensurePeerActivity(WearActivity activity);
 }
 
+typedef CurrentChange = ({ActivityChange change, List<String> activityIds});
+
 /// The timeline: change events and their activity sets.
 abstract class ChangeRepository {
   /// Live non-tombstoned changes, newest first.
   Stream<List<ActivityChange>> watchChanges();
+
+  /// Fires after every write to the changes, without reading them back — for
+  /// listeners that only need to know that something changed.
+  Stream<void> changeWrites();
 
   /// One-shot read of the same rows, newest first. Edits that need a boundary's
   /// *neighbours* (moving one, merging into the previous block) read this rather
@@ -74,6 +80,10 @@ abstract class ChangeRepository {
 
   /// The current (latest) change — its set is what's tracking now.
   Future<ActivityChange?> currentChange();
+
+  /// Live [currentChange] with its activity ids, read without the rest of the
+  /// timeline.
+  Stream<CurrentChange?> watchCurrentChange();
 
   /// Switch (the normal live action): a new change at [at] (default now)
   /// replacing the whole active set with `{activityId}`.

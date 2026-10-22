@@ -183,7 +183,7 @@ class WearSyncService {
   }
 
   /// Phone side: re-send whenever the bookmarked set *or what is tracking*
-  /// changes. Driven off the same streams the UI uses, so there is no separate
+  /// changes. Driven off the same tables the UI watches, so there is no separate
   /// notion of "dirty".
   ///
   /// Both streams are needed. A switch does happen to touch the activity stream
@@ -192,7 +192,7 @@ class WearSyncService {
   List<StreamSubscription<Object?>> _watchCatalogue() {
     return [
       _activities.watchActivities().listen((_) => _pushSnapshot()),
-      _changes.watchChanges().listen((_) => _pushSnapshot()),
+      _changes.changeWrites().listen((_) => _pushSnapshot()),
       // Joining an account, and leaving one, are both things the watch has to
       // hear about — and neither touches the catalogue, so neither would reach
       // it on the streams above. Pushed unprompted so a watch that *is* present
@@ -211,7 +211,7 @@ class WearSyncService {
   List<StreamSubscription<Object?>> _cacheOwnCatalogue() {
     return [
       _activities.watchActivities().listen((_) => _cacheSnapshot()),
-      _changes.watchChanges().listen((_) => _cacheSnapshot()),
+      _changes.changeWrites().listen((_) => _cacheSnapshot()),
     ];
   }
 

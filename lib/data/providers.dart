@@ -43,6 +43,11 @@ final changesStreamProvider = StreamProvider<List<ActivityChange>>((ref) {
   return ref.watch(changeRepositoryProvider).watchChanges();
 });
 
+/// Live current change and its activity ids, without the rest of the timeline.
+final currentChangeStreamProvider = StreamProvider<CurrentChange?>((ref) {
+  return ref.watch(changeRepositoryProvider).watchCurrentChange();
+});
+
 /// Live m:n join rows (change id -> activity id) across all changes.
 final changeLinksStreamProvider = StreamProvider<List<ActivityChangeActivity>>((ref) {
   return ref.watch(changeRepositoryProvider).watchChangeActivityLinks();
@@ -82,4 +87,19 @@ final blocksProvider = Provider<List<Block>>((ref) {
 /// The current/open block (what's tracking now), or null on an empty timeline.
 final currentBlockProvider = Provider<Block?>((ref) {
   return currentBlock(ref.watch(blocksProvider));
+});
+
+/// The same block as [currentBlockProvider], derived from the current change
+/// alone, so its cost does not grow with the history. For the watch, which shows
+/// nothing else. The phone derives the whole timeline anyway, and reading the
+/// current block out of it keeps the two in step.
+final latestBlockProvider = Provider<Block?>((ref) {
+  final current = ref.watch(currentChangeStreamProvider).valueOrNull;
+  if (current == null) return null;
+  final blocks = deriveBlocks(
+    changes: [current.change],
+    activityIdsByChange: {current.change.syncId: current.activityIds},
+    activitiesById: ref.watch(activitiesByIdProvider),
+  );
+  return currentBlock(blocks);
 });

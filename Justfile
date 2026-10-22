@@ -130,21 +130,22 @@ deps:
     flutter pub get
 
 # --no-pub skips the implicit pub get — see `just deps`.
-[doc('Unit + widget tests — the whole suite under test/')]
+# TZ: a zone with DST, or the tests pinning a DST change run in UTC and skip.
+[doc('Unit + widget tests — the whole suite under test/, in Europe/Bratislava so DST cases run')]
 test:
-    flutter test --no-pub
+    TZ=Europe/Bratislava flutter test --no-pub
 
 # Takes any `flutter test` arguments — one or more files, or a name filter:
 #   just test-only test/calendar_test.dart
 #   just test-only --plain-name moveBoundary
 #   just test-only test/calendar_test.dart test/domain_test.dart
-[doc('A subset of the suite, for a tight edit/run loop — takes any flutter test args: files, --plain-name, --update-goldens')]
+[doc('A subset of the suite, for a tight edit/run loop — takes any flutter test args: files, --plain-name, --update-goldens; same TZ as test')]
 test-only +args:
-    flutter test --no-pub {{args}}
+    TZ=Europe/Bratislava flutter test --no-pub {{args}}
 
-[doc('The suite, printing only failures')]
+[doc('The suite, printing only failures; same TZ as test')]
 test-failures +args="test":
-    flutter test --no-pub --reporter=failures-only {{args}}
+    TZ=Europe/Bratislava flutter test --no-pub --reporter=failures-only {{args}}
 
 # The Kotlin under android/ is the Wear transport, the queue and cache it keeps
 # on disk, and the widget and complication surfaces — none of it reachable from
@@ -227,8 +228,11 @@ web-smoke port="4242": web
 # A different default port from `worker-dev` on purpose: run both at once and
 # the test would silently exercise the dev worker instead — its own database,
 # its own token, and a wall of failures that look like a broken Worker.
-[doc('Smoke-test the sync worker locally on :4245 — a different port from `worker-dev` on purpose; do not run both')]
-worker-smoke port="4245":
+#
+# Depends on `web` because wrangler.toml serves build/web as the Worker's
+# assets, and wrangler refuses to start when that directory is missing.
+[doc('Smoke-test the sync worker locally on :4245 — rebuilds `web` (wrangler will not start without build/web) and stops wrangler when done; do not run alongside `worker-dev`')]
+worker-smoke port="4245": web
     node tool/worker_smoke.mjs {{port}}
 
 # Apply the schema to a local D1. Safe to re-run — the schema is all

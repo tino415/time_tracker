@@ -79,6 +79,25 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('the undo offer for a same-activity switch gives the field back', (tester) async {
+    // Narrow enough for the tab bar, tall like a desktop window. The offer is a
+    // fixed snack bar, which the Scaffold lays over the bottom of the body —
+    // exactly where the phone band keeps the field.
+    await bootApp(tester, viewport: const Size(600, 900), seed: _sixMatching);
+    await _type(tester, 'Deep');
+    await tester.tap(inScreen(NowScreen, find.text('Deep focus')));
+    await settle(tester);
+    expect(find.text('new block · same activity'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 7));
+    await settle(tester);
+
+    expect(find.text('new block · same activity'), findsNothing);
+    expect(_field.hitTestable(), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('typing swaps the bookmarks for what it matched', (tester) async {
     // The shape, asserted directly: the matches and the hero are two states of
     // one region rather than two children stacked in a Column. This is the test

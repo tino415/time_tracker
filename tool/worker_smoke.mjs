@@ -20,6 +20,8 @@ const OTHER_TOKEN = 'smoke-test-token-bbbbbbbbbbbb';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const isServing = () => fetch(`${ORIGIN}/`).then(() => true).catch(() => false);
+
 const checks = [];
 function check(name, ok, detail = '') {
   checks.push({ name, ok });
@@ -63,8 +65,7 @@ console.log('schema applied to a fresh local D1');
 // a `just worker-dev` left running, most likely — wrangler cannot bind, every
 // request goes to *that* worker instead, and the whole suite fails against a
 // database and a token it does not own. It looks exactly like a broken Worker.
-const inUse = await fetch(`${ORIGIN}/`).then(() => true).catch(() => false);
-if (inUse) {
+if (await isServing()) {
   console.error(`port ${PORT} is already serving something — stop it, or pass a free port.`);
   process.exit(1);
 }
@@ -74,10 +75,18 @@ const server = spawn(
   // No --var: the Worker reads no token from its environment. TOKEN below is a
   // *client* credential, claimed through POST /account like any other.
   ['wrangler', 'dev', '--port', PORT, '--persist-to', STATE],
-  { cwd: 'worker', stdio: ['ignore', 'pipe', 'pipe'] },
+  { cwd: 'worker', stdio: ['ignore', 'pipe', 'pipe'], detached: true },
 );
 server.stdout.on('data', (d) => process.stdout.write(`[wrangler] ${d}`));
 server.stderr.on('data', (d) => process.stderr.write(`[wrangler] ${d}`));
+
+// npx is only the top of a tree — wrangler, then workerd, which holds the port.
+// Signalling npx alone leaves workerd behind, so the whole group goes, however
+// this script ends.
+const stopWrangler = () => { try { process.kill(-server.pid, 'SIGTERM'); } catch {} };
+process.on('exit', stopWrangler);
+process.on('SIGINT', () => process.exit(130));
+process.on('SIGTERM', () => process.exit(143));
 
 try {
   // Boot can take a while: workerd downloads nothing but does compile.
@@ -246,8 +255,17 @@ try {
     headers: { authorization: `Bearer ${TOKEN}` },
   })).status === 404);
 } finally {
-  server.kill('SIGTERM');
+  stopWrangler();
 }
+
+// The next run refuses a port that still answers, so a wrangler that outlives
+// this script fails it.
+let released = false;
+for (let i = 0; i < 20 && !released; i++) {
+  await sleep(500);
+  released = !(await isServing());
+}
+check('wrangler dev lets go of the port', released);
 
 const failed = checks.filter((c) => !c.ok);
 console.log(`\n${checks.length - failed.length}/${checks.length} checks passed`);

@@ -466,6 +466,27 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets('e b opens the block menu on the running block', (tester) async {
+    // The menu "⋯ EDIT BLOCK" opens, reached without finding the hero first.
+    await bootApp(tester, viewport: _desktop, seed: _seed);
+
+    await _edit(tester, PhysicalKeyboardKey.keyB, LogicalKeyboardKey.keyB);
+    expect(find.text('BLOCK'), findsOneWidget);
+    expect(find.text('EDIT START TIME'), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('e b on an empty timeline opens nothing', (tester) async {
+    await bootApp(tester, viewport: _desktop);
+
+    await _edit(tester, PhysicalKeyboardKey.keyB, LogicalKeyboardKey.keyB);
+    expect(find.text('BLOCK'), findsNothing);
+    expect(find.text('EDIT START TIME'), findsNothing);
+
+    await disposeApp(tester);
+  });
+
   testWidgets('e alone is inert, and visible while it waits', (tester) async {
     // The same contract `g` has, asserted separately rather than assumed: a
     // second prefix is where machinery written for one shows that it was.
@@ -491,16 +512,18 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('a and n do nothing without the prefix', (tester) async {
-    // Both letters rewrite something already recorded, which is the case the
-    // prefix exists for — a stray key must not reach either.
+  testWidgets('a, n and b do nothing without the prefix', (tester) async {
+    // Each letter rewrites something already recorded, which is the case the
+    // prefix exists for — a stray key must not reach any of them.
     await bootApp(tester, viewport: _desktop, seed: _seedPair);
 
     await _press(tester, PhysicalKeyboardKey.keyA, LogicalKeyboardKey.keyA);
     await _press(tester, PhysicalKeyboardKey.keyN, LogicalKeyboardKey.keyN);
+    await _press(tester, PhysicalKeyboardKey.keyB, LogicalKeyboardKey.keyB);
 
     expect(find.text('CHANGE TO'), findsNothing);
     expect(find.text('NOTE'), findsNothing);
+    expect(find.text('EDIT START TIME'), findsNothing);
 
     await disposeApp(tester);
   });

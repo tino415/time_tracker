@@ -4,5 +4,5 @@
 
 - [ ] Build debug APKs and run the device recipes in the dev container: its x86_64 SDK tools (aapt2, adb) don't run there yet #chore
 - [ ] `just worker-smoke` needs `build/web` (`just web`) and leaves `wrangler dev` holding port 4245 #bug
-- [ ] Reports: switching to week lands a week late across the spring DST change — `_setPeriod` divides whole days by 7, and a 6d23h gap truncates (1 April, 25 March selected, shows This week); round hours to weeks instead #bug
+- [ ] Calendar and Reports label yesterday "Today" on the day after the spring DST change: their `_dayLabel` floors a 23-hour `difference().inDays` to 0; the timeline already compares calendar dates #bug
 - [ ] Wear OS tile for the current activity: faces like Samsung's Simple Digital take no third-party complication (their line is a built-in candidate, their one androidx slot accepts no types) #feature

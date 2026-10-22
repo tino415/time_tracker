@@ -213,6 +213,22 @@ void main() {
     });
   });
 
+  group('localWeekOffset', () {
+    test('a day of this week is 0', () {
+      expect(localWeekOffset(DateTime(2026, 1, 5), DateTime(2026, 1, 11, 23)), 0);
+    });
+
+    test('a day of last week is -1', () {
+      expect(localWeekOffset(DateTime(2026, 1, 4), DateTime(2026, 1, 5)), -1);
+    });
+
+    test(
+      'the week before the spring DST change is still one week back',
+      () => expect(localWeekOffset(DateTime(2026, 3, 25), DateTime(2026, 4, 1)), -1),
+      skip: _observesSpringDst ? false : 'the test zone has no DST change on 29 March 2026',
+    );
+  });
+
   group('localMonthRange', () {
     test('runs from the 1st to the next 1st', () {
       final m = localMonthRange(DateTime(2026, 2, 17, 13, 45));
@@ -576,3 +592,6 @@ void main() {
     });
   });
 }
+
+final _observesSpringDst =
+    DateTime(2026, 3, 30).difference(DateTime(2026, 3, 29)) != const Duration(days: 1);

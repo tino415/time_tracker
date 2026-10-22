@@ -84,7 +84,14 @@ Map<String, Duration> _asDurations(Map<String, int> micros) =>
 /// How many weeks [day]'s local week lies from [now]'s: 0 for this week, -1 for
 /// last week.
 int localWeekOffset(DateTime day, DateTime now) =>
-    localWeekRange(day).start.difference(localWeekRange(now).start).inDays ~/ 7;
+    _calendarDaysBetween(localWeekRange(now).start, localWeekRange(day).start) ~/ 7;
+
+/// In UTC, where every day is 24 hours: a local week that spans the spring DST
+/// change is 6 days 23 hours, and `inDays` would floor it to 6.
+int _calendarDaysBetween(DateTime from, DateTime to) =>
+    _utcDate(to).difference(_utcDate(from)).inDays;
+
+DateTime _utcDate(DateTime local) => DateTime.utc(local.year, local.month, local.day);
 
 /// The local day `[midnight, next midnight)` containing [day] — the week range's
 /// counterpart, for a report scoped to a single day.

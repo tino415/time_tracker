@@ -8,10 +8,11 @@ ARG JUST_VERSION=1.58.0
 ARG CMDLINE_TOOLS_BUILD=13114758
 ARG PLATFORM_TOOLS_VERSION=35.0.2
 # What Flutter 3.38 and AGP 8.11 ask for: compileSdk 36, build-tools 35.0.0,
-# flutter.ndkVersion.
+# flutter.ndkVersion, and the CMake a release build installs otherwise.
 ARG ANDROID_PLATFORM=android-36
 ARG BUILD_TOOLS=35.0.0
 ARG NDK_VERSION=28.2.13676358
+ARG CMAKE_VERSION=3.22.1
 
 ENV FLUTTER_ROOT=/opt/flutter \
     ANDROID_HOME=/opt/android-sdk \
@@ -55,7 +56,7 @@ RUN mkdir -p "$ANDROID_HOME/cmdline-tools" \
  && unzip -q /tmp/platform-tools.zip -d "$ANDROID_HOME" \
  && rm /tmp/*.zip \
  && yes | sdkmanager --licenses >/dev/null \
- && sdkmanager --install "platforms;${ANDROID_PLATFORM}" "build-tools;${BUILD_TOOLS}" "ndk;${NDK_VERSION}" \
+ && sdkmanager --install "platforms;${ANDROID_PLATFORM}" "build-tools;${BUILD_TOOLS}" "ndk;${NDK_VERSION}" "cmake;${CMAKE_VERSION}" \
  && rm -rf /root/.android
 
 # Archives Flutter downloads carry uids the rootless user namespace cannot map.
@@ -65,6 +66,15 @@ RUN git clone --depth 1 --branch "${FLUTTER_VERSION}" https://github.com/flutter
  && dart --disable-analytics \
  && flutter precache --android --web --no-linux \
  && flutter --version
+
+# Release builds need the AOT compiler gen_snapshot, which Flutter ships only
+# for linux-x64 and looks for under linux-arm64 on this host. The x64 binary
+# runs through binfmt qemu like adb and aapt2.
+RUN for engine in android-arm-release android-arm64-release; do \
+      dir="$FLUTTER_ROOT/bin/cache/artifacts/engine/$engine"; \
+      mkdir -p "$dir/linux-arm64" \
+      && cp "$dir/linux-x64/gen_snapshot" "$dir/linux-arm64/gen_snapshot" || exit 1; \
+    done
 
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

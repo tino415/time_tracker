@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- run-as refuses a non-debuggable package, and `just sync-state` and
+         `just status` read the database through it. Set here rather than as
+         isDebuggable on the build type: the Flutter Gradle plugin builds a
+         debuggable build type in Flutter's debug mode, JIT instead of AOT. -->
+    <application
+        android:debuggable="true"
+        tools:ignore="HardcodedDebugMode" />
+</manifest>

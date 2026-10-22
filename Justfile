@@ -13,9 +13,11 @@
 #  * drift codegen needs --force-jit (plain build_runner hits a "dart compile
 #    does not support build hooks" error). Run `just gen` after changing the
 #    schema in lib/data/database.dart.
-#  * Every APK here is --debug. Release builds need a toolchain that can produce
-#    gen_snapshot for the target, which not every host has; debug is JIT and
-#    slower, but installs and runs fine on a device.
+#  * APKs are release builds unless the recipe ends in -debug. Release needs
+#    gen_snapshot for the host, which Flutter ships only for linux-x64; an
+#    aarch64 host runs that one through qemu, copied into the engine's
+#    linux-arm64 folder. Both build types sign with the same debug key and
+#    stay debuggable, so either installs over the other and run-as still works.
 
 # Reads .env from this directory if present, so the sync settings do not have to
 # be retyped on every build. It is gitignored: SYNC_TOKEN is the whole security
@@ -268,14 +270,22 @@ worker-dev port="4243":
 worker-deploy: web
     npx wrangler deploy --config worker/wrangler.toml
 
-[doc('Debug APK for a phone (arm64) into build/app/outputs/flutter-apk')]
+[doc("Release APK for a phone (arm64) into build/app/outputs/flutter-apk/app-release.apk — on an aarch64 host, needs Flutter's linux-x64 gen_snapshot copied into the release engines' linux-arm64 folders")]
 phone-apk:
+    flutter build apk --release --target-platform android-arm64 {{client_defines}}
+
+[doc('Debug APK for a phone (arm64) into build/app/outputs/flutter-apk/app-debug.apk — JIT, slower on the device, but builds on any host')]
+phone-apk-debug:
     flutter build apk --debug --target-platform android-arm64 {{client_defines}}
 
 # Fat 32+64: Wear devices are often armeabi-v7a, and an arm64-only APK will not
 # install on them.
-[doc('Debug APK for a watch (fat 32+64) — Wear devices are often armeabi-v7a; bakes in SYNC_URL like the phone, so the watch can reach the backend on its own once the phone hands it a token')]
+[doc('Release APK for a watch (fat 32+64) into build/app/outputs/flutter-apk/app-release.apk — Wear devices are often armeabi-v7a; bakes in SYNC_URL like the phone, so the watch can reach the backend on its own once the phone hands it a token; on an aarch64 host, needs the gen_snapshot copy phone-apk needs')]
 watch-apk:
+    flutter build apk --release --target-platform android-arm,android-arm64 {{client_defines}}
+
+[doc('Debug APK for a watch (fat 32+64) into build/app/outputs/flutter-apk/app-debug.apk — JIT, slower on the device, but builds on any host; bakes in SYNC_URL like watch-apk')]
+watch-apk-debug:
     flutter build apk --debug --target-platform android-arm,android-arm64 {{client_defines}}
 
 # `adb install -r` rather than `flutter install`. The latter uninstalls the old
@@ -290,12 +300,20 @@ _install device apk:
     @echo "→ installing to {{device}} ($(adb -s {{device}} shell getprop ro.product.model | tr -d '\r'))"
     adb -s {{device}} install -r {{apk}}
 
-[doc('Build and install on a phone — positional serial (`just deploy <serial>`); upgrades in place, keeping the database')]
+[doc('Build release and install on a phone — positional serial (`just deploy <serial>`); upgrades in place over a release or debug install, keeping the database')]
 deploy device: phone-apk
+    @just _install {{device}} build/app/outputs/flutter-apk/app-release.apk
+
+[doc('Build debug and install on a phone — positional serial; upgrades in place over a release or debug install, keeping the database')]
+deploy-debug device: phone-apk-debug
     @just _install {{device}} build/app/outputs/flutter-apk/app-debug.apk
 
-[doc('Build and install on a watch — positional serial; upgrades in place, keeping the database')]
+[doc('Build release and install on a watch — positional serial; upgrades in place over a release or debug install, keeping the database')]
 deploy-watch device: watch-apk
+    @just _install {{device}} build/app/outputs/flutter-apk/app-release.apk
+
+[doc('Build debug and install on a watch — positional serial; upgrades in place over a release or debug install, keeping the database')]
+deploy-watch-debug device: watch-apk-debug
     @just _install {{device}} build/app/outputs/flutter-apk/app-debug.apk
 
 # One device's view of sync, read straight from the app's own database.
@@ -307,9 +325,10 @@ deploy-watch device: watch-apk
 # has moved on is the signature of a pull that keeps failing — which is silent,
 # because a background sync's failures are deliberately inert.
 #
-# Needs a debug build: `run-as` is how a device without root lets anything read
-# app-private storage, and it refuses on a non-debuggable package.
-[doc("One device's sync state: backend, cursor and row counts — positional serial; needs a debug build and sqlite3")]
+# Needs a debuggable build, which release and debug both are: `run-as` is how a
+# device without root lets anything read app-private storage, and it refuses on
+# a non-debuggable package.
+[doc("One device's sync state: backend, cursor and row counts — positional serial; needs a debuggable build (release and debug both are) and sqlite3")]
 sync-state device:
     @just _sync_state {{device}} ''
 
@@ -325,7 +344,7 @@ _sync_state device indent='':
     # Checked by magic, not by size: `run-as` reports its own failures on stdout
     # through exec-out, so a refusal arrives as a perfectly non-empty file.
     if [ "$(head -c 15 "$db" 2>/dev/null)" != "SQLite format 3" ]; then
-        printf '{{indent}}no database — app not installed, never opened, or not a debug build\n'; exit 0
+        printf '{{indent}}no database — app not installed, never opened, or not debuggable\n'; exit 0
     fi
     q() { sqlite3 "$db" "$1" 2>/dev/null; }
     # Spelled out rather than left blank: an empty field reads as "the tool

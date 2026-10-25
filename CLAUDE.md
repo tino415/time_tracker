@@ -32,5 +32,6 @@ and the same variable, `-p` and `-f` for `down`.
 
 ## Backlog
 
-The backlog is the board at Projects/TimeTracker/TODO: in the outliner, not
-TODO.md. Read and add cards with the `outline` CLI.
+The backlog is the board at Projects/TimeTracker/TODO: in the outliner. Read
+and add cards with the `outline` CLI. The reasons are in
+doc/adr/0001-the-backlog-lives-in-the-outliner.md.

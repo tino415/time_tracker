@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/database.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
+import '../../domain/activity_search.dart';
 import '../../domain/task_paste.dart';
 import '../../format.dart';
 import '../../theme/tokens.dart';
@@ -52,6 +53,7 @@ class _EditorSheet extends ConsumerStatefulWidget {
 
 class _EditorSheetState extends ConsumerState<_EditorSheet> {
   late final TextEditingController _name;
+  late final TextEditingController _aliases;
   final _nameFocus = FocusNode();
   String? _parentId;
   String? _externalId;
@@ -67,6 +69,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
     super.initState();
     final e = widget.existing;
     _name = TextEditingController(text: e?.name ?? widget.initialName ?? '');
+    _aliases = TextEditingController(text: e?.aliases ?? '');
     _parentId = e?.parentId ?? widget.presetParentId;
     _externalId = e?.externalId;
     _bookmarked = e?.bookmarked ?? false;
@@ -81,6 +84,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
   @override
   void dispose() {
     _name.dispose();
+    _aliases.dispose();
     _nameFocus.dispose();
     super.dispose();
   }
@@ -148,6 +152,8 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
       final e = widget.existing!;
       if (name != e.name) await repo.renameActivity(e.syncId, name);
       if (colorHex != e.color.toUpperCase()) await repo.setColor(e.syncId, colorHex);
+      final aliases = formatAliases(parseAliases(_aliases.text));
+      if (aliases != e.aliases) await repo.setAliases(e.syncId, aliases);
       if (_bookmarked != e.bookmarked) await repo.setBookmarked(e.syncId, _bookmarked);
       if (_parentId != e.parentId) await repo.setParent(e.syncId, _parentId);
       result = (await repo.loadActivities()).firstWhere(
@@ -161,6 +167,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
         parentId: _parentId,
         bookmarked: _bookmarked,
         externalId: _externalId,
+        aliases: formatAliases(parseAliases(_aliases.text)),
       );
       if (widget.switchToOnCreate) {
         await ref.read(trackerControllerProvider).switchTo(result.syncId);
@@ -222,6 +229,11 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                   ],
                 ),
               ],
+              const SizedBox(height: 8),
+              _Field(
+                controller: _aliases,
+                hint: 'aliases, comma-separated (Learning, Vzdelávanie)',
+              ),
               const SizedBox(height: 14),
               Text(
                 'COLOUR',

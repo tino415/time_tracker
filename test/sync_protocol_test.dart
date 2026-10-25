@@ -67,6 +67,7 @@ void main() {
         bookmarked: true,
         lastUsedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
         externalId: 'CU-1042',
+        aliases: 'Focus, Deep',
         version: 7,
         deletedAt: DateTime.fromMillisecondsSinceEpoch(1770000009999),
       );
@@ -82,6 +83,7 @@ void main() {
       expect(decoded.bookmarked, isTrue);
       expect(decoded.lastUsedAt, dto.lastUsedAt);
       expect(decoded.externalId, 'CU-1042');
+      expect(decoded.aliases, 'Focus, Deep');
       expect(decoded.version, 7);
       expect(decoded.deletedAt, dto.deletedAt);
     });

@@ -20,11 +20,13 @@ abstract class ActivityRepository {
     String? parentId,
     bool bookmarked = false,
     String? externalId,
+    String aliases = '',
   });
 
   Future<void> renameActivity(String id, String name);
   Future<void> setColor(String id, String color);
   Future<void> setBookmarked(String id, bool bookmarked);
+  Future<void> setAliases(String id, String aliases);
 
   /// Re-parent an activity ([parentId] null moves it to the top level). A move
   /// that would create a cycle (onto itself or into its own subtree) is refused

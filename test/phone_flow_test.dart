@@ -79,7 +79,7 @@ void main() {
     await tester.tap(inScreen(NowScreen, find.text('+ NEW ACTIVITY')));
     await settle(tester);
     // Bookmark it so it lands in the quick-switch grid.
-    await tester.enterText(find.byType(TextField).last, 'Deep work');
+    await tester.enterText(editorNameField, 'Deep work');
     await tester.pump();
     await tester.tap(find.textContaining('bookmark (quick-switch'));
     await tester.pump();
@@ -109,7 +109,7 @@ void main() {
 
     await tester.tap(inScreen(NowScreen, find.text('+ NEW ACTIVITY')));
     await settle(tester);
-    await tester.enterText(find.byType(TextField).last, 'Deep work');
+    await tester.enterText(editorNameField, 'Deep work');
     await tester.pump();
     await tester.tap(find.text('CREATE & SWITCH'));
     await settle(tester);
@@ -119,7 +119,7 @@ void main() {
     await openTab(tester, 'ACTIVITIES');
     await tester.tap(inScreen(ActivitiesScreen, find.text('+ NEW ACTIVITY')));
     await settle(tester);
-    await tester.enterText(find.byType(TextField).last, 'Email');
+    await tester.enterText(editorNameField, 'Email');
     await tester.pump();
     await tester.tap(find.textContaining('bookmark (quick-switch'));
     await tester.pump();

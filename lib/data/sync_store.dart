@@ -259,6 +259,7 @@ class SyncStore {
               bookmarked: Value(dto.bookmarked),
               lastUsedAt: Value(dto.lastUsedAt),
               externalId: Value(dto.externalId),
+              aliases: Value(dto.aliases),
               version: Value(dto.version),
               deletedAt: Value(dto.deletedAt),
               dirty: const Value(false),
@@ -338,6 +339,7 @@ class SyncStore {
     bookmarked: r.bookmarked,
     lastUsedAt: r.lastUsedAt,
     externalId: r.externalId,
+    aliases: r.aliases,
     version: r.version,
     deletedAt: r.deletedAt,
   );

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/database.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
+import '../../domain/activity_search.dart';
 import '../../domain/block.dart';
 import '../../domain/unsorted.dart';
 import '../../format.dart';
@@ -86,8 +87,7 @@ class _AssignSheetState extends ConsumerState<_AssignSheet> {
           // Already on the block — tagging it again would do nothing.
           if (widget.exclude.contains(a.syncId)) return false;
           if (q.isEmpty) return true;
-          return a.name.toLowerCase().contains(q) ||
-              (a.externalId?.toLowerCase().contains(q) ?? false);
+          return activityMatchesQuery(a, q);
         }).toList()..sort((a, b) {
           final la = a.lastUsedAt, lb = b.lastUsedAt;
           if (la != null && lb != null) return lb.compareTo(la);

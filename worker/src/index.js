@@ -133,8 +133,8 @@ async function handleSync(request, env, account) {
     }
     await env.DB.prepare(
       `INSERT INTO activities
-         (account_id, sync_id, parent_id, name, color, bookmarked, last_used_at, external_id, version, deleted_at, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (account_id, sync_id, parent_id, name, color, bookmarked, last_used_at, external_id, aliases, version, deleted_at, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(account_id, sync_id) DO UPDATE SET
          parent_id = excluded.parent_id,
          name = excluded.name,
@@ -142,6 +142,7 @@ async function handleSync(request, env, account) {
          bookmarked = excluded.bookmarked,
          last_used_at = excluded.last_used_at,
          external_id = excluded.external_id,
+         aliases = excluded.aliases,
          version = excluded.version,
          deleted_at = excluded.deleted_at,
          seq = excluded.seq`,
@@ -155,6 +156,7 @@ async function handleSync(request, env, account) {
         dto.bookmarked ? 1 : 0,
         dto.lastUsedAt ?? null,
         dto.externalId ?? null,
+        typeof dto.aliases === 'string' ? dto.aliases : '',
         dto.version,
         dto.deletedAt ?? null,
         seq++,
@@ -283,6 +285,7 @@ function activityToDto(row) {
     bookmarked: row.bookmarked === 1,
     lastUsedAt: row.last_used_at,
     externalId: row.external_id,
+    aliases: row.aliases ?? '',
     version: row.version,
     deletedAt: row.deleted_at,
   };

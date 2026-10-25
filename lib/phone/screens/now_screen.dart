@@ -5,6 +5,7 @@ import '../../data/database.dart';
 import '../../data/pointer_signal.dart';
 import '../../data/providers.dart';
 import '../../data/tracker_controller.dart';
+import '../../domain/activity_search.dart';
 import '../../domain/block.dart';
 import '../../domain/reporting.dart';
 import '../../domain/unsorted.dart';
@@ -307,8 +308,7 @@ List<Activity> matchingActivities(List<Activity> all, String query) {
   if (q.isEmpty) return const [];
   final matches =
       all.where((a) {
-        return a.name.toLowerCase().contains(q) ||
-            (a.externalId?.toLowerCase().contains(q) ?? false);
+        return activityMatchesQuery(a, q);
       }).toList()..sort((a, b) {
         final la = a.lastUsedAt, lb = b.lastUsedAt;
         if (la != null && lb != null) return lb.compareTo(la);

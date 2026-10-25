@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/format.dart';
 import 'package:time_tracker/phone/screens/timeline_screen.dart';
 
 import 'support/flow_harness.dart';
@@ -25,6 +26,13 @@ Future<void> _sleepAcrossMidnight(AppDatabase db) async {
   await changes.switchTo(work.syncId, at: DateTime(now.year, now.month, now.day, 7, 10));
 }
 
+String _sleepSinceMidnightToday() {
+  final now = DateTime.now();
+  final midnight = DateTime(now.year, now.month, now.day);
+  final wakeUp = DateTime(now.year, now.month, now.day, 7, 10);
+  return formatSpan(wakeUp.difference(midnight));
+}
+
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +48,7 @@ void main() {
     expect(inScreen(TimelineScreen, find.text('23:00 – 00:00')), findsOneWidget);
     expect(inScreen(TimelineScreen, find.text('00:00 – 07:10')), findsOneWidget);
     expect(inScreen(TimelineScreen, find.text('1h 00m')), findsOneWidget);
-    expect(inScreen(TimelineScreen, find.text('7h 10m')), findsOneWidget);
+    expect(inScreen(TimelineScreen, find.text(_sleepSinceMidnightToday())), findsOneWidget);
 
     // Both day groups exist; the open block sits under today.
     expect(inScreen(TimelineScreen, find.text('TODAY')), findsOneWidget);

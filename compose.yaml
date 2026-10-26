@@ -13,6 +13,10 @@ services:
     # works in here, against this container's own adb server; the host's
     # server on 5037 is out of reach and cannot be replaced by this one.
     network_mode: "pasta:-T,5555,-T,5557"
+    environment:
+      # Without it adb also scans local 5555-5585 for emulators, and each
+      # forwarded port shows up a second time as emulator-5554 / emulator-5556.
+      ADB_EMU: "0"
     # `just up` and `just worker-dev`.
     # worker-smoke's 4245 stays inside on purpose.
     ports:

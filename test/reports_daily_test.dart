@@ -69,6 +69,14 @@ Future<void> _seedLastWeekend(AppDatabase db) async {
   await changes.switchTo(work.syncId, at: _lastWeek(DateTime.sunday, 1));
 }
 
+/// Work's week total under [_seedLastWeekend]: 25h, or 24h and 26h when last
+/// Sunday was a DST change and lasted 23h or 25h.
+String get _lastWeekWork {
+  final saturday = _lastWeek(DateTime.saturday, 22).difference(_lastWeek(DateTime.saturday, 20));
+  final sunday = _thisMonday.difference(_lastWeek(DateTime.sunday, 1));
+  return '${(saturday + sunday).inHours}h 00m';
+}
+
 /// The report, stepped back to the seeded week.
 Future<void> _openLastWeek(WidgetTester tester) async {
   await bootApp(tester, viewport: _tallPhone, seed: _seedLastWeekend);
@@ -191,8 +199,8 @@ void main() {
 
   testWidgets('day mode re-scopes the categories to a single day', (tester) async {
     await _openLastWeek(tester);
-    // The week: 25h of Work against 3h of Break.
-    expect(inScreen(ReportsScreen, find.text('25h 00m')), findsOneWidget);
+    // The week: all of its Work against 3h of Break.
+    expect(inScreen(ReportsScreen, find.text(_lastWeekWork)), findsOneWidget);
 
     await _toggleToDay(tester);
     // Landed on last week's Monday — the week being viewed, carried across —
@@ -209,7 +217,7 @@ void main() {
     expect(inScreen(ReportsScreen, find.text(_dayLabel(saturday))), findsOneWidget);
     // Saturday alone: two hours each of Work and Break.
     expect(inScreen(ReportsScreen, find.text('2h 00m')), findsNWidgets(2));
-    expect(inScreen(ReportsScreen, find.text('25h 00m')), findsNothing);
+    expect(inScreen(ReportsScreen, find.text(_lastWeekWork)), findsNothing);
 
     await disposeApp(tester);
   });

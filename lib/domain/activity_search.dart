@@ -1,11 +1,10 @@
 import '../data/database.dart';
 
-List<String> parseAliases(String raw) => [
-  for (final part in raw.split(','))
-    if (part.trim().isNotEmpty) part.trim(),
-];
-
-String formatAliases(List<String> aliases) => aliases.join(', ');
+List<String> withAlias(List<String> aliases, String typed) {
+  final alias = typed.trim();
+  if (alias.isEmpty || aliases.contains(alias)) return aliases;
+  return [...aliases, alias];
+}
 
 bool activityMatchesQuery(Activity a, String query) {
   final q = query.trim().toLowerCase();

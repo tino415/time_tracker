@@ -541,9 +541,10 @@ void main() {
       expect(activityMatchesQuery(learning, 'cooking'), isFalse);
     });
 
-    test('aliases are split on commas and trimmed', () {
-      expect(parseAliases(' a ,, b,'), ['a', 'b']);
-      expect(formatAliases(['a', 'b']), 'a, b');
+    test('adding an alias trims it, skips blanks and duplicates', () {
+      expect(withAlias(['a'], '  b, c '), ['a', 'b, c']);
+      expect(withAlias(['a'], '   '), ['a']);
+      expect(withAlias(['a'], 'a'), ['a']);
     });
   });
 

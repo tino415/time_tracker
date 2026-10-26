@@ -53,7 +53,9 @@ class _EditorSheet extends ConsumerStatefulWidget {
 
 class _EditorSheetState extends ConsumerState<_EditorSheet> {
   late final TextEditingController _name;
-  late final TextEditingController _aliases;
+  final _aliasInput = TextEditingController();
+  final _aliasFocus = FocusNode();
+  List<String> _aliases = const [];
   final _nameFocus = FocusNode();
   String? _parentId;
   String? _externalId;
@@ -69,7 +71,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
     super.initState();
     final e = widget.existing;
     _name = TextEditingController(text: e?.name ?? widget.initialName ?? '');
-    _aliases = TextEditingController(text: formatAliases(e?.aliases ?? const []));
+    _aliases = e?.aliases ?? const [];
     _parentId = e?.parentId ?? widget.presetParentId;
     _externalId = e?.externalId;
     _bookmarked = e?.bookmarked ?? false;
@@ -81,10 +83,30 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
     }
   }
 
+  List<String> get _aliasesToSave => withAlias(_aliases, _aliasInput.text);
+
+  void _addAlias() {
+    final next = withAlias(_aliases, _aliasInput.text);
+    setState(() => _aliases = next);
+    _aliasInput.clear();
+    _aliasFocus.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _aliasFocus.requestFocus());
+  }
+
+  void _removeAlias(String alias) => _keepTyping(
+    () => setState(
+      () => _aliases = [
+        for (final a in _aliases)
+          if (a != alias) a,
+      ],
+    ),
+  );
+
   @override
   void dispose() {
     _name.dispose();
-    _aliases.dispose();
+    _aliasInput.dispose();
+    _aliasFocus.dispose();
     _nameFocus.dispose();
     super.dispose();
   }
@@ -152,7 +174,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
       final e = widget.existing!;
       if (name != e.name) await repo.renameActivity(e.syncId, name);
       if (colorHex != e.color.toUpperCase()) await repo.setColor(e.syncId, colorHex);
-      final aliases = parseAliases(_aliases.text);
+      final aliases = _aliasesToSave;
       if (!listEquals(aliases, e.aliases)) await repo.setAliases(e.syncId, aliases);
       if (_bookmarked != e.bookmarked) await repo.setBookmarked(e.syncId, _bookmarked);
       if (_parentId != e.parentId) await repo.setParent(e.syncId, _parentId);
@@ -167,7 +189,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
         parentId: _parentId,
         bookmarked: _bookmarked,
         externalId: _externalId,
-        aliases: parseAliases(_aliases.text),
+        aliases: _aliasesToSave,
       );
       if (widget.switchToOnCreate) {
         await ref.read(trackerControllerProvider).switchTo(result.syncId);
@@ -230,9 +252,24 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
                 ),
               ],
               const SizedBox(height: 8),
+              if (_aliases.isNotEmpty) ...[
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final alias in _aliases)
+                      _AliasChip(alias: alias, onRemove: () => _removeAlias(alias)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               _Field(
-                controller: _aliases,
-                hint: 'aliases, comma-separated (Learning, Vzdelávanie)',
+                key: const ValueKey('alias-field'),
+                controller: _aliasInput,
+                focusNode: _aliasFocus,
+                hint: 'add an alias',
+                onSubmitted: _addAlias,
+                trailing: _AddAliasButton(onTap: _addAlias),
               ),
               const SizedBox(height: 14),
               Text(
@@ -303,10 +340,13 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
 
 class _Field extends StatelessWidget {
   const _Field({
+    super.key,
     required this.controller,
     required this.hint,
     this.focusNode,
     this.autofocus = false,
+    this.onSubmitted,
+    this.trailing,
   });
   final TextEditingController controller;
   final String hint;
@@ -315,6 +355,8 @@ class _Field extends StatelessWidget {
   /// elsewhere in the form — see `_EditorSheetState._keepTyping`.
   final FocusNode? focusNode;
   final bool autofocus;
+  final VoidCallback? onSubmitted;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -324,17 +366,25 @@ class _Field extends StatelessWidget {
         color: t.surface,
         border: Border.all(color: t.line, width: 3),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        autofocus: autofocus,
-        style: mono(context, weight: FontWeight.w700),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          hintText: hint,
-          hintStyle: mono(context, color: t.muted),
-        ),
+      padding: const EdgeInsets.only(left: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              autofocus: autofocus,
+              onSubmitted: onSubmitted == null ? null : (_) => onSubmitted!(),
+              style: mono(context, weight: FontWeight.w700),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: hint,
+                hintStyle: mono(context, color: t.muted),
+              ),
+            ),
+          ),
+          ?trailing,
+        ],
       ),
     );
   }
@@ -412,6 +462,80 @@ class _BookmarkToggle extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AliasChip extends StatelessWidget {
+  const _AliasChip({required this.alias, required this.onRemove});
+
+  final String alias;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    return Container(
+      padding: const EdgeInsets.only(left: 10),
+      decoration: BoxDecoration(
+        color: t.surface,
+        border: Border.all(color: t.line, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(alias, style: mono(context, size: 12, weight: FontWeight.w700)),
+          Semantics(
+            button: true,
+            label: 'remove alias $alias',
+            child: ExcludeFocus(
+              child: GestureDetector(
+                key: ValueKey('remove-alias-$alias'),
+                behavior: HitTestBehavior.opaque,
+                onTap: onRemove,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Text('✕', style: mono(context, size: 12, color: t.muted)),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddAliasButton extends StatelessWidget {
+  const _AddAliasButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = neo(context);
+    return Semantics(
+      button: true,
+      label: 'add alias',
+      child: ExcludeFocus(
+        child: GestureDetector(
+          key: const ValueKey('add-alias'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: t.line, width: 3)),
+            ),
+            child: Text(
+              '+',
+              style: mono(context, size: 22, weight: FontWeight.w800, color: t.brand),
+            ),
+          ),
+        ),
       ),
     );
   }

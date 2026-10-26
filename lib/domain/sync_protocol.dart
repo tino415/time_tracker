@@ -67,7 +67,7 @@ class ActivityDto {
     this.bookmarked = false,
     this.lastUsedAt,
     this.externalId,
-    this.aliases = '',
+    this.aliases = const [],
     this.deletedAt,
   });
 
@@ -78,7 +78,7 @@ class ActivityDto {
   final bool bookmarked;
   final DateTime? lastUsedAt;
   final String? externalId;
-  final String aliases;
+  final List<String> aliases;
   final int version;
   final DateTime? deletedAt;
 
@@ -111,7 +111,12 @@ class ActivityDto {
       bookmarked: raw['bookmarked'] == true,
       lastUsedAt: _millis(raw['lastUsedAt']),
       externalId: raw['externalId'] is String ? raw['externalId'] as String : null,
-      aliases: raw['aliases'] is String ? raw['aliases'] as String : '',
+      aliases: raw['aliases'] is List
+          ? [
+              for (final a in raw['aliases'] as List)
+                if (a is String) a,
+            ]
+          : const [],
       version: version,
       deletedAt: _millis(raw['deletedAt']),
     );

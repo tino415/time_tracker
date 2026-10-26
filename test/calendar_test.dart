@@ -12,7 +12,7 @@ Activity act(String id, String name) => Activity(
   name: name,
   color: '#4F8FEE',
   bookmarked: false,
-  aliases: '',
+  aliases: const [],
   version: 1,
   dirty: false,
 );

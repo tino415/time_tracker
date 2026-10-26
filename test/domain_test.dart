@@ -18,7 +18,7 @@ Activity act(
   String name, {
   String? parent,
   String color = '#4F8FEE',
-  String aliases = '',
+  List<String> aliases = const [],
 }) => Activity(
   syncId: id,
   parentId: parent,
@@ -529,7 +529,7 @@ void main() {
   });
 
   group('activity search', () {
-    final learning = act('l', 'Učenie sa', aliases: 'Learning, Vzdelávanie');
+    final learning = act('l', 'Učenie sa', aliases: ['Learning', 'Vzdelávanie']);
 
     test('an alias finds the activity', () {
       expect(activityMatchesQuery(learning, 'learn'), isTrue);

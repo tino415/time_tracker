@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -69,7 +69,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
     super.initState();
     final e = widget.existing;
     _name = TextEditingController(text: e?.name ?? widget.initialName ?? '');
-    _aliases = TextEditingController(text: e?.aliases ?? '');
+    _aliases = TextEditingController(text: formatAliases(e?.aliases ?? const []));
     _parentId = e?.parentId ?? widget.presetParentId;
     _externalId = e?.externalId;
     _bookmarked = e?.bookmarked ?? false;
@@ -152,8 +152,8 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
       final e = widget.existing!;
       if (name != e.name) await repo.renameActivity(e.syncId, name);
       if (colorHex != e.color.toUpperCase()) await repo.setColor(e.syncId, colorHex);
-      final aliases = formatAliases(parseAliases(_aliases.text));
-      if (aliases != e.aliases) await repo.setAliases(e.syncId, aliases);
+      final aliases = parseAliases(_aliases.text);
+      if (!listEquals(aliases, e.aliases)) await repo.setAliases(e.syncId, aliases);
       if (_bookmarked != e.bookmarked) await repo.setBookmarked(e.syncId, _bookmarked);
       if (_parentId != e.parentId) await repo.setParent(e.syncId, _parentId);
       result = (await repo.loadActivities()).firstWhere(
@@ -167,7 +167,7 @@ class _EditorSheetState extends ConsumerState<_EditorSheet> {
         parentId: _parentId,
         bookmarked: _bookmarked,
         externalId: _externalId,
-        aliases: formatAliases(parseAliases(_aliases.text)),
+        aliases: parseAliases(_aliases.text),
       );
       if (widget.switchToOnCreate) {
         await ref.read(trackerControllerProvider).switchTo(result.syncId);

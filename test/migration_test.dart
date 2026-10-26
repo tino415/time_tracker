@@ -134,6 +134,6 @@ void main() {
     final db = AppDatabase.forTesting(NativeDatabase(_writeV1(dir, DateTime(2026, 1, 5, 9))));
     addTearDown(db.close);
 
-    expect((await db.select(db.activities).getSingle()).aliases, '');
+    expect((await db.select(db.activities).getSingle()).aliases, isEmpty);
   });
 }

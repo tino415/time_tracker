@@ -156,7 +156,7 @@ async function handleSync(request, env, account) {
         dto.bookmarked ? 1 : 0,
         dto.lastUsedAt ?? null,
         dto.externalId ?? null,
-        typeof dto.aliases === 'string' ? dto.aliases : null,
+        Array.isArray(dto.aliases) ? JSON.stringify(dto.aliases) : null,
         dto.version,
         dto.deletedAt ?? null,
         seq++,
@@ -285,7 +285,7 @@ function activityToDto(row) {
     bookmarked: row.bookmarked === 1,
     lastUsedAt: row.last_used_at,
     externalId: row.external_id,
-    aliases: row.aliases ?? '',
+    aliases: parseAliases(row.aliases),
     version: row.version,
     deletedAt: row.deleted_at,
   };
@@ -373,4 +373,13 @@ function json(body, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
   });
+}
+
+function parseAliases(stored) {
+  try {
+    const parsed = JSON.parse(stored || '[]');
+    return Array.isArray(parsed) ? parsed.filter((a) => typeof a === 'string') : [];
+  } catch {
+    return [];
+  }
 }

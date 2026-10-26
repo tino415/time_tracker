@@ -37,7 +37,7 @@ class DriftActivityRepository implements ActivityRepository {
     String? parentId,
     bool bookmarked = false,
     String? externalId,
-    String aliases = '',
+    List<String> aliases = const [],
   }) async {
     final row = ActivitiesCompanion.insert(
       syncId: _uuid.v4(),
@@ -64,7 +64,7 @@ class DriftActivityRepository implements ActivityRepository {
       _bump(id, ActivitiesCompanion(bookmarked: Value(bookmarked)));
 
   @override
-  Future<void> setAliases(String id, String aliases) =>
+  Future<void> setAliases(String id, List<String> aliases) =>
       _bump(id, ActivitiesCompanion(aliases: Value(aliases)));
 
   @override

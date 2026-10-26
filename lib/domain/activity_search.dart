@@ -12,5 +12,5 @@ bool activityMatchesQuery(Activity a, String query) {
   if (q.isEmpty) return true;
   return a.name.toLowerCase().contains(q) ||
       (a.externalId?.toLowerCase().contains(q) ?? false) ||
-      parseAliases(a.aliases).any((alias) => alias.toLowerCase().contains(q));
+      a.aliases.any((alias) => alias.toLowerCase().contains(q));
 }

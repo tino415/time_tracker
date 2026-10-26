@@ -96,10 +96,11 @@ Future<void> disposeApp(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 50));
 }
 
-/// Fills the activity-editor sheet (the last text field in the tree is the one
-/// in the freshly pushed sheet) and confirms it.
+final editorNameField = find.widgetWithText(TextField, 'name (paste CU-1234 Title…)').last;
+
+/// Fills the activity-editor sheet's name field and confirms it.
 Future<void> fillEditor(WidgetTester tester, String name, {required String confirm}) async {
-  await tester.enterText(find.byType(TextField).last, name);
+  await tester.enterText(editorNameField, name);
   await tester.pump();
   await tester.tap(find.text(confirm));
   await settle(tester);

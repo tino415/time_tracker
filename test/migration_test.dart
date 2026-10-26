@@ -8,6 +8,7 @@
 //             sync_meta table holding the server cursor.
 //   v3 -> v4  the wear_outbox table, holding relay messages the peer was not
 //             there to receive.
+//   v4 -> v5  activities.aliases, the extra words an activity is searched by.
 
 import 'dart:io';
 
@@ -127,5 +128,12 @@ void main() {
     // survive the migration would only show up on the first parked message.
     await db.into(db.wearOutbox).insert(WearOutboxCompanion.insert(type: 'switch', payload: '{}'));
     expect((await db.select(db.wearOutbox).getSingle()).id, isPositive);
+  });
+
+  test('v4 -> v5 gives existing activities no aliases', () async {
+    final db = AppDatabase.forTesting(NativeDatabase(_writeV1(dir, DateTime(2026, 1, 5, 9))));
+    addTearDown(db.close);
+
+    expect((await db.select(db.activities).getSingle()).aliases, isEmpty);
   });
 }

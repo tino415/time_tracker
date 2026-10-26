@@ -7,8 +7,15 @@ import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/domain/block.dart';
 import 'package:time_tracker/domain/calendar.dart';
 
-Activity act(String id, String name) =>
-    Activity(syncId: id, name: name, color: '#4F8FEE', bookmarked: false, version: 1, dirty: false);
+Activity act(String id, String name) => Activity(
+  syncId: id,
+  name: name,
+  color: '#4F8FEE',
+  bookmarked: false,
+  aliases: const [],
+  version: 1,
+  dirty: false,
+);
 
 ActivityChange chg(String id, DateTime at) =>
     ActivityChange(syncId: id, changedAt: at, version: 1, dirty: false);

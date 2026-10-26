@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
@@ -35,6 +37,10 @@ class Activities extends Table {
 
   /// Optional pasted work-tracker id (e.g. `CU-1042`) for a leaf task.
   TextColumn get externalId => text().nullable()();
+
+  /// Other words the activity is searched by.
+  TextColumn get aliases =>
+      text().map(const AliasListConverter()).withDefault(const Constant('[]'))();
 
   IntColumn get version => integer().withDefault(const Constant(1))();
 
@@ -79,6 +85,16 @@ class EpochMillisConverter extends TypeConverter<DateTime, int> {
 
   @override
   int toSql(DateTime value) => value.millisecondsSinceEpoch;
+}
+
+class AliasListConverter extends TypeConverter<List<String>, String> {
+  const AliasListConverter();
+
+  @override
+  List<String> fromSql(String fromDb) => List<String>.from(jsonDecode(fromDb) as List);
+
+  @override
+  String toSql(List<String> value) => jsonEncode(value);
 }
 
 /// A switch event — one boundary on the timeline. The block that starts here
@@ -146,7 +162,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -170,6 +186,9 @@ class AppDatabase extends _$AppDatabase {
         // there is nothing to backfill. Anything the watch failed to relay
         // before this upgrade was already dropped and cannot be recovered.
         await m.createTable(wearOutbox);
+      }
+      if (from < 5) {
+        await m.addColumn(activities, activities.aliases);
       }
     },
     beforeOpen: (details) async {

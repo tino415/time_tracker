@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS activities (
   bookmarked   INTEGER NOT NULL DEFAULT 0,
   last_used_at INTEGER,
   external_id  TEXT,
+  aliases      TEXT,
   version      INTEGER NOT NULL,
   deleted_at   INTEGER,
   seq          INTEGER NOT NULL,

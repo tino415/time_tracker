@@ -133,8 +133,8 @@ async function handleSync(request, env, account) {
     }
     await env.DB.prepare(
       `INSERT INTO activities
-         (account_id, sync_id, parent_id, name, color, bookmarked, last_used_at, external_id, version, deleted_at, seq)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (account_id, sync_id, parent_id, name, color, bookmarked, last_used_at, external_id, aliases, version, deleted_at, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(account_id, sync_id) DO UPDATE SET
          parent_id = excluded.parent_id,
          name = excluded.name,
@@ -142,6 +142,7 @@ async function handleSync(request, env, account) {
          bookmarked = excluded.bookmarked,
          last_used_at = excluded.last_used_at,
          external_id = excluded.external_id,
+         aliases = COALESCE(excluded.aliases, activities.aliases),
          version = excluded.version,
          deleted_at = excluded.deleted_at,
          seq = excluded.seq`,
@@ -155,6 +156,7 @@ async function handleSync(request, env, account) {
         dto.bookmarked ? 1 : 0,
         dto.lastUsedAt ?? null,
         dto.externalId ?? null,
+        Array.isArray(dto.aliases) ? JSON.stringify(dto.aliases) : null,
         dto.version,
         dto.deletedAt ?? null,
         seq++,
@@ -283,6 +285,7 @@ function activityToDto(row) {
     bookmarked: row.bookmarked === 1,
     lastUsedAt: row.last_used_at,
     externalId: row.external_id,
+    aliases: parseAliases(row.aliases),
     version: row.version,
     deletedAt: row.deleted_at,
   };
@@ -370,4 +373,13 @@ function json(body, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
   });
+}
+
+function parseAliases(stored) {
+  try {
+    const parsed = JSON.parse(stored || '[]');
+    return Array.isArray(parsed) ? parsed.filter((a) => typeof a === 'string') : [];
+  } catch {
+    return [];
+  }
 }

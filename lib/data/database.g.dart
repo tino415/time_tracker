@@ -87,6 +87,16 @@ class $ActivitiesTable extends Activities
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  @override
+  late final GeneratedColumnWithTypeConverter<List<String>, String> aliases =
+      GeneratedColumn<String>(
+        'aliases',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('[]'),
+      ).withConverter<List<String>>($ActivitiesTable.$converteraliases);
   static const VerificationMeta _versionMeta = const VerificationMeta(
     'version',
   );
@@ -132,6 +142,7 @@ class $ActivitiesTable extends Activities
     bookmarked,
     lastUsedAt,
     externalId,
+    aliases,
     version,
     deletedAt,
     dirty,
@@ -254,6 +265,12 @@ class $ActivitiesTable extends Activities
         DriftSqlType.string,
         data['${effectivePrefix}external_id'],
       ),
+      aliases: $ActivitiesTable.$converteraliases.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}aliases'],
+        )!,
+      ),
       version: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}version'],
@@ -273,6 +290,9 @@ class $ActivitiesTable extends Activities
   $ActivitiesTable createAlias(String alias) {
     return $ActivitiesTable(attachedDatabase, alias);
   }
+
+  static TypeConverter<List<String>, String> $converteraliases =
+      const AliasListConverter();
 }
 
 class Activity extends DataClass implements Insertable<Activity> {
@@ -294,6 +314,9 @@ class Activity extends DataClass implements Insertable<Activity> {
 
   /// Optional pasted work-tracker id (e.g. `CU-1042`) for a leaf task.
   final String? externalId;
+
+  /// Other words the activity is searched by.
+  final List<String> aliases;
   final int version;
 
   /// Non-null marks a tombstone: archived/deleted at this instant, row kept
@@ -314,6 +337,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     required this.bookmarked,
     this.lastUsedAt,
     this.externalId,
+    required this.aliases,
     required this.version,
     this.deletedAt,
     required this.dirty,
@@ -333,6 +357,11 @@ class Activity extends DataClass implements Insertable<Activity> {
     }
     if (!nullToAbsent || externalId != null) {
       map['external_id'] = Variable<String>(externalId);
+    }
+    {
+      map['aliases'] = Variable<String>(
+        $ActivitiesTable.$converteraliases.toSql(aliases),
+      );
     }
     map['version'] = Variable<int>(version);
     if (!nullToAbsent || deletedAt != null) {
@@ -357,6 +386,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       externalId: externalId == null && nullToAbsent
           ? const Value.absent()
           : Value(externalId),
+      aliases: Value(aliases),
       version: Value(version),
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
@@ -378,6 +408,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       bookmarked: serializer.fromJson<bool>(json['bookmarked']),
       lastUsedAt: serializer.fromJson<DateTime?>(json['lastUsedAt']),
       externalId: serializer.fromJson<String?>(json['externalId']),
+      aliases: serializer.fromJson<List<String>>(json['aliases']),
       version: serializer.fromJson<int>(json['version']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       dirty: serializer.fromJson<bool>(json['dirty']),
@@ -394,6 +425,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       'bookmarked': serializer.toJson<bool>(bookmarked),
       'lastUsedAt': serializer.toJson<DateTime?>(lastUsedAt),
       'externalId': serializer.toJson<String?>(externalId),
+      'aliases': serializer.toJson<List<String>>(aliases),
       'version': serializer.toJson<int>(version),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'dirty': serializer.toJson<bool>(dirty),
@@ -408,6 +440,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     bool? bookmarked,
     Value<DateTime?> lastUsedAt = const Value.absent(),
     Value<String?> externalId = const Value.absent(),
+    List<String>? aliases,
     int? version,
     Value<DateTime?> deletedAt = const Value.absent(),
     bool? dirty,
@@ -419,6 +452,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     bookmarked: bookmarked ?? this.bookmarked,
     lastUsedAt: lastUsedAt.present ? lastUsedAt.value : this.lastUsedAt,
     externalId: externalId.present ? externalId.value : this.externalId,
+    aliases: aliases ?? this.aliases,
     version: version ?? this.version,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     dirty: dirty ?? this.dirty,
@@ -438,6 +472,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       externalId: data.externalId.present
           ? data.externalId.value
           : this.externalId,
+      aliases: data.aliases.present ? data.aliases.value : this.aliases,
       version: data.version.present ? data.version.value : this.version,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       dirty: data.dirty.present ? data.dirty.value : this.dirty,
@@ -454,6 +489,7 @@ class Activity extends DataClass implements Insertable<Activity> {
           ..write('bookmarked: $bookmarked, ')
           ..write('lastUsedAt: $lastUsedAt, ')
           ..write('externalId: $externalId, ')
+          ..write('aliases: $aliases, ')
           ..write('version: $version, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('dirty: $dirty')
@@ -470,6 +506,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     bookmarked,
     lastUsedAt,
     externalId,
+    aliases,
     version,
     deletedAt,
     dirty,
@@ -485,6 +522,7 @@ class Activity extends DataClass implements Insertable<Activity> {
           other.bookmarked == this.bookmarked &&
           other.lastUsedAt == this.lastUsedAt &&
           other.externalId == this.externalId &&
+          other.aliases == this.aliases &&
           other.version == this.version &&
           other.deletedAt == this.deletedAt &&
           other.dirty == this.dirty);
@@ -498,6 +536,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
   final Value<bool> bookmarked;
   final Value<DateTime?> lastUsedAt;
   final Value<String?> externalId;
+  final Value<List<String>> aliases;
   final Value<int> version;
   final Value<DateTime?> deletedAt;
   final Value<bool> dirty;
@@ -510,6 +549,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     this.bookmarked = const Value.absent(),
     this.lastUsedAt = const Value.absent(),
     this.externalId = const Value.absent(),
+    this.aliases = const Value.absent(),
     this.version = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.dirty = const Value.absent(),
@@ -523,6 +563,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     this.bookmarked = const Value.absent(),
     this.lastUsedAt = const Value.absent(),
     this.externalId = const Value.absent(),
+    this.aliases = const Value.absent(),
     this.version = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.dirty = const Value.absent(),
@@ -538,6 +579,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     Expression<bool>? bookmarked,
     Expression<DateTime>? lastUsedAt,
     Expression<String>? externalId,
+    Expression<String>? aliases,
     Expression<int>? version,
     Expression<DateTime>? deletedAt,
     Expression<bool>? dirty,
@@ -551,6 +593,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
       if (bookmarked != null) 'bookmarked': bookmarked,
       if (lastUsedAt != null) 'last_used_at': lastUsedAt,
       if (externalId != null) 'external_id': externalId,
+      if (aliases != null) 'aliases': aliases,
       if (version != null) 'version': version,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (dirty != null) 'dirty': dirty,
@@ -566,6 +609,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     Value<bool>? bookmarked,
     Value<DateTime?>? lastUsedAt,
     Value<String?>? externalId,
+    Value<List<String>>? aliases,
     Value<int>? version,
     Value<DateTime?>? deletedAt,
     Value<bool>? dirty,
@@ -579,6 +623,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
       bookmarked: bookmarked ?? this.bookmarked,
       lastUsedAt: lastUsedAt ?? this.lastUsedAt,
       externalId: externalId ?? this.externalId,
+      aliases: aliases ?? this.aliases,
       version: version ?? this.version,
       deletedAt: deletedAt ?? this.deletedAt,
       dirty: dirty ?? this.dirty,
@@ -610,6 +655,11 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     if (externalId.present) {
       map['external_id'] = Variable<String>(externalId.value);
     }
+    if (aliases.present) {
+      map['aliases'] = Variable<String>(
+        $ActivitiesTable.$converteraliases.toSql(aliases.value),
+      );
+    }
     if (version.present) {
       map['version'] = Variable<int>(version.value);
     }
@@ -635,6 +685,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
           ..write('bookmarked: $bookmarked, ')
           ..write('lastUsedAt: $lastUsedAt, ')
           ..write('externalId: $externalId, ')
+          ..write('aliases: $aliases, ')
           ..write('version: $version, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('dirty: $dirty, ')
@@ -1878,6 +1929,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder =
       Value<bool> bookmarked,
       Value<DateTime?> lastUsedAt,
       Value<String?> externalId,
+      Value<List<String>> aliases,
       Value<int> version,
       Value<DateTime?> deletedAt,
       Value<bool> dirty,
@@ -1892,6 +1944,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder =
       Value<bool> bookmarked,
       Value<DateTime?> lastUsedAt,
       Value<String?> externalId,
+      Value<List<String>> aliases,
       Value<int> version,
       Value<DateTime?> deletedAt,
       Value<bool> dirty,
@@ -1987,6 +2040,12 @@ class $$ActivitiesTableFilterComposer
   ColumnFilters<String> get externalId => $composableBuilder(
     column: $table.externalId,
     builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<List<String>, List<String>, String>
+  get aliases => $composableBuilder(
+    column: $table.aliases,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 
   ColumnFilters<int> get version => $composableBuilder(
@@ -2094,6 +2153,11 @@ class $$ActivitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get aliases => $composableBuilder(
+    column: $table.aliases,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get version => $composableBuilder(
     column: $table.version,
     builder: (column) => ColumnOrderings(column),
@@ -2165,6 +2229,9 @@ class $$ActivitiesTableAnnotationComposer
     column: $table.externalId,
     builder: (column) => column,
   );
+
+  GeneratedColumnWithTypeConverter<List<String>, String> get aliases =>
+      $composableBuilder(column: $table.aliases, builder: (column) => column);
 
   GeneratedColumn<int> get version =>
       $composableBuilder(column: $table.version, builder: (column) => column);
@@ -2264,6 +2331,7 @@ class $$ActivitiesTableTableManager
                 Value<bool> bookmarked = const Value.absent(),
                 Value<DateTime?> lastUsedAt = const Value.absent(),
                 Value<String?> externalId = const Value.absent(),
+                Value<List<String>> aliases = const Value.absent(),
                 Value<int> version = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<bool> dirty = const Value.absent(),
@@ -2276,6 +2344,7 @@ class $$ActivitiesTableTableManager
                 bookmarked: bookmarked,
                 lastUsedAt: lastUsedAt,
                 externalId: externalId,
+                aliases: aliases,
                 version: version,
                 deletedAt: deletedAt,
                 dirty: dirty,
@@ -2290,6 +2359,7 @@ class $$ActivitiesTableTableManager
                 Value<bool> bookmarked = const Value.absent(),
                 Value<DateTime?> lastUsedAt = const Value.absent(),
                 Value<String?> externalId = const Value.absent(),
+                Value<List<String>> aliases = const Value.absent(),
                 Value<int> version = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<bool> dirty = const Value.absent(),
@@ -2302,6 +2372,7 @@ class $$ActivitiesTableTableManager
                 bookmarked: bookmarked,
                 lastUsedAt: lastUsedAt,
                 externalId: externalId,
+                aliases: aliases,
                 version: version,
                 deletedAt: deletedAt,
                 dirty: dirty,

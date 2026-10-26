@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/domain/reporting.dart';
 import 'package:time_tracker/format.dart';
 import 'package:time_tracker/phone/screens/now_screen.dart';
 
@@ -113,7 +114,8 @@ void main() {
 
     final clock = inScreen(NowScreen, find.textContaining(RegExp(r'^\d+:\d\d:\d\d$')));
     final hours = int.parse((tester.widget<Text>(clock).data!).split(':').first);
-    expect(hours, lessThan(24));
+    final today = localDayRange(DateTime.now());
+    expect(hours, lessThan(today.end.difference(today.start).inHours));
 
     expect(
       inScreen(NowScreen, find.text('since ${formatTimestamp(start, DateTime.now())}')),

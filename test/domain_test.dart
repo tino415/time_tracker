@@ -5,6 +5,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/format.dart';
+import 'package:time_tracker/domain/activity_search.dart';
 import 'package:time_tracker/domain/activity_tree.dart';
 import 'package:time_tracker/domain/block.dart';
 import 'package:time_tracker/domain/calendar.dart';
@@ -12,12 +13,19 @@ import 'package:time_tracker/domain/csv_export.dart';
 import 'package:time_tracker/domain/reporting.dart';
 import 'package:time_tracker/domain/task_paste.dart';
 
-Activity act(String id, String name, {String? parent, String color = '#4F8FEE'}) => Activity(
+Activity act(
+  String id,
+  String name, {
+  String? parent,
+  String color = '#4F8FEE',
+  List<String> aliases = const [],
+}) => Activity(
   syncId: id,
   parentId: parent,
   name: name,
   color: color,
   bookmarked: false,
+  aliases: aliases,
   version: 1,
   dirty: false,
 );
@@ -517,6 +525,26 @@ void main() {
       );
       final csv = buildCsv(blocks: bs, tree: t2, now: d(10));
       expect(csv, contains('"A, with comma"'));
+    });
+  });
+
+  group('activity search', () {
+    final learning = act('l', 'Učenie sa', aliases: ['Learning', 'Vzdelávanie']);
+
+    test('an alias finds the activity', () {
+      expect(activityMatchesQuery(learning, 'learn'), isTrue);
+      expect(activityMatchesQuery(learning, 'vzdel'), isTrue);
+    });
+
+    test('the name still matches, and an unrelated word does not', () {
+      expect(activityMatchesQuery(learning, 'učenie'), isTrue);
+      expect(activityMatchesQuery(learning, 'cooking'), isFalse);
+    });
+
+    test('adding an alias trims it, skips blanks and duplicates', () {
+      expect(withAlias(['a'], '  b, c '), ['a', 'b, c']);
+      expect(withAlias(['a'], '   '), ['a']);
+      expect(withAlias(['a'], 'a'), ['a']);
     });
   });
 

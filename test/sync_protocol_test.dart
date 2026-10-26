@@ -67,6 +67,7 @@ void main() {
         bookmarked: true,
         lastUsedAt: DateTime.fromMillisecondsSinceEpoch(1770000000000),
         externalId: 'CU-1042',
+        aliases: ['Focus', 'Deep'],
         version: 7,
         deletedAt: DateTime.fromMillisecondsSinceEpoch(1770000009999),
       );
@@ -82,8 +83,27 @@ void main() {
       expect(decoded.bookmarked, isTrue);
       expect(decoded.lastUsedAt, dto.lastUsedAt);
       expect(decoded.externalId, 'CU-1042');
+      expect(decoded.aliases, ['Focus', 'Deep']);
       expect(decoded.version, 7);
       expect(decoded.deletedAt, dto.deletedAt);
+    });
+
+    test('an alias holding a comma survives the trip', () {
+      final dto = ActivityDto(
+        syncId: 'a',
+        name: 'Learning',
+        color: '#4F8FEE',
+        version: 1,
+        aliases: ['deep, focused'],
+      );
+
+      expect(ActivityDto.fromJson(dto.toJson())!.aliases, ['deep, focused']);
+    });
+
+    test('a row from a client without aliases decodes to none', () {
+      final json = {'syncId': 'a', 'name': 'n', 'color': '#4F8FEE', 'version': 1};
+
+      expect(ActivityDto.fromJson(json)!.aliases, isEmpty);
     });
 
     test('a tombstone survives the trip', () {

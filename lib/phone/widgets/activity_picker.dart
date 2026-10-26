@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/providers.dart';
+import '../../domain/activity_search.dart';
 import '../../domain/activity_tree.dart';
 import '../../format.dart';
 import 'neo.dart';
@@ -70,7 +71,7 @@ class _PickerSheetState extends ConsumerState<_PickerSheet> {
       if (only != null && !only.contains(id)) return false;
       if (q.isEmpty) return true;
       final a = tree[id]!;
-      return a.name.toLowerCase().contains(q) || (a.externalId?.toLowerCase().contains(q) ?? false);
+      return activityMatchesQuery(a, q);
     }).toList();
 
     return Padding(

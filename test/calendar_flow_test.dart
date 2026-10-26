@@ -223,6 +223,6 @@ void main() {
 
   test('the view constant matches the domain helper', () {
     // Guards the drag arithmetic above against a silent change to the axis.
-    expect(minutesFromMidnight(_at(12)), 720);
+    expect(minutesFromMidnight(DateTime(2026, 1, 15, 12)), 720);
   });
 }

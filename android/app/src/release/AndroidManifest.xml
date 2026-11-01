@@ -5,6 +5,6 @@
          isDebuggable on the build type: the Flutter Gradle plugin builds a
          debuggable build type in Flutter's debug mode, JIT instead of AOT. -->
     <application
-        android:debuggable="true"
+        android:debuggable="${debuggable}"
         tools:ignore="HardcodedDebugMode" />
 </manifest>

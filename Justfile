@@ -274,6 +274,13 @@ worker-deploy: web
 phone-apk:
     flutter build apk --release --target-platform android-arm64 {{client_defines}}
 
+# Each upload needs a higher versionCode than the last. Doubling the commit count
+# leaves the odd codes free for a watch bundle, which would share that space.
+[doc("Play app bundle for a phone (arm64) into build/app/outputs/bundle/release/app-release.aab, not debuggable and signed with the upload key whose properties are in the android-user volume — upload it from the host with tool/play-upload.sh; on an aarch64 host, needs the gen_snapshot copy phone-apk needs")]
+phone-aab build=`echo $((2 * $(git rev-list --count HEAD)))`:
+    cp /root/.android/upload.properties android/key.properties
+    PLAY_UPLOAD=1 flutter build appbundle --release --build-number {{build}} --target-platform android-arm64 {{client_defines}}
+
 [doc('Debug APK for a phone (arm64) into build/app/outputs/flutter-apk/app-debug.apk — JIT, slower on the device, but builds on any host')]
 phone-apk-debug:
     flutter build apk --debug --target-platform android-arm64 {{client_defines}}

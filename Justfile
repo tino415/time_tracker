@@ -291,6 +291,11 @@ phone-apk-debug:
 watch-apk:
     flutter build apk --release --target-platform android-arm,android-arm64 {{client_defines}}
 
+[doc("Play app bundle for a watch (fat 32+64) into build/app/outputs/bundle/release/app-release.aab, declaring itself a standalone Wear OS app and signed like phone-aab — upload it to a wear: track, such as wear:internal, from the host with tool/play-upload.sh; on an aarch64 host, needs the gen_snapshot copy phone-apk needs")]
+watch-aab build=`echo $((2 * $(git rev-list --count HEAD) + 1))`:
+    cp /root/.android/upload.properties android/key.properties
+    PLAY_UPLOAD=1 PLAY_FORM_FACTOR=watch flutter build appbundle --release --build-number {{build}} --target-platform android-arm,android-arm64 {{client_defines}}
+
 [doc('Debug APK for a watch (fat 32+64) into build/app/outputs/flutter-apk/app-debug.apk — JIT, slower on the device, but builds on any host; bakes in SYNC_URL like watch-apk')]
 watch-apk-debug:
     flutter build apk --debug --target-platform android-arm,android-arm64 {{client_defines}}

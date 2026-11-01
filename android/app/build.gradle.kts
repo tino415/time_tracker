@@ -8,6 +8,7 @@ plugins {
 }
 
 val playUpload = System.getenv("PLAY_UPLOAD") != null
+val playWatch = System.getenv("PLAY_FORM_FACTOR") == "watch"
 val uploadProperties = Properties().apply {
     if (playUpload) file("../key.properties").inputStream().use { load(it) }
 }
@@ -52,6 +53,10 @@ android {
                 keyPassword = uploadProperties.getProperty("keyPassword")
             }
         }
+    }
+
+    if (playWatch) {
+        sourceSets.getByName("release").manifest.srcFile("src/playWatch/AndroidManifest.xml")
     }
 
     buildTypes {

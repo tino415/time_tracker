@@ -279,7 +279,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('leaving month mode lands on today, or on the month\'s first week and day', (
+  testWidgets('leaving month mode for a week lands on this week, or on the month\'s first', (
     tester,
   ) async {
     await _openLastWeek(tester);
@@ -293,7 +293,17 @@ void main() {
       findsOneWidget,
     );
 
+    await disposeApp(tester);
+  });
+
+  testWidgets('leaving month mode for a day lands on today, or on the month\'s first', (
+    tester,
+  ) async {
+    await _openLastWeek(tester);
     await _toggleToMonth(tester);
+    final month = localMonthRange(_lastWeek(DateTime.monday));
+    final holdsToday = _holdsToday(month);
+
     await _toggleToDay(tester);
     expect(
       inScreen(ReportsScreen, find.text(holdsToday ? 'Today' : _dayLabel(month.start))),

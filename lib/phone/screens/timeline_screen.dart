@@ -123,11 +123,8 @@ class _TimelineList extends ConsumerWidget {
   }
 
   static String _dayLabel(DateTime day, DateTime now) {
-    // Calendar dates, not difference().inDays: a 23-hour spring-forward day
-    // floors to zero elapsed days and would label yesterday "Today".
-    final today = DateTime(now.year, now.month, now.day);
-    if (day == today) return 'Today';
-    if (day == DateTime(today.year, today.month, today.day - 1)) return 'Yesterday';
+    final relative = todayOrYesterday(day, now);
+    if (relative != null) return relative;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[day.weekday - 1]} ${day.day}/${day.month}';
   }

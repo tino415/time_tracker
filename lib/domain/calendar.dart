@@ -153,3 +153,10 @@ DateTime snapTime(DateTime t, Duration granularity) {
   final ms = t.millisecondsSinceEpoch;
   return DateTime.fromMillisecondsSinceEpoch((ms / g).round() * g);
 }
+
+String? todayOrYesterday(DateTime day, DateTime now) {
+  final today = DateTime(now.year, now.month, now.day);
+  if (day == today) return 'Today';
+  if (day == DateTime(today.year, today.month, today.day - 1)) return 'Yesterday';
+  return null;
+}

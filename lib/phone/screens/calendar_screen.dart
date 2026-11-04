@@ -253,10 +253,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   Future<void> _split(DaySlice s, DateTime at) => promptSplit(context, ref, s.block, at);
 
   static String _dayLabel(DateTime day, DateTime now) {
-    final today = DateTime(now.year, now.month, now.day);
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
+    final relative = todayOrYesterday(day, now);
+    if (relative != null) return relative;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[day.weekday - 1]} ${day.day}/${day.month}';
   }

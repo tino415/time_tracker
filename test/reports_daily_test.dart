@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker/data/database.dart';
 import 'package:time_tracker/data/drift_repositories.dart';
+import 'package:time_tracker/domain/calendar.dart';
 import 'package:time_tracker/domain/reporting.dart';
 import 'package:time_tracker/phone/screens/reports_screen.dart';
 
@@ -36,10 +37,8 @@ DateTime _lastWeek(int weekday, [int hour = 0]) {
 /// calendar and timeline already call "Today"/"Yesterday".
 String _dayLabel(DateTime day, [DateTime? at]) {
   final now = at ?? DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final diff = today.difference(day).inDays;
-  if (diff == 0) return 'Today';
-  if (diff == 1) return 'Yesterday';
+  final relative = todayOrYesterday(day, now);
+  if (relative != null) return relative;
   const names = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
   return '${names[day.weekday - 1]} ${day.day}';
 }

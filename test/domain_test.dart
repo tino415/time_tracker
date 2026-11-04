@@ -237,6 +237,25 @@ void main() {
     );
   });
 
+  group('todayOrYesterday', () {
+    test('labels the same date Today and the previous date Yesterday', () {
+      expect(todayOrYesterday(DateTime(2026, 1, 14), DateTime(2026, 1, 14, 18)), 'Today');
+      expect(todayOrYesterday(DateTime(2026, 1, 13), DateTime(2026, 1, 14, 18)), 'Yesterday');
+      expect(todayOrYesterday(DateTime(2026, 1, 12), DateTime(2026, 1, 14, 18)), isNull);
+    });
+
+    test(
+      'the day after the spring DST change is Today, and the day before it Yesterday',
+      () {
+        final now = DateTime(2026, 3, 30, 12);
+        expect(todayOrYesterday(DateTime(2026, 3, 30), now), 'Today');
+        expect(todayOrYesterday(DateTime(2026, 3, 29), now), 'Yesterday');
+        expect(todayOrYesterday(DateTime(2026, 3, 28), now), isNull);
+      },
+      skip: _observesSpringDst ? false : 'the test zone has no DST change on 29 March 2026',
+    );
+  });
+
   group('localMonthRange', () {
     test('runs from the 1st to the next 1st', () {
       final m = localMonthRange(DateTime(2026, 2, 17, 13, 45));

@@ -11,6 +11,7 @@ import '../../data/providers.dart';
 import '../../data/sync_service.dart';
 import '../../domain/activity_tree.dart';
 import '../../domain/block.dart';
+import '../../domain/calendar.dart';
 import '../../domain/csv_export.dart';
 import '../../domain/reporting.dart';
 import '../../format.dart';
@@ -325,10 +326,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// [formatWeekdayDay] otherwise, which this screen already used for the same
   /// purpose.
   static String _dayLabel(DateTime day, DateTime now) {
-    final today = DateTime(now.year, now.month, now.day);
-    final diff = today.difference(day).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
+    final relative = todayOrYesterday(day, now);
+    if (relative != null) return relative;
     return formatWeekdayDay(day);
   }
 

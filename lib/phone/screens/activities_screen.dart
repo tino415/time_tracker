@@ -11,9 +11,23 @@ import '../widgets/activity_editor.dart';
 import '../widgets/block_actions.dart';
 import '../widgets/neo.dart';
 
-/// The activity catalogue as an indented tree: colour swatch + name + external
-/// id + bookmark star per node. Tap a node to edit; long-press for add-child /
-/// bookmark / delete. "+ NEW ACTIVITY" creates a top-level activity.
+final expandedActivityIdsProvider = StateProvider<Set<String>>((_) => const {});
+
+void _toggleExpanded(WidgetRef ref, String id) {
+  final notifier = ref.read(expandedActivityIdsProvider.notifier);
+  final expanded = notifier.state;
+  notifier.state = expanded.contains(id) ? ({...expanded}..remove(id)) : {...expanded, id};
+}
+
+void _expand(WidgetRef ref, String id) {
+  final notifier = ref.read(expandedActivityIdsProvider.notifier);
+  notifier.state = {...notifier.state, id};
+}
+
+/// The activity catalogue as an indented tree: chevron + child count, colour
+/// swatch + name + external id + bookmark star per node. Parents start folded.
+/// Tap a node to edit; long-press for add-child / bookmark / delete.
+/// "+ NEW ACTIVITY" creates a top-level activity.
 class ActivitiesScreen extends ConsumerWidget {
   const ActivitiesScreen({super.key});
 
@@ -21,7 +35,8 @@ class ActivitiesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = neo(context);
     final tree = ref.watch(activityTreeProvider);
-    final ids = tree.flattened();
+    final expanded = ref.watch(expandedActivityIdsProvider);
+    final ids = tree.visibleIds(expanded);
     final hasPointer = ref.watch(hasPointerProvider);
     final catalogue = ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
@@ -68,6 +83,8 @@ class _ActivityRow extends ConsumerWidget {
     final t = neo(context);
     final a = tree[id]!;
     final depth = tree.depthOf(id);
+    final childCount = tree.childrenOf(id).length;
+    final open = ref.watch(expandedActivityIdsProvider).contains(id);
 
     return Padding(
       padding: EdgeInsets.only(left: depth * 18.0),
@@ -78,6 +95,18 @@ class _ActivityRow extends ConsumerWidget {
         onLongPress: () => _showRowActions(context, ref, a),
         child: Row(
           children: [
+            if (childCount > 0)
+              GestureDetector(
+                onTap: () => _toggleExpanded(ref, id),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 10, top: 4, bottom: 4),
+                  child: Text(
+                    '${open ? '▾' : '▸'} $childCount',
+                    style: mono(context, size: 13, weight: FontWeight.w800, color: t.muted),
+                  ),
+                ),
+              ),
             NeoSwatch(parseHexColor(a.color)),
             const SizedBox(width: 12),
             Expanded(
@@ -143,6 +172,7 @@ Future<void> _showRowActions(BuildContext context, WidgetRef ref, Activity a) as
             label: '+ add sub-activity',
             onTap: () {
               Navigator.pop(sheet);
+              _expand(ref, a.syncId);
               showActivityEditor(context, ref, presetParentId: a.syncId);
             },
           ),

@@ -98,4 +98,21 @@ class ActivityTree {
     }
     return out;
   }
+
+  /// [flattened] without the children of any id not in [expanded].
+  List<String> visibleIds(Set<String> expanded) {
+    final out = <String>[];
+    void walk(String id) {
+      out.add(id);
+      if (!expanded.contains(id)) return;
+      for (final c in childrenOf(id)) {
+        walk(c);
+      }
+    }
+
+    for (final r in rootIds) {
+      walk(r);
+    }
+    return out;
+  }
 }

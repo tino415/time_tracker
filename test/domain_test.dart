@@ -485,6 +485,25 @@ void main() {
       expect(tree.depthOf('work'), 0);
       expect(tree.depthOf('task'), 2);
     });
+
+    group('visibleIds', () {
+      final other = act('other', 'Other');
+
+      test('folded parents hide their children', () {
+        final t = ActivityTree.build([work, client, task, other]);
+        expect(t.visibleIds({}), ['other', 'work']);
+      });
+
+      test('each level folds on its own', () {
+        final t = ActivityTree.build([work, client, task, other]);
+        expect(t.visibleIds({'work'}), ['other', 'work', 'client']);
+        expect(t.visibleIds({'work', 'client'}), t.flattened());
+      });
+
+      test('an expanded id under a folded parent stays hidden', () {
+        expect(tree.visibleIds({'client'}), ['work']);
+      });
+    });
   });
 
   group('buildCsv', () {

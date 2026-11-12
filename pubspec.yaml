@@ -2,7 +2,7 @@ name: time_tracker
 description: "Offline-first time-activity tracker (phone + Wear OS + web PWA)."
 publish_to: 'none'
 
-version: 0.0.1+1
+version: 0.0.2+1
 
 environment:
   sdk: ^3.10.1

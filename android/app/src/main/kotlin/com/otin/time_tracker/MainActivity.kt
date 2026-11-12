@@ -30,6 +30,11 @@ class MainActivity : FlutterActivity() {
         wearBridge = WearBridge(this, flutterEngine.dartExecutor.binaryMessenger).also { it.attach() }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) window.decorView.requestApplyInsets()
+    }
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         wearBridge?.detach()
         wearBridge = null

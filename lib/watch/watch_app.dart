@@ -317,15 +317,10 @@ class _WatchHomeState extends ConsumerState<_WatchHome> {
             color: parseHexColor(a.color),
             selected: a.syncId == currentId,
             armed: _armed == a.syncId,
-            // Tapping what is already running would only split the block; the
-            // phone guards this too, but not offering it is clearer than a tap
-            // that does nothing.
-            onTap: a.syncId == currentId
-                ? null
-                : () {
-                    if (!_confirm(a.syncId)) return;
-                    ref.read(wearSyncProvider).requestSwitch(a.syncId);
-                  },
+            onTap: () {
+              if (!_confirm(a.syncId)) return;
+              ref.read(wearSyncProvider).requestSwitch(a.syncId);
+            },
           ),
           const SizedBox(height: 6),
         ],

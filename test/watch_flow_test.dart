@@ -240,7 +240,7 @@ void main() {
     await disposeApp(tester);
   });
 
-  testWidgets('the running activity is marked and not re-tappable', (tester) async {
+  testWidgets('the running activity can be started again as a new block', (tester) async {
     final bridge = FakeWearBridge();
     addTearDown(bridge.dispose);
     final db = await pumpWatch(tester, bridge, seed: seedBookmarks);
@@ -248,10 +248,16 @@ void main() {
     await tapTile(tester, tile(deepWorkId));
     final before = (await DriftChangeRepository(db).loadChanges()).length;
 
-    // Tapping what is already running would only split the block.
-    await tapTile(tester, tile(deepWorkId));
-
+    await tester.tap(tile(deepWorkId));
+    await settle(tester);
     expect((await DriftChangeRepository(db).loadChanges()).length, before);
+    expect(find.text('tap again'), findsOneWidget);
+
+    await tester.tap(tile(deepWorkId));
+    await settle(tester);
+
+    expect((await DriftChangeRepository(db).loadChanges()).length, before + 1);
+    expect(bridge.sent.whereType<SwitchRequest>(), hasLength(2));
 
     await disposeApp(tester);
   });

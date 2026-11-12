@@ -45,7 +45,10 @@ void main() {
     final db = await bootApp(tester, viewport: _phone, seed: (db) => _seedRunning(db, start));
 
     final before = (await _changes(db)).single.changedAt;
-    expect(inScreen(NowScreen, find.text('since ${formatTimeOfDay(before)}')), findsOneWidget);
+    expect(
+      inScreen(NowScreen, find.text('since ${formatTimestamp(before, DateTime.now())}')),
+      findsOneWidget,
+    );
 
     await tester.tap(inScreen(NowScreen, find.textContaining('since ')));
     await settle(tester);
@@ -56,7 +59,10 @@ void main() {
 
     final after = (await _changes(db)).single.changedAt;
     expect(before.difference(after), const Duration(minutes: 15));
-    expect(inScreen(NowScreen, find.text('since ${formatTimeOfDay(after)}')), findsOneWidget);
+    expect(
+      inScreen(NowScreen, find.text('since ${formatTimestamp(after, DateTime.now())}')),
+      findsOneWidget,
+    );
 
     await disposeApp(tester);
   });

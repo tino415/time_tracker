@@ -48,9 +48,13 @@ Finder _removeOn(String activity) => find.descendant(
 
 Future<void> _openBlockSheet(WidgetTester tester) async {
   await openTab(tester, 'TIMELINE');
-  await tester.tap(inScreen(TimelineScreen, find.text('Alpha')));
+  await tester.tap(_card('Alpha'));
   await settle(tester);
 }
+
+/// The timeline card naming [label]. Run just after midnight, the seeded block
+/// began yesterday and the timeline draws it on both days, so there are two.
+Finder _card(String label) => inScreen(TimelineScreen, find.text(label)).first;
 
 void main() {
   testWidgets('removing the only activity leaves an unnamed block', (tester) async {
@@ -79,7 +83,7 @@ void main() {
     await tester.tap(_removeOn('Alpha'));
     await settle(tester);
 
-    await tester.tap(inScreen(TimelineScreen, find.text(kUnsortedName)));
+    await tester.tap(_card(kUnsortedName));
     await settle(tester);
     await tester.tap(find.text('▸ WHAT WAS THIS?'));
     await settle(tester);
@@ -117,7 +121,7 @@ void main() {
     await settle(tester);
     expect(await _currentSet(db), ['Alpha', 'Beta']);
 
-    await tester.tap(inScreen(TimelineScreen, find.text('Alpha  +  Beta')));
+    await tester.tap(_card('Alpha  +  Beta'));
     await settle(tester);
     await tester.tap(_removeOn('Alpha'));
     await settle(tester);
@@ -139,11 +143,11 @@ void main() {
     // Alpha is on the block, so tagging it again would be a no-op offered as a
     // choice. Beta is the only real option.
     //
-    // One Alpha, not none: the block sheet has closed but the timeline card
-    // behind still names it. What matters is that the picker contributes no
-    // second one.
+    // Alpha is not gone: the block sheet has closed but the timeline cards
+    // behind still name it. What matters is that the picker contributes none.
+    final timelineAlphas = inScreen(TimelineScreen, find.text('Alpha')).evaluate().length;
     expect(find.text('Beta'), findsWidgets);
-    expect(find.text('Alpha'), findsOneWidget);
+    expect(find.text('Alpha'), findsNWidgets(timelineAlphas));
     // Making one on the spot is offered here too — the old picker could not,
     // so tagging something new meant leaving for the activity list first.
     expect(find.text('+ NEW ACTIVITY'), findsOneWidget);

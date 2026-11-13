@@ -5,9 +5,12 @@
 #
 #   tool/play-upload.sh <service-account.json> <package> <track> <bundle.aab> [release-notes]
 #   tool/play-upload.sh --check <service-account.json> <package>
+#   tool/play-upload.sh --next-code <service-account.json> <package>
 #
 # --check opens an edit and deletes it again: proves the account may touch the
 # app without releasing anything.
+# --next-code prints the highest versionCode Play knows (the edit's bundles and
+# every track's releases) plus 1, through an edit it deletes again.
 set -euo pipefail
 
 api=https://androidpublisher.googleapis.com/androidpublisher/v3/applications
@@ -46,6 +49,16 @@ check() {
   echo "ok: $package is reachable as $(jq -r .client_email "$key")"
 }
 
+next_code() {
+  local edit bundles tracks
+  edit=$(open_edit)
+  bundles=$(call "$api/$package/edits/$edit/bundles")
+  tracks=$(call "$api/$package/edits/$edit/tracks")
+  call -X DELETE "$api/$package/edits/$edit"
+  jq -n --argjson bundles "$bundles" --argjson tracks "$tracks" \
+    '([$bundles.bundles[]?.versionCode] + [$tracks.tracks[]?.releases[]?.versionCodes[]? | tonumber]) | (max // 0) + 1'
+}
+
 upload() {
   local edit version response
   edit=$(open_edit)
@@ -64,6 +77,10 @@ if [ "$1" = --check ]; then
   key=$2 package=$3
   token=$(access_token "$key")
   check
+elif [ "$1" = --next-code ]; then
+  key=$2 package=$3
+  token=$(access_token "$key")
+  next_code
 else
   key=$1 package=$2 track=$3 bundle=$4 notes=${5:-}
   token=$(access_token "$key")

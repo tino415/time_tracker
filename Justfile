@@ -274,10 +274,11 @@ worker-deploy: web
 phone-apk:
     flutter build apk --release --target-platform android-arm64 {{client_defines}}
 
-# Each upload needs a higher versionCode than the last. Doubling the commit count
-# leaves the odd codes free for a watch bundle, which would share that space.
-[doc("Play app bundle for a phone (arm64) into build/app/outputs/bundle/release/app-release.aab, not debuggable and signed with the upload key whose properties are in the android-user volume — upload it from the host with tool/play-upload.sh; on an aarch64 host, needs the gen_snapshot copy phone-apk needs")]
-phone-aab build=`echo $((2 * $(git rev-list --count HEAD)))`:
+# Each upload needs a higher versionCode than the last, and phone and watch
+# bundles share that space. `tool/play-upload.sh --next-code` on the host gives
+# the number: the phone takes it, the watch takes it plus 1.
+[doc("Play app bundle for a phone (arm64) into build/app/outputs/bundle/release/app-release.aab, not debuggable and signed with the upload key whose properties are in the android-user volume — build is the versionCode from tool/play-upload.sh --next-code; upload it from the host with tool/play-upload.sh; on an aarch64 host, needs the gen_snapshot copy phone-apk needs")]
+phone-aab build:
     cp /root/.android/upload.properties android/key.properties
     PLAY_UPLOAD=1 flutter build appbundle --release --build-number {{build}} --target-platform android-arm64 {{client_defines}}
 
@@ -291,8 +292,8 @@ phone-apk-debug:
 watch-apk:
     flutter build apk --release --target-platform android-arm,android-arm64 {{client_defines}}
 
-[doc("Play app bundle for a watch (fat 32+64) into build/app/outputs/bundle/release/app-release.aab, declaring itself a standalone Wear OS app and signed like phone-aab — upload it to a wear: track, such as wear:internal, from the host with tool/play-upload.sh; on an aarch64 host, needs the gen_snapshot copy phone-apk needs")]
-watch-aab build=`echo $((2 * $(git rev-list --count HEAD) + 1))`:
+[doc("Play app bundle for a watch (fat 32+64) into build/app/outputs/bundle/release/app-release.aab, declaring itself a standalone Wear OS app and signed like phone-aab — build is the phone versionCode plus 1; upload it to a wear: track, such as wear:internal, from the host with tool/play-upload.sh; on an aarch64 host, needs the gen_snapshot copy phone-apk needs")]
+watch-aab build:
     cp /root/.android/upload.properties android/key.properties
     PLAY_UPLOAD=1 PLAY_FORM_FACTOR=watch flutter build appbundle --release --build-number {{build}} --target-platform android-arm,android-arm64 {{client_defines}}
 

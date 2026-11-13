@@ -52,8 +52,8 @@ check() {
 next_code() {
   local edit bundles tracks
   edit=$(open_edit)
-  bundles=$(call "$api/$package/edits/$edit/bundles")
-  tracks=$(call "$api/$package/edits/$edit/tracks")
+  bundles=$(call "$api/$package/edits/$edit/bundles") || { call -X DELETE "$api/$package/edits/$edit"; return 1; }
+  tracks=$(call "$api/$package/edits/$edit/tracks") || { call -X DELETE "$api/$package/edits/$edit"; return 1; }
   call -X DELETE "$api/$package/edits/$edit"
   jq -n --argjson bundles "$bundles" --argjson tracks "$tracks" \
     '([$bundles.bundles[]?.versionCode] + [$tracks.tracks[]?.releases[]?.versionCodes[]? | tonumber]) | (max // 0) + 1'

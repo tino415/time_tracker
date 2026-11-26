@@ -199,7 +199,7 @@ class SyncStore {
     });
   }
 
-  /// Adopt a page of remote activities as one unit. Returns how many were taken.
+  /// Adopt a page of remote activities as one unit. Returns the ones taken.
   ///
   /// One transaction, with foreign keys deferred to the commit, because the
   /// server's order cannot satisfy them row by row. `seq` is assigned on write,
@@ -215,12 +215,12 @@ class SyncStore {
   /// rolls back rather than committing something inconsistent. That needs the
   /// server to page on a parents-first order, and has not happened here: a page
   /// is [MAX_PAGE] rows.
-  Future<int> applyRemoteActivities(Iterable<ActivityDto> dtos) async {
+  Future<Set<String>> applyRemoteActivities(Iterable<ActivityDto> dtos) async {
     return _db.transaction(() async {
       await _db.customStatement('PRAGMA defer_foreign_keys = ON');
-      var applied = 0;
+      final applied = <String>{};
       for (final dto in dtos) {
-        if (await applyRemoteActivity(dto)) applied++;
+        if (await applyRemoteActivity(dto)) applied.add(dto.syncId);
       }
       return applied;
     });

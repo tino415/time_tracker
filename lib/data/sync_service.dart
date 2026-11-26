@@ -19,12 +19,6 @@ class SyncResult {
   final int rejected;
 
   static const none = SyncResult(pushed: 0, pulled: 0, rejected: 0);
-
-  SyncResult operator +(SyncResult other) => SyncResult(
-    pushed: pushed + other.pushed,
-    pulled: pulled + other.pulled,
-    rejected: rejected + other.rejected,
-  );
 }
 
 /// Drives one sync: push what is pending, adopt what comes back, move the
@@ -62,20 +56,27 @@ class SyncService {
         activities: await _store.pendingActivities(),
         changes: await _store.pendingChanges(),
       );
-      var total = round.result;
+      final rounds = [round];
       // The server cuts each pull at a page limit and moves the cursor only as
       // far as that page reached, so a moved cursor may have more behind it.
       while (round.cursorMoved) {
         round = await _exchange(activities: const [], changes: const []);
-        total += round.result;
+        rounds.add(round);
       }
-      return total;
+      return _summarise(rounds);
     } finally {
       _running = false;
     }
   }
 
-  Future<({SyncResult result, bool cursorMoved})> _exchange({
+  /// A row sent again because the cursor stopped short of it counts once.
+  SyncResult _summarise(List<_Round> rounds) => SyncResult(
+    pushed: rounds.fold(0, (sum, r) => sum + r.pushed),
+    pulled: {for (final r in rounds) ...r.pulled}.length,
+    rejected: rounds.fold(0, (sum, r) => sum + r.rejected),
+  );
+
+  Future<_Round> _exchange({
     required List<ActivityDto> activities,
     required List<ChangeDto> changes,
   }) async {
@@ -108,9 +109,9 @@ class SyncService {
     //
     // As one batch, not row by row: the server orders by `seq`, which puts a
     // reparented child before the parent it points at.
-    var pulled = await _store.applyRemoteActivities(response.activities);
+    final pulled = await _store.applyRemoteActivities(response.activities);
     for (final dto in response.changes) {
-      if (await _store.applyRemoteChange(dto)) pulled++;
+      if (await _store.applyRemoteChange(dto)) pulled.add(dto.syncId);
     }
 
     // Last: an interrupted sync must re-pull rather than skip. Adopting is
@@ -125,15 +126,15 @@ class SyncService {
     if (cursorMoved) await _store.setCursor(response.cursor);
 
     return (
-      result: SyncResult(
-        pushed: activities.length + changes.length - rejected.length,
-        pulled: pulled,
-        rejected: rejected.length,
-      ),
+      pushed: activities.length + changes.length - rejected.length,
+      pulled: pulled,
+      rejected: rejected.length,
       cursorMoved: cursorMoved,
     );
   }
 }
+
+typedef _Round = ({int pushed, Set<String> pulled, int rejected, bool cursorMoved});
 
 /// Where the backend lives. Only the URL is built in — the token is per account
 /// and lives in the local database, because a token compiled into a web build is

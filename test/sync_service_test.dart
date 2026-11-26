@@ -249,6 +249,27 @@ void main() {
     expect(result.pulled, 1201);
   });
 
+  test('a row sent again behind a cut page is counted once', () async {
+    final paged = FakeServer(pageSize: 500);
+    final web = Device(paged);
+    final watch = Device(paged);
+    addTearDown(web.close);
+    addTearDown(watch.close);
+
+    final first = await web.activities.createActivity(name: 'Activity 0', color: '#4F8FEE');
+    for (var i = 1; i < 600; i++) {
+      await web.activities.createActivity(name: 'Activity $i', color: '#4F8FEE');
+    }
+    for (var i = 0; i < 10; i++) {
+      await web.changes.switchTo(first.syncId, at: DateTime(2026, 1, 5).add(Duration(minutes: i)));
+    }
+    await web.sync.syncNow();
+
+    final result = await watch.sync.syncNow();
+
+    expect(result.pulled, 610);
+  });
+
   test('a pulled row is not echoed back as a local edit', () async {
     final watch = Device(server);
     addTearDown(watch.close);

@@ -33,6 +33,9 @@ class FakeServer implements SyncTransport {
   /// Set to make the next exchange fail, as an unreachable network would.
   bool offline = false;
 
+  /// Set to make this exchange and every later one fail, counting from 1.
+  int? offlineFromExchange;
+
   @override
   Future<void> claimAccount() async {
     claims++;
@@ -42,7 +45,9 @@ class FakeServer implements SyncTransport {
   @override
   Future<SyncResponse> exchange(SyncRequest request) async {
     exchanges++;
-    if (offline) throw const SyncException('unreachable');
+    if (offline || exchanges >= (offlineFromExchange ?? exchanges + 1)) {
+      throw const SyncException('unreachable');
+    }
 
     final cursor = int.tryParse(request.cursor ?? '0') ?? 0;
     final rejected = <String>[];
@@ -91,17 +96,18 @@ class FakeServer implements SyncTransport {
     ];
     final highest = sent.isEmpty ? cursor : sent.reduce((a, b) => a > b ? a : b);
     // Like the Worker, the cursor stops where both lists are complete.
-    final complete = [
+    final cutAt = [
       _lastSeqIfCut(outActivities.map((a) => a.syncId)),
       _lastSeqIfCut(outChanges.map((c) => c.syncId)),
     ].nonNulls;
-    final nextCursor = [highest, ...complete].reduce((a, b) => a < b ? a : b);
+    final nextCursor = [highest, ...cutAt].reduce((a, b) => a < b ? a : b);
 
     return SyncResponse(
       cursor: '$nextCursor',
       activities: outActivities,
       changes: outChanges,
       rejected: rejected,
+      hasMore: cutAt.isNotEmpty,
     );
   }
 
@@ -247,6 +253,28 @@ void main() {
 
     expect((await watch.changes.loadChanges()).length, 1200);
     expect(result.pulled, 1201);
+  });
+
+  test('a failure after the first round shows what synced so far', () async {
+    final paged = FakeServer(pageSize: 500);
+    final web = Device(paged);
+    final watch = Device(paged);
+    addTearDown(web.close);
+    addTearDown(watch.close);
+
+    final a = await web.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    for (var i = 0; i < 1200; i++) {
+      await web.changes.switchTo(a.syncId, at: DateTime(2026, 1, 5).add(Duration(minutes: i)));
+    }
+    await web.sync.syncNow();
+    await watch.activities.createActivity(name: 'Focus', color: '#F4B740');
+    paged.offlineFromExchange = paged.exchanges + 2;
+
+    final result = await watch.sync.syncNow();
+
+    expect(result.pushed, 1);
+    // Both activities, the watch's own echoed back, and the first page of changes.
+    expect(result.pulled, 502);
   });
 
   test('a row sent again behind a cut page is counted once', () async {
@@ -451,9 +479,8 @@ void main() {
 
     final results = await Future.wait([phone.sync.syncNow(), phone.sync.syncNow()]);
 
-    // Two in flight would push the same rows twice and race on the cursor. One
-    // sync is the push and the empty round that finds the cursor unmoved.
-    expect(server.exchanges, 2);
+    // Two in flight would push the same rows twice and race on the cursor.
+    expect(server.exchanges, 1);
     expect(results.where((r) => r.pushed > 0), hasLength(1));
   });
 }

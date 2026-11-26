@@ -41,9 +41,9 @@ class SyncService {
 
   bool _running = false;
 
-  /// Round trips until the cursor stops moving. Concurrent calls collapse: a
-  /// second sync while one is in flight would push the same rows twice and race
-  /// on the cursor.
+  /// Round trips until the server has nothing more to send. Concurrent calls
+  /// collapse: a second sync while one is in flight would push the same rows
+  /// twice and race on the cursor.
   Future<SyncResult> syncNow() async {
     if (_running) return SyncResult.none;
     _running = true;
@@ -57,10 +57,14 @@ class SyncService {
         changes: await _store.pendingChanges(),
       );
       final rounds = [round];
-      // The server cuts each pull at a page limit and moves the cursor only as
-      // far as that page reached, so a moved cursor may have more behind it.
-      while (round.cursorMoved) {
-        round = await _exchange(activities: const [], changes: const []);
+      while (round.more) {
+        try {
+          round = await _exchange(activities: const [], changes: const []);
+        } on SyncException {
+          // The finished rounds are saved, cursor included, and the next sync
+          // resumes from there.
+          break;
+        }
         rounds.add(round);
       }
       return _summarise(rounds);
@@ -129,12 +133,13 @@ class SyncService {
       pushed: activities.length + changes.length - rejected.length,
       pulled: pulled,
       rejected: rejected.length,
-      cursorMoved: cursorMoved,
+      // A cursor that did not move would ask for the same page again.
+      more: response.hasMore && cursorMoved,
     );
   }
 }
 
-typedef _Round = ({int pushed, Set<String> pulled, int rejected, bool cursorMoved});
+typedef _Round = ({int pushed, Set<String> pulled, int rejected, bool more});
 
 /// Where the backend lives. Only the URL is built in — the token is per account
 /// and lives in the local database, because a token compiled into a web build is

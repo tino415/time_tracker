@@ -137,6 +137,7 @@ try {
   check('echoes the push back', body.activities?.length === 1, JSON.stringify(body.activities));
   check('nothing rejected', (body.rejected ?? []).length === 0);
   check('returns a cursor', typeof body.cursor === 'string' && body.cursor !== '0', body.cursor);
+  check('a page that fits says nothing more is waiting', body.hasMore === false);
 
   const cursorAfterFirst = body.cursor;
 
@@ -241,14 +242,18 @@ try {
   await sync({ cursor: null, activities: [activity('bulk-a', 'Bulk', 2)] }, BULK_TOKEN);
 
   const seen = new Set();
+  const pages = [];
   let pullCursor = null;
   for (let i = 0; i < 10; i++) {
     const page = await (await sync({ cursor: pullCursor }, BULK_TOKEN)).json();
+    pages.push(page);
     for (const c of page.changes ?? []) seen.add(c.syncId);
-    if (page.cursor === pullCursor) break;
+    if (!page.hasMore) break;
     pullCursor = page.cursor;
   }
   check('a fresh device pulls every change, not just the first page', seen.size === 600, `${seen.size}/600`);
+  check('a cut page says more is waiting', pages[0].hasMore === true);
+  check('the last page says nothing more is waiting', pages.at(-1).hasMore === false);
 
   // --- unknown routes ------------------------------------------------------
   check('unknown route is 404', (await fetch(`${ORIGIN}/nope`, {

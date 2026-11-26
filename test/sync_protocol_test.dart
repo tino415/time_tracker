@@ -187,12 +187,18 @@ void main() {
           },
         ],
         'rejected': ['stale-one'],
+        'hasMore': true,
       })!;
 
       expect(decoded.cursor, '42');
       expect(decoded.activities.single.syncId, 'a');
       expect(decoded.changes.single.syncId, 'c');
       expect(decoded.rejected, ['stale-one']);
+      expect(decoded.hasMore, isTrue);
+    });
+
+    test('a response from a server that does not page says nothing more is waiting', () {
+      expect(SyncResponse.fromJson({'cursor': '1'})!.hasMore, isFalse);
     });
 
     test('unparseable rows are skipped rather than failing the response', () {

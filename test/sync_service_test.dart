@@ -17,6 +17,11 @@ import 'package:time_tracker/domain/sync_protocol.dart';
 /// An in-memory twin of worker/src/index.js: same acceptance rule, same shared
 /// `seq` order across both tables, same "echo the push back" behaviour.
 class FakeServer implements SyncTransport {
+  FakeServer({this.pageSize});
+
+  /// The Worker's MAX_PAGE; null sends every row in one page.
+  final int? pageSize;
+
   final activities = <String, ActivityDto>{};
   final changes = <String, ChangeDto>{};
   final _seq = <String, int>{};
@@ -67,20 +72,30 @@ class FakeServer implements SyncTransport {
     // first" — and not by insertion, which would hide the case this order
     // creates: a row edited twice moves to the *end*, so a parent edited after
     // its child is delivered after it.
-    final outActivities = [
-      for (final e in activities.entries)
-        if ((_seq[e.key] ?? 0) > cursor) e.value,
-    ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0));
-    final outChanges = [
-      for (final e in changes.entries)
-        if ((_seq[e.key] ?? 0) > cursor) e.value,
-    ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0));
+    final outActivities = _page(
+      [
+        for (final e in activities.entries)
+          if ((_seq[e.key] ?? 0) > cursor) e.value,
+      ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0)),
+    );
+    final outChanges = _page(
+      [
+        for (final e in changes.entries)
+          if ((_seq[e.key] ?? 0) > cursor) e.value,
+      ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0)),
+    );
 
     final sent = [
       ...outActivities.map((a) => _seq[a.syncId] ?? 0),
       ...outChanges.map((c) => _seq[c.syncId] ?? 0),
     ];
-    final nextCursor = sent.isEmpty ? cursor : sent.reduce((a, b) => a > b ? a : b);
+    final highest = sent.isEmpty ? cursor : sent.reduce((a, b) => a > b ? a : b);
+    // Like the Worker, the cursor stops where both lists are complete.
+    final complete = [
+      _lastSeqIfCut(outActivities.map((a) => a.syncId)),
+      _lastSeqIfCut(outChanges.map((c) => c.syncId)),
+    ].nonNulls;
+    final nextCursor = [highest, ...complete].reduce((a, b) => a < b ? a : b);
 
     return SyncResponse(
       cursor: '$nextCursor',
@@ -89,6 +104,14 @@ class FakeServer implements SyncTransport {
       rejected: rejected,
     );
   }
+
+  List<T> _page<T>(List<T> rows) {
+    final size = pageSize;
+    return size == null || rows.length <= size ? rows : rows.sublist(0, size);
+  }
+
+  int? _lastSeqIfCut(Iterable<String> syncIds) =>
+      syncIds.length == pageSize ? _seq[syncIds.last] : null;
 }
 
 /// One device: its own database, repositories and sync service.
@@ -205,6 +228,25 @@ void main() {
     // The set travels inside its change, so it arrives whole.
     final changes = await watch.changes.loadChanges();
     expect(await watch.changes.activityIdsForChange(changes.single.syncId), [a.syncId]);
+  });
+
+  test('a second device pulls 1200 changes in one sync', () async {
+    final paged = FakeServer(pageSize: 500);
+    final web = Device(paged);
+    final watch = Device(paged);
+    addTearDown(web.close);
+    addTearDown(watch.close);
+
+    final a = await web.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    for (var i = 0; i < 1200; i++) {
+      await web.changes.switchTo(a.syncId, at: DateTime(2026, 1, 5).add(Duration(minutes: i)));
+    }
+    await web.sync.syncNow();
+
+    final result = await watch.sync.syncNow();
+
+    expect((await watch.changes.loadChanges()).length, 1200);
+    expect(result.pulled, 1201);
   });
 
   test('a pulled row is not echoed back as a local edit', () async {
@@ -388,8 +430,9 @@ void main() {
 
     final results = await Future.wait([phone.sync.syncNow(), phone.sync.syncNow()]);
 
-    // Two in flight would push the same rows twice and race on the cursor.
-    expect(server.exchanges, 1);
+    // Two in flight would push the same rows twice and race on the cursor. One
+    // sync is the push and the empty round that finds the cursor unmoved.
+    expect(server.exchanges, 2);
     expect(results.where((r) => r.pushed > 0), hasLength(1));
   });
 }

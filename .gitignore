@@ -88,6 +88,10 @@ worker/.wrangler/
 /.claude/
 /CLAUDE.local.md
 
+# The publisher's own Play app-signing certificate, which tool/play-upload.sh
+# checks every upload against.
+/tool/play-app-signing-cert
+
 # Generated, not authored: regenerated from the environment definition rather
 # than edited here. Tracking it means every toolchain change shows up twice, and
 # the copy in git is the one that goes stale.

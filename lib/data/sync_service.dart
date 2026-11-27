@@ -6,7 +6,7 @@ import 'sync_account.dart';
 import 'sync_store.dart';
 import 'sync_transport.dart';
 
-/// The outcome of one round trip, for the UI's status line.
+/// The outcome of one sync, for the UI's status line.
 class SyncResult {
   const SyncResult({required this.pushed, required this.pulled, required this.rejected});
 
@@ -41,8 +41,9 @@ class SyncService {
 
   bool _running = false;
 
-  /// One round trip. Concurrent calls collapse: a second sync while one is in
-  /// flight would push the same rows twice and race on the cursor.
+  /// Round trips until the server has nothing more to send. Concurrent calls
+  /// collapse: a second sync while one is in flight would push the same rows
+  /// twice and race on the cursor.
   Future<SyncResult> syncNow() async {
     if (_running) return SyncResult.none;
     _running = true;
@@ -51,62 +52,94 @@ class SyncService {
       // cursor and dirty flags describe that server, not this one.
       await _store.adoptBackend(_backend);
 
-      final activities = await _store.pendingActivities();
-      final changes = await _store.pendingChanges();
-      final cursor = await _store.cursor();
-
-      final response = await _transport.exchange(
-        SyncRequest(cursor: cursor, activities: activities, changes: changes),
+      var round = await _exchange(
+        activities: await _store.pendingActivities(),
+        changes: await _store.pendingChanges(),
       );
-
-      final rejected = response.rejected.toSet();
-
-      // Mark clean only what was not rejected, and only at the version pushed —
-      // a row edited while the request was in flight stays dirty and goes next
-      // time. Rejected rows stay dirty too, but the authoritative version came
-      // back in this same response and is adopted below, which is what stops
-      // them being re-pushed forever.
-      await _store.markSynced(
-        activityVersions: {
-          for (final a in activities)
-            if (!rejected.contains(a.syncId)) a.syncId: a.version,
-        },
-        changeVersions: {
-          for (final c in changes)
-            if (!rejected.contains(c.syncId)) c.syncId: c.version,
-        },
-      );
-
-      // Activities first: a change's links reference them, and a link naming an
-      // unknown activity is skipped rather than applied.
-      //
-      // As one batch, not row by row: the server orders by `seq`, which puts a
-      // reparented child before the parent it points at.
-      var pulled = await _store.applyRemoteActivities(response.activities);
-      for (final dto in response.changes) {
-        if (await _store.applyRemoteChange(dto)) pulled++;
+      final rounds = [round];
+      while (round.more) {
+        try {
+          round = await _exchange(activities: const [], changes: const []);
+        } on SyncException {
+          // The finished rounds are saved, cursor included, and the next sync
+          // resumes from there.
+          break;
+        }
+        rounds.add(round);
       }
-
-      // Last: an interrupted sync must re-pull rather than skip. Adopting is
-      // idempotent, so replaying a page costs nothing; missing one loses data.
-      //
-      // Unmoved means unwritten — the client twin of the server's zero-seq
-      // guard. An idle poll otherwise upserts an identical cursor row, which
-      // re-runs every syncMeta watch query just so a distinct() somewhere can
-      // discard the result, and hands any future watcher added without one the
-      // rebuild loop back.
-      if (response.cursor != cursor) await _store.setCursor(response.cursor);
-
-      return SyncResult(
-        pushed: activities.length + changes.length - rejected.length,
-        pulled: pulled,
-        rejected: rejected.length,
-      );
+      return _summarise(rounds);
     } finally {
       _running = false;
     }
   }
+
+  /// A row sent again because the cursor stopped short of it counts once.
+  SyncResult _summarise(List<_Round> rounds) => SyncResult(
+    pushed: rounds.fold(0, (sum, r) => sum + r.pushed),
+    pulled: {for (final r in rounds) ...r.pulled}.length,
+    rejected: rounds.fold(0, (sum, r) => sum + r.rejected),
+  );
+
+  Future<_Round> _exchange({
+    required List<ActivityDto> activities,
+    required List<ChangeDto> changes,
+  }) async {
+    final cursor = await _store.cursor();
+
+    final response = await _transport.exchange(
+      SyncRequest(cursor: cursor, activities: activities, changes: changes),
+    );
+
+    final rejected = response.rejected.toSet();
+
+    // Mark clean only what was not rejected, and only at the version pushed —
+    // a row edited while the request was in flight stays dirty and goes next
+    // time. Rejected rows stay dirty too, but the authoritative version came
+    // back in this same response and is adopted below, which is what stops
+    // them being re-pushed forever.
+    await _store.markSynced(
+      activityVersions: {
+        for (final a in activities)
+          if (!rejected.contains(a.syncId)) a.syncId: a.version,
+      },
+      changeVersions: {
+        for (final c in changes)
+          if (!rejected.contains(c.syncId)) c.syncId: c.version,
+      },
+    );
+
+    // Activities first: a change's links reference them, and a link naming an
+    // unknown activity is skipped rather than applied.
+    //
+    // As one batch, not row by row: the server orders by `seq`, which puts a
+    // reparented child before the parent it points at.
+    final pulled = await _store.applyRemoteActivities(response.activities);
+    for (final dto in response.changes) {
+      if (await _store.applyRemoteChange(dto)) pulled.add(dto.syncId);
+    }
+
+    // Last: an interrupted sync must re-pull rather than skip. Adopting is
+    // idempotent, so replaying a page costs nothing; missing one loses data.
+    //
+    // Unmoved means unwritten — the client twin of the server's zero-seq
+    // guard. An idle poll otherwise upserts an identical cursor row, which
+    // re-runs every syncMeta watch query just so a distinct() somewhere can
+    // discard the result, and hands any future watcher added without one the
+    // rebuild loop back.
+    final cursorMoved = response.cursor != cursor;
+    if (cursorMoved) await _store.setCursor(response.cursor);
+
+    return (
+      pushed: activities.length + changes.length - rejected.length,
+      pulled: pulled,
+      rejected: rejected.length,
+      // A cursor that did not move would ask for the same page again.
+      more: response.hasMore && cursorMoved,
+    );
+  }
 }
+
+typedef _Round = ({int pushed, Set<String> pulled, int rejected, bool more});
 
 /// Where the backend lives. Only the URL is built in — the token is per account
 /// and lives in the local database, because a token compiled into a web build is

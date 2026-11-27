@@ -203,11 +203,15 @@ class SyncResponse {
     this.activities = const [],
     this.changes = const [],
     this.rejected = const [],
+    this.hasMore = false,
   });
 
   final String cursor;
   final List<ActivityDto> activities;
   final List<ChangeDto> changes;
+
+  /// The server cut this page short; rows past [cursor] are waiting.
+  final bool hasMore;
 
   /// syncIds the server refused as stale. The client must re-read them from the
   /// pulled rows rather than assume its push landed — silently treating a
@@ -236,6 +240,7 @@ class SyncResponse {
           for (final id in rejected)
             if (id is String) id,
       ],
+      hasMore: raw['hasMore'] == true,
     );
   }
 }

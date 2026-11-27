@@ -17,6 +17,11 @@ import 'package:time_tracker/domain/sync_protocol.dart';
 /// An in-memory twin of worker/src/index.js: same acceptance rule, same shared
 /// `seq` order across both tables, same "echo the push back" behaviour.
 class FakeServer implements SyncTransport {
+  FakeServer({this.pageSize});
+
+  /// The Worker's MAX_PAGE; null sends every row in one page.
+  final int? pageSize;
+
   final activities = <String, ActivityDto>{};
   final changes = <String, ChangeDto>{};
   final _seq = <String, int>{};
@@ -28,6 +33,9 @@ class FakeServer implements SyncTransport {
   /// Set to make the next exchange fail, as an unreachable network would.
   bool offline = false;
 
+  /// Set to make this exchange and every later one fail, counting from 1.
+  int? offlineFromExchange;
+
   @override
   Future<void> claimAccount() async {
     claims++;
@@ -37,7 +45,9 @@ class FakeServer implements SyncTransport {
   @override
   Future<SyncResponse> exchange(SyncRequest request) async {
     exchanges++;
-    if (offline) throw const SyncException('unreachable');
+    if (offline || exchanges >= (offlineFromExchange ?? exchanges + 1)) {
+      throw const SyncException('unreachable');
+    }
 
     final cursor = int.tryParse(request.cursor ?? '0') ?? 0;
     final rejected = <String>[];
@@ -67,28 +77,47 @@ class FakeServer implements SyncTransport {
     // first" — and not by insertion, which would hide the case this order
     // creates: a row edited twice moves to the *end*, so a parent edited after
     // its child is delivered after it.
-    final outActivities = [
-      for (final e in activities.entries)
-        if ((_seq[e.key] ?? 0) > cursor) e.value,
-    ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0));
-    final outChanges = [
-      for (final e in changes.entries)
-        if ((_seq[e.key] ?? 0) > cursor) e.value,
-    ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0));
+    final outActivities = _page(
+      [
+        for (final e in activities.entries)
+          if ((_seq[e.key] ?? 0) > cursor) e.value,
+      ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0)),
+    );
+    final outChanges = _page(
+      [
+        for (final e in changes.entries)
+          if ((_seq[e.key] ?? 0) > cursor) e.value,
+      ]..sort((a, b) => (_seq[a.syncId] ?? 0).compareTo(_seq[b.syncId] ?? 0)),
+    );
 
     final sent = [
       ...outActivities.map((a) => _seq[a.syncId] ?? 0),
       ...outChanges.map((c) => _seq[c.syncId] ?? 0),
     ];
-    final nextCursor = sent.isEmpty ? cursor : sent.reduce((a, b) => a > b ? a : b);
+    final highest = sent.isEmpty ? cursor : sent.reduce((a, b) => a > b ? a : b);
+    // Like the Worker, the cursor stops where both lists are complete.
+    final cutAt = [
+      _lastSeqIfCut(outActivities.map((a) => a.syncId)),
+      _lastSeqIfCut(outChanges.map((c) => c.syncId)),
+    ].nonNulls;
+    final nextCursor = [highest, ...cutAt].reduce((a, b) => a < b ? a : b);
 
     return SyncResponse(
       cursor: '$nextCursor',
       activities: outActivities,
       changes: outChanges,
       rejected: rejected,
+      hasMore: cutAt.isNotEmpty,
     );
   }
+
+  List<T> _page<T>(List<T> rows) {
+    final size = pageSize;
+    return size == null || rows.length <= size ? rows : rows.sublist(0, size);
+  }
+
+  int? _lastSeqIfCut(Iterable<String> syncIds) =>
+      syncIds.length == pageSize ? _seq[syncIds.last] : null;
 }
 
 /// One device: its own database, repositories and sync service.
@@ -205,6 +234,68 @@ void main() {
     // The set travels inside its change, so it arrives whole.
     final changes = await watch.changes.loadChanges();
     expect(await watch.changes.activityIdsForChange(changes.single.syncId), [a.syncId]);
+  });
+
+  test('a second device pulls 1200 changes in one sync', () async {
+    final paged = FakeServer(pageSize: 500);
+    final web = Device(paged);
+    final watch = Device(paged);
+    addTearDown(web.close);
+    addTearDown(watch.close);
+
+    final a = await web.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    for (var i = 0; i < 1200; i++) {
+      await web.changes.switchTo(a.syncId, at: DateTime(2026, 1, 5).add(Duration(minutes: i)));
+    }
+    await web.sync.syncNow();
+
+    final result = await watch.sync.syncNow();
+
+    expect((await watch.changes.loadChanges()).length, 1200);
+    expect(result.pulled, 1201);
+  });
+
+  test('a failure after the first round shows what synced so far', () async {
+    final paged = FakeServer(pageSize: 500);
+    final web = Device(paged);
+    final watch = Device(paged);
+    addTearDown(web.close);
+    addTearDown(watch.close);
+
+    final a = await web.activities.createActivity(name: 'Deep work', color: '#4F8FEE');
+    for (var i = 0; i < 1200; i++) {
+      await web.changes.switchTo(a.syncId, at: DateTime(2026, 1, 5).add(Duration(minutes: i)));
+    }
+    await web.sync.syncNow();
+    await watch.activities.createActivity(name: 'Focus', color: '#F4B740');
+    paged.offlineFromExchange = paged.exchanges + 2;
+
+    final result = await watch.sync.syncNow();
+
+    expect(result.pushed, 1);
+    // Both activities, the watch's own echoed back, and the first page of changes.
+    expect(result.pulled, 502);
+  });
+
+  test('a row sent again behind a cut page is counted once', () async {
+    final paged = FakeServer(pageSize: 500);
+    final web = Device(paged);
+    final watch = Device(paged);
+    addTearDown(web.close);
+    addTearDown(watch.close);
+
+    final first = await web.activities.createActivity(name: 'Activity 0', color: '#4F8FEE');
+    for (var i = 1; i < 600; i++) {
+      await web.activities.createActivity(name: 'Activity $i', color: '#4F8FEE');
+    }
+    for (var i = 0; i < 10; i++) {
+      await web.changes.switchTo(first.syncId, at: DateTime(2026, 1, 5).add(Duration(minutes: i)));
+    }
+    await web.sync.syncNow();
+
+    final result = await watch.sync.syncNow();
+
+    expect(result.pulled, 610);
   });
 
   test('a pulled row is not echoed back as a local edit', () async {

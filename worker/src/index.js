@@ -231,6 +231,7 @@ async function handleSync(request, env, account) {
     activities: (outActivities.results ?? []).map(activityToDto),
     changes: (outChanges.results ?? []).map(changeToDto),
     rejected,
+    hasMore: complete !== Infinity,
   });
 }
 
